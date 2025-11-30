@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ============================================
+   NOTEBOOK THEME SYSTEM
+   ============================================ */
+
+/* Dark Theme (Default) - Catppuccin Mocha inspired */
+[data-theme="dark"] {
+  --nb-bg-primary: #1e1e2e;
+  --nb-bg-secondary: #181825;
+  --nb-bg-cell: #1e1e2e;
+  --nb-bg-code-cell: #11111b;
+  --nb-bg-markdown-cell: #1e1e2e;
+  --nb-bg-output: #11111b;
+  --nb-bg-header: #181825;
+
+  --nb-border-default: #313244;
+  --nb-border-selected: #89b4fa;
+  --nb-border-code: #45475a;
+  --nb-border-markdown: #6c7086;
+
+  --nb-text-primary: #cdd6f4;
+  --nb-text-secondary: #a6adc8;
+  --nb-text-muted: #6c7086;
+  --nb-text-output: #bac2de;
+
+  --nb-accent-code: #89b4fa;
+  --nb-accent-markdown: #cba6f7;
+  --nb-accent-success: #a6e3a1;
+  --nb-accent-error: #f38ba8;
+  --nb-accent-warning: #f9e2af;
+
+  --nb-cell-code-indicator: #89b4fa;
+  --nb-cell-markdown-indicator: #cba6f7;
+}
+
+/* Light Theme - Classic Jupyter inspired */
+[data-theme="light"] {
+  --nb-bg-primary: #ffffff;
+  --nb-bg-secondary: #f5f5f5;
+  --nb-bg-cell: #ffffff;
+  --nb-bg-code-cell: #fafafa;
+  --nb-bg-markdown-cell: #ffffff;
+  --nb-bg-output: #f0f4f8;
+  --nb-bg-header: #fafafa;
+
+  --nb-border-default: #d1d5db;
+  --nb-border-selected: #2563eb;
+  --nb-border-code: #e5e7eb;
+  --nb-border-markdown: #e5e7eb;
+
+  --nb-text-primary: #1f2937;
+  --nb-text-secondary: #4b5563;
+  --nb-text-muted: #6b7280;
+  --nb-text-output: #374151;
+
+  --nb-accent-code: #2563eb;
+  --nb-accent-markdown: #7c3aed;
+  --nb-accent-success: #059669;
+  --nb-accent-error: #dc2626;
+  --nb-accent-warning: #d97706;
+
+  --nb-cell-code-indicator: #2563eb;
+  --nb-cell-markdown-indicator: #7c3aed;
+}
+
+/* Monokai Theme - Classic editor theme */
+[data-theme="monokai"] {
+  --nb-bg-primary: #272822;
+  --nb-bg-secondary: #1e1f1c;
+  --nb-bg-cell: #272822;
+  --nb-bg-code-cell: #1e1f1c;
+  --nb-bg-markdown-cell: #2d2e27;
+  --nb-bg-output: #1e1f1c;
+  --nb-bg-header: #1e1f1c;
+
+  --nb-border-default: #49483e;
+  --nb-border-selected: #f92672;
+  --nb-border-code: #3e3d32;
+  --nb-border-markdown: #75715e;
+
+  --nb-text-primary: #f8f8f2;
+  --nb-text-secondary: #cfcfc2;
+  --nb-text-muted: #75715e;
+  --nb-text-output: #e6e6e0;
+
+  --nb-accent-code: #66d9ef;
+  --nb-accent-markdown: #ae81ff;
+  --nb-accent-success: #a6e22e;
+  --nb-accent-error: #f92672;
+  --nb-accent-warning: #e6db74;
+
+  --nb-cell-code-indicator: #66d9ef;
+  --nb-cell-markdown-indicator: #ae81ff;
+}
+
+/* ============================================
+   CELL STYLING
+   ============================================ */
+
+/* Code cell specific styling */
+.cell-code {
+  background-color: var(--nb-bg-code-cell);
+  border-left: 3px solid var(--nb-cell-code-indicator);
+}
+
+.cell-code:hover {
+  border-left-color: var(--nb-accent-code);
+}
+
+/* Markdown cell specific styling */
+.cell-markdown {
+  background-color: var(--nb-bg-markdown-cell);
+  border-left: 3px solid var(--nb-cell-markdown-indicator);
+}
+
+.cell-markdown:hover {
+  border-left-color: var(--nb-accent-markdown);
+}
+
+/* Cell output area */
+.cell-output {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  background-color: var(--nb-bg-output);
+  color: var(--nb-text-primary);
+}
+
+.cell-output pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Execution count badge */
+.execution-count {
+  color: var(--nb-accent-code);
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+}
+
+/* ============================================
+   MARKDOWN PROSE STYLING
+   ============================================ */
+
+/* Dark theme prose */
+[data-theme="dark"] .prose {
+  --tw-prose-body: #cdd6f4;
+  --tw-prose-headings: #cdd6f4;
+  --tw-prose-links: #89b4fa;
+  --tw-prose-code: #f5c2e7;
+  --tw-prose-pre-bg: #11111b;
+  --tw-prose-pre-code: #cdd6f4;
+}
+
+/* Light theme prose */
+[data-theme="light"] .prose {
+  --tw-prose-body: #212121;
+  --tw-prose-headings: #212121;
+  --tw-prose-links: #1976d2;
+  --tw-prose-code: #c62828;
+  --tw-prose-pre-bg: #f5f5f5;
+  --tw-prose-pre-code: #212121;
+}
+
+/* Monokai theme prose */
+[data-theme="monokai"] .prose {
+  --tw-prose-body: #f8f8f2;
+  --tw-prose-headings: #f8f8f2;
+  --tw-prose-links: #66d9ef;
+  --tw-prose-code: #f92672;
+  --tw-prose-pre-bg: #1e1f1c;
+  --tw-prose-pre-code: #f8f8f2;
+}
+
+/* Monaco editor overrides */
+.monaco-editor .margin {
+  background-color: transparent !important;
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+[data-theme="dark"] ::-webkit-scrollbar,
+[data-theme="monokai"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-track,
+[data-theme="monokai"] ::-webkit-scrollbar-track {
+  background: var(--nb-bg-secondary);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb,
+[data-theme="monokai"] ::-webkit-scrollbar-thumb {
+  background: var(--nb-border-default);
+  border-radius: 4px;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover,
+[data-theme="monokai"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--nb-text-muted);
+}

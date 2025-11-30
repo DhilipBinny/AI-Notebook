@@ -1,0 +1,372 @@
+"""
+Anthropic LLM Client - Claude implementation
+
+Implements the BaseLLMClient interface for Anthropic models (Claude 3, etc.).
+Supports both automatic and manual (approval-based) function calling.
+"""
+
+import json
+from typing import List, Dict, Any, Optional, Union
+import anthropic
+from anthropic import Anthropic
+
+from backend.llm_client_base import BaseLLMClient
+from backend.utils.util_func import log_debug_message
+from backend.llm_tools import TOOL_FUNCTIONS
+import backend.config as cfg
+
+
+# Build Anthropic tool schemas from our function definitions
+def _build_anthropic_tools() -> List[Dict[str, Any]]:
+    """Convert our tool functions to Anthropic tool format"""
+    tools = []
+
+    for func in TOOL_FUNCTIONS:
+        # Get function metadata from docstring and annotations
+        func_name = func.__name__
+        func_doc = func.__doc__ or ""
+        annotations = func.__annotations__
+
+        # Parse docstring to get description and parameter descriptions
+        doc_lines = func_doc.strip().split('\n')
+        description = ""
+        param_descriptions = {}
+        current_section = None
+
+        for line in doc_lines:
+            line = line.strip()
+            if line.lower().startswith('args:'):
+                current_section = 'args'
+                continue
+            elif line.lower().startswith('returns:'):
+                current_section = 'returns'
+                continue
+            elif line.lower().startswith('example:'):
+                current_section = 'example'
+                continue
+
+            if current_section is None and line:
+                description += line + " "
+            elif current_section == 'args' and ':' in line:
+                param_name = line.split(':')[0].strip()
+                param_desc = ':'.join(line.split(':')[1:]).strip()
+                param_descriptions[param_name] = param_desc
+
+        # Build parameters schema
+        properties = {}
+        required = []
+
+        for param_name, param_type in annotations.items():
+            if param_name == 'return':
+                continue
+
+            # Map Python types to JSON schema types
+            json_type = "string"
+            if param_type == int:
+                json_type = "integer"
+            elif param_type == float:
+                json_type = "number"
+            elif param_type == bool:
+                json_type = "boolean"
+            elif param_type == str:
+                json_type = "string"
+
+            properties[param_name] = {
+                "type": json_type,
+                "description": param_descriptions.get(param_name, f"The {param_name} parameter")
+            }
+
+            # Check if parameter has a default value
+            defaults = func.__defaults__ or ()
+            code = func.__code__
+            num_params = code.co_argcount
+            num_defaults = len(defaults)
+            params_without_defaults = num_params - num_defaults
+
+            param_names = code.co_varnames[:num_params]
+            if param_name in param_names:
+                param_index = list(param_names).index(param_name)
+                if param_index < params_without_defaults:
+                    required.append(param_name)
+
+        tool = {
+            "name": func_name,
+            "description": description.strip(),
+            "input_schema": {
+                "type": "object",
+                "properties": properties,
+                "required": required
+            }
+        }
+        tools.append(tool)
+
+    log_debug_message(f"Anthropic tools: {tools}")
+
+    return tools
+
+
+# Map function names to actual functions
+TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
+
+
+class AnthropicClient(BaseLLMClient):
+    """Anthropic LLM client with tool calling support"""
+
+    def __init__(self, api_key: str, model_name: str = "claude-3-haiku-20240307", auto_function_calling: Optional[bool] = None):
+        """
+        Initialize Anthropic client.
+
+        Args:
+            api_key: Anthropic API key
+            model_name: Model to use (default: claude-3-haiku-20240307)
+            auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
+        """
+        self.client = Anthropic(api_key=api_key)
+        self.model_name = model_name
+        self.tools = _build_anthropic_tools()
+        self.history: List[Dict[str, Any]] = []
+
+        # Use config value if not explicitly set
+        self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
+        log_debug_message(f"Anthropic client initialized. Auto function calling: {self.auto_function_calling}")
+
+        # Store pending state for manual mode
+        self._pending_messages: List[Dict[str, Any]] = []
+        self._pending_tool_calls: List[Dict[str, Any]] = []
+
+    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Execute a tool and return the result as a string."""
+        log_debug_message(f"Anthropic executing tool: {tool_name} with args: {arguments}")
+
+        if tool_name not in TOOL_MAP:
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+        try:
+            result = TOOL_MAP[tool_name](**arguments)
+            return json.dumps(result)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def send_message(self, message: str) -> Union[str, Dict[str, Any]]:
+        """
+        Send a message to Anthropic.
+
+        When auto_function_calling=True:
+            Executes tools automatically and returns final response text
+
+        When auto_function_calling=False:
+            If model wants to call tools: Returns dict with pending_tool_calls
+            If no tools needed: Returns the response text
+
+        Args:
+            message: The user message
+
+        Returns:
+            str: Final response text (if auto mode or no tools needed)
+            dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
+        """
+        try:
+            # Add user message to history
+            self.history.append({
+                "role": "user",
+                "content": message
+            })
+
+            # Build messages (Anthropic system prompt is separate)
+            messages = self.history
+
+            if self.auto_function_calling:
+                # Auto mode: loop until final response
+                return self._auto_execute_tools(messages)
+            else:
+                # Manual mode: return pending tools for approval
+                return self._get_pending_tools(messages)
+
+        except Exception as e:
+            return f"Anthropic Error: {e}"
+
+    def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
+        """Execute tools automatically until we get a final response"""
+        max_iterations = 10
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=4096,
+                system=self.SYSTEM_PROMPT,
+                messages=messages,
+                tools=self.tools
+            )
+
+            log_debug_message(f"Anthropic response (iter {iteration}): {response}")
+
+            # Check if stop_reason is tool_use
+            if response.stop_reason == "tool_use":
+                # Add assistant message with tool calls
+                messages.append({
+                    "role": "assistant",
+                    "content": response.content
+                })
+
+                # Execute each tool call
+                for block in response.content:
+                    if block.type == "tool_use":
+                        func_name = block.name
+                        func_args = block.input
+                        result = self._execute_tool(func_name, func_args)
+
+                        messages.append({
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result
+                                }
+                            ]
+                        })
+            else:
+                # Final response
+                final_response = response.content[0].text
+                self.history.append({
+                    "role": "assistant",
+                    "content": final_response
+                })
+                return final_response
+
+        return "Error: Maximum tool calling iterations reached"
+
+    def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
+        """Get pending tool calls without executing them"""
+        response = self.client.messages.create(
+            model=self.model_name,
+            max_tokens=4096,
+            system=self.SYSTEM_PROMPT,
+            messages=messages,
+            tools=self.tools
+        )
+
+        log_debug_message(f"Anthropic response (manual mode): {response}")
+
+        if response.stop_reason == "tool_use":
+            # Store state for later execution
+            self._pending_messages = messages.copy()
+            self._pending_tool_calls = []
+
+            # Add assistant message to pending messages
+            self._pending_messages.append({
+                "role": "assistant",
+                "content": response.content
+            })
+
+            pending_tools = []
+            response_text = ""
+
+            for block in response.content:
+                if block.type == "text":
+                    response_text += block.text
+                elif block.type == "tool_use":
+                    tool_info = {
+                        "id": block.id,
+                        "name": block.name,
+                        "arguments": block.input
+                    }
+                    pending_tools.append(tool_info)
+                    self._pending_tool_calls.append(tool_info)
+
+            return {
+                "pending_tool_calls": pending_tools,
+                "response_text": response_text
+            }
+        else:
+            # No tools needed
+            final_response = response.content[0].text
+            self.history.append({
+                "role": "assistant",
+                "content": final_response
+            })
+            return final_response
+
+    def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
+        """
+        Execute approved tool calls and get the final response.
+
+        Args:
+            approved_tool_calls: List of approved tools to execute
+                                [{"id": "...", "name": "...", "arguments": {...}}, ...]
+
+        Returns:
+            The final response text after tool execution
+        """
+        try:
+            if not self._pending_messages:
+                return "Error: No pending tool calls to execute"
+
+            messages = self._pending_messages.copy()
+
+            # Execute approved tools and add results
+            for tool_call in approved_tool_calls:
+                tool_id = tool_call.get("id", "")
+                tool_name = tool_call["name"]
+                tool_args = tool_call.get("arguments", {})
+
+                result = self._execute_tool(tool_name, tool_args)
+
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": result
+                        }
+                    ]
+                })
+
+            # Continue with auto execution from here
+            final_response = self._auto_execute_tools(messages)
+
+            # Clear pending state
+            self._pending_messages = []
+            self._pending_tool_calls = []
+
+            return final_response
+
+        except Exception as e:
+            log_debug_message(f"Error executing approved tools: {e}")
+            return f"Error executing tools: {e}"
+
+    def clear_history(self) -> None:
+        """Clear conversation history"""
+        self.history = []
+        self._pending_messages = []
+        self._pending_tool_calls = []
+
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Get conversation history"""
+        return self.history
+
+    def set_history(self, history_list: List[Dict[str, Any]]) -> None:
+        """Set conversation history."""
+        self.history = []
+        for msg in history_list:
+            role = msg.get("role", "user")
+            if role == "model":
+                role = "assistant"
+
+            if "parts" in msg:
+                content = msg["parts"][0] if msg["parts"] else ""
+            else:
+                content = msg.get("content", "")
+
+            self.history.append({
+                "role": role,
+                "content": content
+            })
+
+    @property
+    def provider_name(self) -> str:
+        return "Anthropic"
