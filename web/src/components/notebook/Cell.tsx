@@ -198,7 +198,14 @@ export default function Cell({
   }
 
   // Cell type-specific classes
-  const cellTypeClass = cell.type === 'code' ? 'cell-code' : 'cell-markdown'
+  const cellTypeClass = cell.type === 'code' ? 'cell-code' : cell.type === 'markdown' ? 'cell-markdown' : 'cell-raw'
+
+  // Get background color based on cell type
+  const getCellBgColor = () => {
+    if (cell.type === 'code') return 'var(--nb-bg-code-cell)'
+    if (cell.type === 'raw') return 'var(--nb-bg-raw-cell, #2d2a1f)'  // Warm amber tint
+    return 'var(--nb-bg-markdown-cell)'
+  }
 
   return (
     <div
@@ -209,9 +216,7 @@ export default function Cell({
       }`}
       onClick={onSelect}
       style={{
-        backgroundColor: cell.type === 'code'
-          ? 'var(--nb-bg-code-cell)'
-          : 'var(--nb-bg-markdown-cell)',
+        backgroundColor: getCellBgColor(),
         borderColor: 'var(--nb-border-default)',
       }}
     >
@@ -260,8 +265,10 @@ export default function Cell({
             style={{
               backgroundColor: cell.type === 'code'
                 ? 'var(--nb-accent-code)'
-                : 'var(--nb-accent-markdown)',
-              color: cell.type === 'code' ? '#11111b' : '#11111b',
+                : cell.type === 'raw'
+                  ? 'var(--nb-accent-notes, #f59e0b)'
+                  : 'var(--nb-accent-markdown)',
+              color: '#11111b',
               opacity: 0.9,
             }}
           >
@@ -271,6 +278,13 @@ export default function Cell({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
                 Code
+              </>
+            ) : cell.type === 'raw' ? (
+              <>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Notes
               </>
             ) : (
               <>
@@ -390,7 +404,7 @@ export default function Cell({
               isUserEditingRef.current = false
               // Don't auto-render on blur - only render on Shift+Enter
             }}
-            placeholder={cell.type === 'code' ? 'Enter Python code...' : 'Enter markdown... (Shift+Enter to preview)'}
+            placeholder={cell.type === 'code' ? 'Enter Python code...' : cell.type === 'raw' ? 'Enter notes (plain text, not executed)...' : 'Enter markdown... (Shift+Enter to preview)'}
             className="w-full bg-transparent font-mono text-sm resize-none outline-none"
             style={{
               minHeight: '100px',

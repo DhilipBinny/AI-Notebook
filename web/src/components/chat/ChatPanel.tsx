@@ -548,7 +548,7 @@ export default function ChatPanel({
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="p-4" style={{ background: colors.inputBg, borderTop: `1px solid ${colors.border}` }}>
-        <div className="flex gap-3 items-end">
+        <div className="flex gap-3">
           <div className="flex-1 relative">
             <textarea
               ref={textareaRef}
@@ -567,16 +567,18 @@ export default function ChatPanel({
               disabled={isLoading}
             />
           </div>
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 disabled:shadow-none flex-shrink-0"
-            title="Send message"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+          <div className="flex items-end pb-1">
+            <button
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 disabled:shadow-none"
+              title="Send message"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
         </div>
       </form>
 

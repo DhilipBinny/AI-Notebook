@@ -5,6 +5,7 @@ import { useTheme, type NotebookTheme } from '@/contexts/ThemeContext'
 interface NotebookToolbarProps {
   onAddCode: () => void
   onAddMarkdown: () => void
+  onAddNotes: () => void
   onRunAll: () => void
   onClearOutputs: () => void
   onDeleteAllCells: () => void
@@ -29,43 +30,10 @@ const themeOptions: { value: NotebookTheme; label: string; icon: string }[] = [
   { value: 'monokai', label: 'Monokai', icon: '🎨' },
 ]
 
-// Theme-aware button colors
-const buttonColors = {
-  primary: { // Run All
-    dark: { bg: '#3DF2A6', hover: '#5FF4B8', text: '#000' },
-    light: { bg: '#00B86E', hover: '#00D47F', text: '#fff' },
-    monokai: { bg: '#A6E22E', hover: '#B8E850', text: '#000' },
-  },
-  danger: { // Restart / Delete
-    dark: { bg: '#FF5F72', hover: '#FF7A8A', text: '#fff' },
-    light: { bg: '#E63946', hover: '#EF525E', text: '#fff' },
-    monokai: { bg: '#F92672', hover: '#FA4D8A', text: '#fff' },
-  },
-  warning: { // Clear Outputs
-    dark: { bg: '#FF9E4A', hover: '#FFB06A', text: '#000' },
-    light: { bg: '#F48C06', hover: '#F9A825', text: '#000' },
-    monokai: { bg: '#FD971F', hover: '#FDAB4A', text: '#000' },
-  },
-  code: { // Code button
-    dark: { bg: '#5BA8FF', hover: '#7CBBFF', text: '#000' },
-    light: { bg: '#1D6FE4', hover: '#3D85EA', text: '#fff' },
-    monokai: { bg: '#66D9EF', hover: '#8AE3F3', text: '#000' },
-  },
-  markdown: { // Markdown button
-    dark: { bg: '#BF7BFF', hover: '#CC99FF', text: '#000' },
-    light: { bg: '#7B4DFF', hover: '#9570FF', text: '#fff' },
-    monokai: { bg: '#AE81FF', hover: '#C29FFF', text: '#000' },
-  },
-  saved: { // Saved badge
-    dark: { bg: '#2EC8C8', hover: '#4DD4D4', text: '#000' },
-    light: { bg: '#0FB6A0', hover: '#2DC8B4', text: '#fff' },
-    monokai: { bg: '#A6E22E', hover: '#B8E850', text: '#000' },
-  },
-}
-
 export default function NotebookToolbar({
   onAddCode,
   onAddMarkdown,
+  onAddNotes,
   onRunAll,
   onClearOutputs,
   onDeleteAllCells,
@@ -85,9 +53,6 @@ export default function NotebookToolbar({
 }: NotebookToolbarProps) {
   const { theme, setTheme } = useTheme()
 
-  // Get colors for current theme
-  const getColors = (type: keyof typeof buttonColors) => buttonColors[type][theme]
-
   return (
     <div
       className="flex items-center justify-between px-4 py-2"
@@ -97,11 +62,10 @@ export default function NotebookToolbar({
       }}
     >
       <div className="flex items-center gap-2">
-        {/* Add cell buttons */}
+        {/* Add cell buttons - gradient style */}
         <button
           onClick={onAddCode}
-          className="px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1 hover:brightness-110"
-          style={{ backgroundColor: getColors('code').bg, color: getColors('code').text }}
+          className="px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-md shadow-blue-500/20 hover:shadow-blue-500/30"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -110,22 +74,29 @@ export default function NotebookToolbar({
         </button>
         <button
           onClick={onAddMarkdown}
-          className="px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1 hover:brightness-110"
-          style={{ backgroundColor: getColors('markdown').bg, color: getColors('markdown').text }}
+          className="px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-md shadow-purple-500/20 hover:shadow-purple-500/30"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           Markdown
         </button>
+        <button
+          onClick={onAddNotes}
+          className="px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white shadow-md shadow-amber-500/20 hover:shadow-amber-500/30"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Notes
+        </button>
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Run controls - icon only */}
+        {/* Run controls - gradient icon buttons */}
         <button
           onClick={onRunAll}
-          className="p-1.5 rounded-md transition-all hover:brightness-110"
-          style={{ backgroundColor: getColors('primary').bg, color: getColors('primary').text }}
+          className="p-2 rounded-lg transition-all bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/30"
           title="Run all cells"
         >
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -134,8 +105,7 @@ export default function NotebookToolbar({
         </button>
         <button
           onClick={onClearOutputs}
-          className="p-1.5 rounded-md transition-all hover:brightness-110"
-          style={{ backgroundColor: getColors('warning').bg, color: getColors('warning').text }}
+          className="p-2 rounded-lg transition-all bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-md shadow-amber-500/20 hover:shadow-amber-500/30"
           title="Clear all outputs"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,8 +114,7 @@ export default function NotebookToolbar({
         </button>
         <button
           onClick={onDeleteAllCells}
-          className="p-1.5 rounded-md transition-all hover:brightness-110"
-          style={{ backgroundColor: getColors('danger').bg, color: getColors('danger').text }}
+          className="p-2 rounded-lg transition-all bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-md shadow-red-500/20 hover:shadow-red-500/30"
           title="Delete all cells"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -155,16 +124,16 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Context count with select/deselect - moved to left side near cell controls */}
+        {/* Context count with select/deselect */}
         <div className="flex items-center gap-2">
           <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
-            <span className="text-green-400 font-medium">{contextCount}</span>
+            <span className="text-emerald-400 font-medium">{contextCount}</span>
             <span className="text-gray-500">/{totalCells}</span> in context
           </div>
           {contextCount < totalCells ? (
             <button
               onClick={onSelectAllContext}
-              className="px-2 py-1 text-xs rounded border border-green-500/50 text-green-400 hover:bg-green-500/20 transition-colors"
+              className="px-2.5 py-1 text-xs rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-all"
               title="Select all cells for AI context"
             >
               Select All
@@ -172,7 +141,7 @@ export default function NotebookToolbar({
           ) : (
             <button
               onClick={onDeselectAllContext}
-              className="px-2 py-1 text-xs rounded border border-gray-500/50 text-gray-400 hover:bg-gray-500/20 transition-colors"
+              className="px-2.5 py-1 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-all"
               title="Deselect all cells from AI context"
             >
               Deselect All
@@ -182,11 +151,10 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Kernel controls - icon only */}
+        {/* Kernel restart - gradient */}
         <button
           onClick={onRestartKernel}
-          className="p-1.5 rounded-md transition-all hover:brightness-110"
-          style={{ backgroundColor: getColors('danger').bg, color: getColors('danger').text }}
+          className="p-2 rounded-lg transition-all bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white shadow-md shadow-red-500/20 hover:shadow-red-500/30"
           title="Restart kernel (clears all variables)"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,29 +214,21 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Save status button */}
+        {/* Save status button - gradient style */}
         <button
           onClick={onSave}
           disabled={isSaving}
-          className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1.5 hover:brightness-110 ${
-            isSaving ? 'cursor-not-allowed opacity-70' : ''
+          className={`px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 text-white shadow-md ${
+            isSaving
+              ? 'bg-gray-600 cursor-not-allowed opacity-70'
+              : isDirty
+              ? 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-blue-500/20 hover:shadow-blue-500/30'
+              : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/20 hover:shadow-emerald-500/30'
           }`}
-          style={{
-            backgroundColor: isSaving
-              ? '#666'
-              : isDirty
-              ? getColors('code').bg
-              : getColors('saved').bg,
-            color: isSaving
-              ? '#ccc'
-              : isDirty
-              ? getColors('code').text
-              : getColors('saved').text,
-          }}
           title={isSaving ? 'Saving...' : isDirty ? 'Save notebook (Ctrl+S)' : 'Notebook saved'}
         >
           {isSaving ? (
-            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           ) : isDirty ? (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -304,15 +264,15 @@ export default function NotebookToolbar({
           </div>
         </div>
 
-        {/* Export button */}
+        {/* Export button - gradient style */}
         <button
           onClick={onExport}
           disabled={isExporting}
-          className="p-2 rounded-md transition-colors flex items-center justify-center bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 rounded-lg transition-all flex items-center justify-center bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-md shadow-cyan-500/20 hover:shadow-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
           title="Export as .ipynb"
         >
           {isExporting ? (
-            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           ) : (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -320,13 +280,13 @@ export default function NotebookToolbar({
           )}
         </button>
 
-        {/* Chat toggle button */}
+        {/* Chat toggle button - gradient when active */}
         <button
           onClick={onToggleChat}
-          className={`p-2 rounded-md transition-colors flex items-center justify-center ${
+          className={`p-2 rounded-lg transition-all flex items-center justify-center shadow-md ${
             showChat
-              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 hover:shadow-blue-500/30'
+              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 shadow-none'
           }`}
           title={showChat ? 'Hide AI Chat' : 'Show AI Chat'}
         >

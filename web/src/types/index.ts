@@ -38,7 +38,7 @@ export interface Playground {
 // Frontend cell type (for React state)
 export interface Cell {
   id: string  // Derived from metadata.cell_id when loading
-  type: 'code' | 'markdown'
+  type: 'code' | 'markdown' | 'raw'
   source: string
   outputs: CellOutput[]
   execution_count?: number
@@ -47,7 +47,7 @@ export interface Cell {
 
 // API cell type (Jupyter .ipynb standard format)
 export interface ApiCell {
-  cell_type: string  // "code" or "markdown" (Jupyter standard)
+  cell_type: string  // "code", "markdown", or "raw" (Jupyter standard)
   source: string
   outputs: Record<string, unknown>[]
   execution_count?: number

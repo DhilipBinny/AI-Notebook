@@ -18,7 +18,7 @@ function generateCellId(): string {
 }
 
 // Create empty cell
-function createCell(type: 'code' | 'markdown'): CellType {
+function createCell(type: 'code' | 'markdown' | 'raw'): CellType {
   const cellId = generateCellId()
   return {
     id: cellId,
@@ -106,7 +106,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       if (notebookData.notebook.cells.length > 0) {
         const loadedCells = notebookData.notebook.cells.map((cell) => ({
           id: cell.metadata?.cell_id || generateCellId(),  // cell_id from metadata (Jupyter standard)
-          type: (cell.cell_type || 'code') as 'code' | 'markdown',
+          type: (cell.cell_type || 'code') as 'code' | 'markdown' | 'raw',
           source: cell.source,
           outputs: cell.outputs as any[],
           execution_count: cell.execution_count,
@@ -170,7 +170,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             // Convert to our cell format (Jupyter standard: cell_type and metadata.cell_id)
             const loadedCells = notebookData.notebook.cells.map((cell) => ({
               id: cell.metadata?.cell_id || generateCellId(),  // cell_id from metadata
-              type: (cell.cell_type || 'code') as 'code' | 'markdown',
+              type: (cell.cell_type || 'code') as 'code' | 'markdown' | 'raw',
               source: cell.source,
               outputs: cell.outputs as any[],
               execution_count: cell.execution_count,
@@ -267,7 +267,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }
 
   // Cell handlers
-  const handleAddCell = useCallback((type: 'code' | 'markdown') => {
+  const handleAddCell = useCallback((type: 'code' | 'markdown' | 'raw') => {
     const newCell = createCell(type)
     const selectedIndex = cells.findIndex((c) => c.id === selectedCellId)
     addCell(newCell, selectedIndex >= 0 ? selectedIndex + 1 : undefined)
@@ -277,7 +277,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [cells, selectedCellId, addCell])
 
   // Insert cell at specific position (used by insert buttons between cells)
-  const handleInsertCellAt = useCallback((type: 'code' | 'markdown', index: number) => {
+  const handleInsertCellAt = useCallback((type: 'code' | 'markdown' | 'raw', index: number) => {
     const newCell = createCell(type)
     addCell(newCell, index)
     setSelectedCellId(newCell.id)
@@ -867,6 +867,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       <NotebookToolbar
         onAddCode={() => handleAddCell('code')}
         onAddMarkdown={() => handleAddCell('markdown')}
+        onAddNotes={() => handleAddCell('raw')}
         onRunAll={handleRunAll}
         onClearOutputs={handleClearOutputs}
         onDeleteAllCells={handleDeleteAllCells}
@@ -926,6 +927,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 <CellInsertButtons
                   onInsertCode={() => handleInsertCellAt('code', 0)}
                   onInsertMarkdown={() => handleInsertCellAt('markdown', 0)}
+                  onInsertNotes={() => handleInsertCellAt('raw', 0)}
                 />
 
                 {cells.map((cell, index) => (
@@ -949,6 +951,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                     <CellInsertButtons
                       onInsertCode={() => handleInsertCellAt('code', index + 1)}
                       onInsertMarkdown={() => handleInsertCellAt('markdown', index + 1)}
+                      onInsertNotes={() => handleInsertCellAt('raw', index + 1)}
                     />
                   </div>
                 ))}
