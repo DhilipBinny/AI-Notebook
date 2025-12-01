@@ -62,10 +62,9 @@ class Settings(BaseSettings):
     # Playground settings
     playground_image: str = Field(default="ainotebook-playground:latest", alias="PLAYGROUND_IMAGE")
     playground_network: str = Field(default="ainotebook-network", alias="PLAYGROUND_NETWORK")
-    playground_memory_limit: str = Field(default="2g", alias="PLAYGROUND_MEMORY_LIMIT")
-    playground_cpu_limit: float = Field(default=1.0, alias="PLAYGROUND_CPU_LIMIT")
+    playground_memory_limit: str = Field(default="4g", alias="PLAYGROUND_MEMORY_LIMIT")
+    playground_cpu_limit: float = Field(default=4.0, alias="PLAYGROUND_CPU_LIMIT")
     playground_idle_timeout: int = Field(default=3600, alias="PLAYGROUND_IDLE_TIMEOUT")
-    playground_max_per_user: int = Field(default=2, alias="PLAYGROUND_MAX_PER_USER")
 
     # User limits
     default_max_projects: int = Field(default=5, alias="DEFAULT_MAX_PROJECTS")
