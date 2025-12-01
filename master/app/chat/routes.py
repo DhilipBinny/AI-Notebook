@@ -15,10 +15,12 @@ from app.auth.dependencies import get_current_active_user
 from app.users.models import User
 from app.projects.service import ProjectService
 from app.playgrounds.service import PlaygroundService
+from app.notebooks.s3_client import s3_client as notebook_s3_client
 from .service import ChatService
 from .schemas import (
     ChatMessageCreate,
     ChatResponse,
+    CellContext,
     ExecuteToolsRequest,
 )
 
@@ -313,13 +315,31 @@ async def send_message(
     playground_service = PlaygroundService(db)
     playground = await playground_service.get_by_project_id(project_id)
 
+    # Load cell content from S3 if cell IDs provided
+    context: List[CellContext] = []
+    if request.context_cell_ids:
+        notebook_data = await notebook_s3_client.load_notebook(project.storage_month, project_id)
+        if notebook_data and "cells" in notebook_data:
+            # Build lookup by cell_id
+            cell_id_set = set(request.context_cell_ids)
+            for idx, cell in enumerate(notebook_data["cells"]):
+                cell_id = cell.get("metadata", {}).get("cell_id", "")
+                if cell_id in cell_id_set:
+                    context.append(CellContext(
+                        cell_id=cell_id,
+                        type=cell.get("cell_type", "code"),
+                        content=cell.get("source", ""),
+                        output=None,  # Don't include outputs
+                        cell_number=idx + 1,
+                    ))
+
     # Send message
     chat_service = ChatService(project.storage_month)
     response = await chat_service.send_message(
         project=project,
         playground=playground,
         message=request.message,
-        context=request.context,
+        context=context,
         tool_mode=tool_mode,
         llm_provider=llm_provider,
         chat_id=chat_id,

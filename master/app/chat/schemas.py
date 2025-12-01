@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 
 
 class CellContext(BaseModel):
-    """A notebook cell provided as context to the LLM."""
+    """A notebook cell provided as context to the LLM (built by backend from S3)."""
     cell_id: str  # From metadata.cell_id (Jupyter standard)
     type: str  # "code" or "markdown"
     content: str
@@ -20,7 +20,7 @@ class CellContext(BaseModel):
 class ChatMessageCreate(BaseModel):
     """Schema for creating a chat message."""
     message: str
-    context: List[CellContext] = []
+    context_cell_ids: List[str] = []  # Just cell IDs - backend loads content from S3
 
 
 class PendingToolCall(BaseModel):

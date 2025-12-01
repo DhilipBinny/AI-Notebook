@@ -10,14 +10,17 @@ interface NotebookToolbarProps {
   onDeleteAllCells: () => void
   onSave: () => void
   onExport: () => void
-  onSummarize: () => void
   isExporting: boolean
-  isSummarizing: boolean
   contextCount: number
+  totalCells: number
+  onSelectAllContext: () => void
+  onDeselectAllContext: () => void
   isDirty: boolean
   isSaving: boolean
   kernelStatus: 'connected' | 'connecting' | 'disconnected'
   onRestartKernel: () => void
+  showChat: boolean
+  onToggleChat: () => void
 }
 
 const themeOptions: { value: NotebookTheme; label: string; icon: string }[] = [
@@ -25,6 +28,40 @@ const themeOptions: { value: NotebookTheme; label: string; icon: string }[] = [
   { value: 'light', label: 'Light', icon: '☀️' },
   { value: 'monokai', label: 'Monokai', icon: '🎨' },
 ]
+
+// Theme-aware button colors
+const buttonColors = {
+  primary: { // Run All
+    dark: { bg: '#3DF2A6', hover: '#5FF4B8', text: '#000' },
+    light: { bg: '#00B86E', hover: '#00D47F', text: '#fff' },
+    monokai: { bg: '#A6E22E', hover: '#B8E850', text: '#000' },
+  },
+  danger: { // Restart / Delete
+    dark: { bg: '#FF5F72', hover: '#FF7A8A', text: '#fff' },
+    light: { bg: '#E63946', hover: '#EF525E', text: '#fff' },
+    monokai: { bg: '#F92672', hover: '#FA4D8A', text: '#fff' },
+  },
+  warning: { // Clear Outputs
+    dark: { bg: '#FF9E4A', hover: '#FFB06A', text: '#000' },
+    light: { bg: '#F48C06', hover: '#F9A825', text: '#000' },
+    monokai: { bg: '#FD971F', hover: '#FDAB4A', text: '#000' },
+  },
+  code: { // Code button
+    dark: { bg: '#5BA8FF', hover: '#7CBBFF', text: '#000' },
+    light: { bg: '#1D6FE4', hover: '#3D85EA', text: '#fff' },
+    monokai: { bg: '#66D9EF', hover: '#8AE3F3', text: '#000' },
+  },
+  markdown: { // Markdown button
+    dark: { bg: '#BF7BFF', hover: '#CC99FF', text: '#000' },
+    light: { bg: '#7B4DFF', hover: '#9570FF', text: '#fff' },
+    monokai: { bg: '#AE81FF', hover: '#C29FFF', text: '#000' },
+  },
+  saved: { // Saved badge
+    dark: { bg: '#2EC8C8', hover: '#4DD4D4', text: '#000' },
+    light: { bg: '#0FB6A0', hover: '#2DC8B4', text: '#fff' },
+    monokai: { bg: '#A6E22E', hover: '#B8E850', text: '#000' },
+  },
+}
 
 export default function NotebookToolbar({
   onAddCode,
@@ -34,16 +71,22 @@ export default function NotebookToolbar({
   onDeleteAllCells,
   onSave,
   onExport,
-  onSummarize,
   isExporting,
-  isSummarizing,
   contextCount,
+  totalCells,
+  onSelectAllContext,
+  onDeselectAllContext,
   isDirty,
   isSaving,
   kernelStatus,
   onRestartKernel,
+  showChat,
+  onToggleChat,
 }: NotebookToolbarProps) {
   const { theme, setTheme } = useTheme()
+
+  // Get colors for current theme
+  const getColors = (type: keyof typeof buttonColors) => buttonColors[type][theme]
 
   return (
     <div
@@ -57,7 +100,8 @@ export default function NotebookToolbar({
         {/* Add cell buttons */}
         <button
           onClick={onAddCode}
-          className="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white"
+          className="px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1 hover:brightness-110"
+          style={{ backgroundColor: getColors('code').bg, color: getColors('code').text }}
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
@@ -66,7 +110,8 @@ export default function NotebookToolbar({
         </button>
         <button
           onClick={onAddMarkdown}
-          className="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white"
+          className="px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1 hover:brightness-110"
+          style={{ backgroundColor: getColors('markdown').bg, color: getColors('markdown').text }}
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -76,26 +121,31 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Run controls */}
+        {/* Run controls - icon only */}
         <button
           onClick={onRunAll}
-          className="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 bg-green-600 hover:bg-green-500 text-white"
+          className="p-1.5 rounded-md transition-all hover:brightness-110"
+          style={{ backgroundColor: getColors('primary').bg, color: getColors('primary').text }}
+          title="Run all cells"
         >
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
-          Run All
         </button>
         <button
           onClick={onClearOutputs}
-          className="px-3 py-1.5 text-sm rounded-md transition-colors bg-gray-600 hover:bg-gray-500 text-white"
-          title="Clear all cell outputs"
+          className="p-1.5 rounded-md transition-all hover:brightness-110"
+          style={{ backgroundColor: getColors('warning').bg, color: getColors('warning').text }}
+          title="Clear all outputs"
         >
-          Clear Outputs
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z" />
+          </svg>
         </button>
         <button
           onClick={onDeleteAllCells}
-          className="p-1.5 rounded-md transition-colors bg-red-600/80 hover:bg-red-500 text-white"
+          className="p-1.5 rounded-md transition-all hover:brightness-110"
+          style={{ backgroundColor: getColors('danger').bg, color: getColors('danger').text }}
           title="Delete all cells"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,16 +155,43 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Kernel controls */}
+        {/* Context count with select/deselect - moved to left side near cell controls */}
+        <div className="flex items-center gap-2">
+          <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
+            <span className="text-green-400 font-medium">{contextCount}</span>
+            <span className="text-gray-500">/{totalCells}</span> in context
+          </div>
+          {contextCount < totalCells ? (
+            <button
+              onClick={onSelectAllContext}
+              className="px-2 py-1 text-xs rounded border border-green-500/50 text-green-400 hover:bg-green-500/20 transition-colors"
+              title="Select all cells for AI context"
+            >
+              Select All
+            </button>
+          ) : (
+            <button
+              onClick={onDeselectAllContext}
+              className="px-2 py-1 text-xs rounded border border-gray-500/50 text-gray-400 hover:bg-gray-500/20 transition-colors"
+              title="Deselect all cells from AI context"
+            >
+              Deselect All
+            </button>
+          )}
+        </div>
+
+        <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
+
+        {/* Kernel controls - icon only */}
         <button
           onClick={onRestartKernel}
-          className="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1 bg-orange-600 hover:bg-orange-500 text-white"
+          className="p-1.5 rounded-md transition-all hover:brightness-110"
+          style={{ backgroundColor: getColors('danger').bg, color: getColors('danger').text }}
           title="Restart kernel (clears all variables)"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          Restart
         </button>
 
         {/* Kernel status */}
@@ -173,13 +250,21 @@ export default function NotebookToolbar({
         <button
           onClick={onSave}
           disabled={isSaving}
-          className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
-            isSaving
-              ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
-              : isDirty
-              ? 'bg-blue-600 hover:bg-blue-500 text-white'
-              : 'bg-gray-700 text-green-400'
+          className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center gap-1.5 hover:brightness-110 ${
+            isSaving ? 'cursor-not-allowed opacity-70' : ''
           }`}
+          style={{
+            backgroundColor: isSaving
+              ? '#666'
+              : isDirty
+              ? getColors('code').bg
+              : getColors('saved').bg,
+            color: isSaving
+              ? '#ccc'
+              : isDirty
+              ? getColors('code').text
+              : getColors('saved').text,
+          }}
           title={isSaving ? 'Saving...' : isDirty ? 'Save notebook (Ctrl+S)' : 'Notebook saved'}
         >
           {isSaving ? (
@@ -219,30 +304,6 @@ export default function NotebookToolbar({
           </div>
         </div>
 
-        <div className="w-px h-6 bg-gray-600" />
-
-        {/* Context count */}
-        <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
-          <span className="text-green-400 font-medium">{contextCount}</span> cells in AI context
-        </div>
-
-        {/* Summarize button - AI Sparkles icon */}
-        <button
-          onClick={onSummarize}
-          disabled={isSummarizing}
-          className="px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-500 hover:to-pink-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Generate AI summary of notebook"
-        >
-          {isSummarizing ? (
-            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
-            </svg>
-          )}
-          <span className="text-sm font-medium">Summarize</span>
-        </button>
-
         {/* Export button */}
         <button
           onClick={onExport}
@@ -257,6 +318,21 @@ export default function NotebookToolbar({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
           )}
+        </button>
+
+        {/* Chat toggle button */}
+        <button
+          onClick={onToggleChat}
+          className={`p-2 rounded-md transition-colors flex items-center justify-center ${
+            showChat
+              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
+          }`}
+          title={showChat ? 'Hide AI Chat' : 'Show AI Chat'}
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
         </button>
       </div>
     </div>

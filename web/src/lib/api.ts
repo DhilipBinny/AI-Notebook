@@ -1,14 +1,7 @@
 import axios from 'axios'
 import type { User, Project, Playground, AuthTokens, ChatMessage } from '@/types'
 
-// Types for chat API
-interface CellContext {
-  id: string
-  type: string
-  content: string
-  output?: string
-  cell_number?: number
-}
+// Types for chat API - now just cell IDs (backend loads content from S3)
 
 interface PendingToolCall {
   id: string
@@ -193,13 +186,13 @@ export const chat = {
   sendMessage: async (
     projectId: string,
     message: string,
-    context: CellContext[],
+    contextCellIds: string[],
     toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
     llmProvider: string = 'gemini'
   ): Promise<ChatResponse> => {
     const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}`, {
       message,
-      context,
+      context_cell_ids: contextCellIds,
     })
     return data
   },

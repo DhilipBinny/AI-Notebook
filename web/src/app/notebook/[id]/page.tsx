@@ -113,6 +113,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           metadata: cell.metadata,
         }))
         setCells(loadedCells)
+        // Auto-add any new cells to context (keep existing context, add new ones)
+        setContextCellIds((prev) => {
+          const newIds = new Set(prev)
+          loadedCells.forEach(c => newIds.add(c.id))
+          return newIds
+        })
         setDirty(false)
         console.log('Notebook reloaded from S3 after LLM update')
       }
@@ -171,13 +177,19 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               metadata: cell.metadata,
             }))
             setCells(loadedCells)
+            // Auto-add all loaded cells to context
+            setContextCellIds(new Set(loadedCells.map(c => c.id)))
           } else {
             // Initialize with one empty code cell if none
-            setCells([createCell('code')])
+            const newCell = createCell('code')
+            setCells([newCell])
+            setContextCellIds(new Set([newCell.id]))
           }
         } catch {
           // No notebook yet, start with empty cell
-          setCells([createCell('code')])
+          const newCell = createCell('code')
+          setCells([newCell])
+          setContextCellIds(new Set([newCell.id]))
         }
 
         // Load chat history
@@ -260,6 +272,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const selectedIndex = cells.findIndex((c) => c.id === selectedCellId)
     addCell(newCell, selectedIndex >= 0 ? selectedIndex + 1 : undefined)
     setSelectedCellId(newCell.id)
+    // Auto-add new cell to context
+    setContextCellIds((prev) => new Set([...prev, newCell.id]))
   }, [cells, selectedCellId, addCell])
 
   // Insert cell at specific position (used by insert buttons between cells)
@@ -267,6 +281,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const newCell = createCell(type)
     addCell(newCell, index)
     setSelectedCellId(newCell.id)
+    // Auto-add new cell to context
+    setContextCellIds((prev) => new Set([...prev, newCell.id]))
   }, [addCell])
 
   const handleRunCell = useCallback((cellId: string) => {
@@ -329,6 +345,15 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       },
     })
   }, [cells.length])
+
+  // Select/Deselect all cells for AI context
+  const handleSelectAllContext = useCallback(() => {
+    setContextCellIds(new Set(cells.map(c => c.id)))
+  }, [cells])
+
+  const handleDeselectAllContext = useCallback(() => {
+    setContextCellIds(new Set())
+  }, [])
 
   const handleSave = useCallback(async () => {
     if (!currentProject) return
@@ -417,6 +442,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         // Add the cell at the beginning
         addCell(summaryCell, 0)
         setSelectedCellId(summaryCell.id)
+        // Note: Summary cell is NOT auto-added to context (user can manually add if needed)
 
         console.log('Summary generated and added to notebook')
       } else {
@@ -455,18 +481,25 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     })
   }, [])
 
-  const handleRestartKernel = useCallback(async () => {
-    if (confirm('Restart kernel? This will clear all variables.')) {
-      const success = await kernel.restart()
-      if (success) {
-        // Clear execution counts
-        cells.forEach((cell) => {
-          if (cell.type === 'code') {
-            updateCell(cell.id, { execution_count: undefined })
-          }
-        })
-      }
-    }
+  const handleRestartKernel = useCallback(() => {
+    setConfirmPopup({
+      title: 'Restart Kernel',
+      message: 'Are you sure you want to restart the kernel?\n\nThis will clear all variables and execution state. Any unsaved data in memory will be lost.',
+      confirmText: 'Restart',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        setConfirmPopup(null)
+        const success = await kernel.restart()
+        if (success) {
+          // Clear execution counts
+          cells.forEach((cell) => {
+            if (cell.type === 'code') {
+              updateCell(cell.id, { execution_count: undefined })
+            }
+          })
+        }
+      },
+    })
   }, [kernel, cells, updateCell])
 
   // Handle LLM provider change (local state only, not persisted)
@@ -508,26 +541,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         await saveNotebook()
       }
 
-      // Build context from selected cells only (lightweight)
-      const contextCells = cells
-        .filter((c) => contextCellIds.has(c.id))
-        .map((c) => ({
-          cell_id: c.id,  // Frontend id is derived from metadata.cell_id
-          type: c.type,
-          content: c.source,
-          output: c.outputs
-            ?.map((o) => {
-              if (o.output_type === 'stream') return Array.isArray(o.text) ? o.text.join('') : o.text
-              if (o.output_type === 'error') return `${o.ename}: ${o.evalue}`
-              return ''
-            })
-            .filter(Boolean)
-            .join('\n'),
-          cell_number: cells.findIndex((cell) => cell.id === c.id) + 1,
-        }))
+      // Send only cell IDs - backend loads content from S3
+      const selectedCellIds = Array.from(contextCellIds)
 
-      // Call chat API - LLM tools will fetch notebook data from Master API (S3)
-      const response = await chat.sendMessage(projectId, message, contextCells, toolMode, llmProvider)
+      // Call chat API - backend loads cell content from S3 notebook
+      const response = await chat.sendMessage(projectId, message, selectedCellIds, toolMode, llmProvider)
 
       if (response.success) {
         // Handle pending tools
@@ -800,22 +818,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           {isDirty && <span className="text-amber-400 text-sm flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> Unsaved</span>}
         </div>
         <div className="flex items-center gap-3">
-          {/* Chat toggle button */}
-          <button
-            onClick={() => setShowChat(!showChat)}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all ${
-              showChat
-                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-            }`}
-            title={showChat ? 'Hide AI Chat' : 'Show AI Chat'}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            {showChat ? 'Hide Chat' : 'Show Chat'}
-          </button>
-
           {/* Playground controls */}
           {playground?.status === 'running' ? (
             <>
@@ -870,14 +872,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onDeleteAllCells={handleDeleteAllCells}
         onSave={handleSave}
         onExport={handleExport}
-        onSummarize={handleSummarize}
         isExporting={isExporting}
-        isSummarizing={isSummarizing}
         contextCount={contextCellIds.size}
+        totalCells={cells.length}
+        onSelectAllContext={handleSelectAllContext}
+        onDeselectAllContext={handleDeselectAllContext}
         isDirty={isDirty}
         isSaving={isSaving}
         kernelStatus={kernel.status}
         onRestartKernel={handleRestartKernel}
+        showChat={showChat}
+        onToggleChat={() => setShowChat(!showChat)}
       />
 
       {/* Main content */}
@@ -979,6 +984,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               onEditMessage={handleEditMessage}
               onRerunMessage={handleRerunMessage}
               onClearHistory={handleClearHistory}
+              onSummarize={handleSummarize}
+              isSummarizing={isSummarizing}
             />
           </div>
         )}

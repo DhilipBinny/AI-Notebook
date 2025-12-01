@@ -155,10 +155,10 @@ class ChatService:
             )
 
         try:
-            # Convert context to playground format
+            # Convert context to playground format (playground expects 'id' not 'cell_id')
             context_list = [
                 {
-                    "cell_id": cell.cell_id,
+                    "id": cell.cell_id,
                     "type": cell.type,
                     "content": cell.content,
                     "output": cell.output,

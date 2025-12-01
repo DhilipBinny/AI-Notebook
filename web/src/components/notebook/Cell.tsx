@@ -206,7 +206,7 @@ export default function Cell({
         isSelected
           ? 'ring-2 ring-[var(--nb-border-selected)]'
           : 'hover:ring-1 hover:ring-[var(--nb-border-default)]'
-      } ${isInContext ? 'ring-2 ring-[var(--nb-accent-success)]/50' : ''}`}
+      }`}
       onClick={onSelect}
       style={{
         backgroundColor: cell.type === 'code'
@@ -215,16 +215,23 @@ export default function Cell({
         borderColor: 'var(--nb-border-default)',
       }}
     >
-      {/* Cell Header */}
+      {/* Cell content wrapper - left border for context highlight (excludes output) */}
       <div
-        className="flex items-center justify-between px-3 py-2"
         style={{
-          borderBottom: '1px solid var(--nb-border-default)',
-          backgroundColor: cell.type === 'code'
-            ? 'var(--nb-bg-code-cell)'
-            : 'var(--nb-bg-markdown-cell)',
+          borderLeft: isInContext ? '4px solid var(--nb-accent-success)' : 'none',
+          paddingLeft: isInContext ? '0' : '4px',  // Maintain consistent spacing
         }}
       >
+        {/* Cell Header */}
+        <div
+          className="flex items-center justify-between px-3 py-2"
+          style={{
+            borderBottom: '1px solid var(--nb-border-default)',
+            backgroundColor: cell.type === 'code'
+              ? 'var(--nb-bg-code-cell)'
+              : 'var(--nb-bg-markdown-cell)',
+          }}
+        >
         <div className="flex items-center gap-3">
           {/* Context checkbox */}
           <input
@@ -392,6 +399,8 @@ export default function Cell({
           />
         )}
       </div>
+      </div>
+      {/* End of cell content wrapper - output below is NOT highlighted */}
 
       {/* Cell Output */}
       {cell.type === 'code' && cell.outputs && cell.outputs.length > 0 && (

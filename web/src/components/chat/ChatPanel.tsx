@@ -25,6 +25,36 @@ interface ChatPanelProps {
   onEditMessage: (index: number, newContent: string) => void
   onRerunMessage: (index: number) => void
   onClearHistory: () => void
+  onSummarize: () => void
+  isSummarizing: boolean
+}
+
+// Theme-aware colors for chat panel
+const themeColors = {
+  dark: {
+    panelBg: '#1a1a2e',
+    headerBg: 'linear-gradient(to right, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.5))',
+    messagesBg: '#1a1a2e',
+    inputBg: 'rgba(30, 41, 59, 0.5)',
+    assistantBubble: 'rgba(31, 41, 55, 0.8)',
+    border: 'rgba(75, 85, 99, 0.5)',
+  },
+  light: {
+    panelBg: '#f8fafc',
+    headerBg: 'linear-gradient(to right, rgba(241, 245, 249, 0.9), rgba(226, 232, 240, 0.9))',
+    messagesBg: '#f1f5f9',
+    inputBg: 'rgba(241, 245, 249, 0.8)',
+    assistantBubble: '#ffffff',
+    border: 'rgba(203, 213, 225, 0.8)',
+  },
+  monokai: {
+    panelBg: '#272822',
+    headerBg: 'linear-gradient(to right, rgba(39, 40, 34, 0.9), rgba(30, 31, 28, 0.9))',
+    messagesBg: '#272822',
+    inputBg: 'rgba(39, 40, 34, 0.8)',
+    assistantBubble: 'rgba(39, 40, 34, 0.9)',
+    border: 'rgba(117, 113, 94, 0.5)',
+  },
 }
 
 export default function ChatPanel({
@@ -42,6 +72,8 @@ export default function ChatPanel({
   onEditMessage,
   onRerunMessage,
   onClearHistory,
+  onSummarize,
+  isSummarizing,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
@@ -49,6 +81,8 @@ export default function ChatPanel({
   const [editContent, setEditContent] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { theme } = useTheme()
+  const colors = themeColors[theme]
 
   // Auto-resize textarea based on content
   const adjustTextareaHeight = () => {
@@ -63,7 +97,6 @@ export default function ChatPanel({
   useEffect(() => {
     adjustTextareaHeight()
   }, [input])
-  const { theme } = useTheme()
 
   // Initialize selected tools when pending tools change
   useEffect(() => {
@@ -189,16 +222,21 @@ export default function ChatPanel({
     navigator.clipboard.writeText(text)
   }
 
+  // Text colors based on theme
+  const textPrimary = theme === 'light' ? '#1e293b' : '#ffffff'
+  const textSecondary = theme === 'light' ? '#475569' : '#9ca3af'
+  const textMuted = theme === 'light' ? '#64748b' : '#6b7280'
+
   return (
     <div
       className="flex flex-col h-full"
       style={{
-        backgroundColor: 'var(--nb-bg-secondary)',
-        borderLeft: '1px solid var(--nb-border-default)',
+        backgroundColor: colors.panelBg,
+        borderLeft: `1px solid ${colors.border}`,
       }}
     >
       {/* Header */}
-      <div className="p-4 bg-gradient-to-r from-slate-800/50 to-slate-900/50 backdrop-blur-sm" style={{ borderBottom: '1px solid var(--nb-border-default)' }}>
+      <div className="p-4 backdrop-blur-sm" style={{ background: colors.headerBg, borderBottom: `1px solid ${colors.border}` }}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
@@ -206,13 +244,30 @@ export default function ChatPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
             </div>
-            <h2 className="text-base font-semibold text-white">AI Assistant</h2>
+            <h2 className="text-base font-semibold" style={{ color: textPrimary }}>AI Assistant</h2>
           </div>
           <div className="flex items-center gap-2">
+            {/* Summarize button */}
+            <button
+              onClick={onSummarize}
+              disabled={isSummarizing}
+              className="text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              title="Generate AI summary of notebook"
+            >
+              {isSummarizing ? (
+                <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+                </svg>
+              )}
+              Summarize
+            </button>
             <select
               value={llmProvider}
               onChange={(e) => onProviderChange(e.target.value)}
-              className="text-xs rounded-md px-2.5 py-1.5 bg-white/5 border border-white/10 text-gray-300 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+              className="text-xs rounded-md px-2.5 py-1.5 border focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+              style={{ backgroundColor: theme === 'light' ? '#fff' : 'rgba(255,255,255,0.05)', borderColor: colors.border, color: textSecondary }}
             >
               <option value="ollama">Ollama</option>
               <option value="gemini">Gemini</option>
@@ -221,7 +276,8 @@ export default function ChatPanel({
             </select>
             <button
               onClick={onClearHistory}
-              className="text-xs px-2.5 py-1.5 rounded-md text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+              className="text-xs px-2.5 py-1.5 rounded-md hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+              style={{ color: textMuted }}
               title="Clear chat history"
             >
               Clear
@@ -251,7 +307,7 @@ export default function ChatPanel({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundColor: 'var(--nb-bg-secondary)' }}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundColor: colors.messagesBg }}>
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-12">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500/20 to-teal-500/20 border border-blue-500/20 flex items-center justify-center">
@@ -259,9 +315,9 @@ export default function ChatPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-white mb-2">Welcome!</h3>
-            <p className="text-gray-400 mb-4">I can help with your notebook:</p>
-            <div className="inline-flex flex-col items-start text-sm text-gray-500 space-y-2 bg-white/5 rounded-xl p-4 border border-white/5">
+            <h3 className="text-lg font-medium mb-2" style={{ color: textPrimary }}>Welcome!</h3>
+            <p className="mb-4" style={{ color: textSecondary }}>I can help with your notebook:</p>
+            <div className="inline-flex flex-col items-start text-sm space-y-2 rounded-xl p-4" style={{ backgroundColor: theme === 'light' ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)', border: `1px solid ${colors.border}`, color: textSecondary }}>
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs">?</span>
                 <span>Answer questions about selected cells</span>
@@ -279,7 +335,7 @@ export default function ChatPanel({
                 <span>Create documentation</span>
               </div>
             </div>
-            <p className="text-xs mt-6 text-gray-600">
+            <p className="text-xs mt-6" style={{ color: textMuted }}>
               Select cells with checkboxes to include in context.
             </p>
           </div>
@@ -314,8 +370,13 @@ export default function ChatPanel({
                   className={`rounded-2xl px-4 py-2.5 shadow-lg ${
                     msg.role === 'user'
                       ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-tr-md'
-                      : 'bg-gray-800/80 border border-gray-700/50 text-gray-100 rounded-tl-md'
+                      : 'rounded-tl-md'
                   }`}
+                  style={msg.role === 'assistant' ? {
+                    backgroundColor: colors.assistantBubble,
+                    border: `1px solid ${colors.border}`,
+                    color: textPrimary,
+                  } : undefined}
                 >
                   {editingIndex === idx ? (
                     <div className="min-w-[200px]">
@@ -486,7 +547,7 @@ export default function ChatPanel({
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 bg-gradient-to-t from-slate-900/50 to-transparent" style={{ borderTop: '1px solid var(--nb-border-default)' }}>
+      <form onSubmit={handleSubmit} className="p-4" style={{ background: colors.inputBg, borderTop: `1px solid ${colors.border}` }}>
         <div className="flex gap-3 items-end">
           <div className="flex-1 relative">
             <textarea
@@ -495,10 +556,13 @@ export default function ChatPanel({
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask AI for help... (Enter to send, Shift+Enter for new line)"
-              className="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all bg-gray-800/50 border border-gray-700/50 text-white placeholder-gray-500"
+              className="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
               style={{
                 minHeight: '80px',
                 maxHeight: '300px',
+                backgroundColor: theme === 'light' ? '#fff' : 'rgba(31, 41, 55, 0.5)',
+                border: `1px solid ${colors.border}`,
+                color: textPrimary,
               }}
               disabled={isLoading}
             />
