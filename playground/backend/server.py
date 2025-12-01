@@ -209,6 +209,43 @@ async def get_tool_mode(authorized: bool = Depends(verify_internal_secret)):
     }
 
 
+class LLMCompleteRequest(BaseModel):
+    prompt: str
+    max_tokens: int = 1000
+
+
+@app.post("/llm/complete")
+async def llm_complete(
+    request: LLMCompleteRequest,
+    authorized: bool = Depends(verify_internal_secret)
+):
+    """
+    Simple text completion without tools.
+    Used for summarization and other simple LLM tasks.
+    """
+    try:
+        log_debug_message(f"LLM complete request: {request.prompt[:200]}...")
+
+        # Use LLMClient's chat_completion method
+        client = LLMClient()
+        response_text = client.chat_completion(request.prompt, request.max_tokens)
+
+        log_debug_message(f"LLM complete response: {response_text[:200]}...")
+
+        return {
+            "success": True,
+            "response": response_text,
+        }
+
+    except Exception as e:
+        log_debug_message(f"LLM complete error: {e}")
+        return {
+            "success": False,
+            "response": "",
+            "error": str(e),
+        }
+
+
 # === Chat Endpoints ===
 # Note: Notebook sync endpoint removed - LLM tools now fetch from Master API directly
 

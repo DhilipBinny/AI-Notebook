@@ -248,6 +248,11 @@ export const notebooks = {
     const { data } = await api.post(`/projects/${projectId}/notebook/import`, { ipynb_data: ipynbData })
     return data
   },
+
+  summarize: async (projectId: string, llmProvider: string = 'gemini'): Promise<{ success: boolean; summary: string; error?: string }> => {
+    const { data } = await api.post(`/projects/${projectId}/notebook/summarize?llm_provider=${llmProvider}`)
+    return data
+  },
   // Note: syncToPlayground removed - LLM tools now fetch from Master API directly
 }
 

@@ -96,3 +96,18 @@ you are prohibited from performing actions that could compromise system security
     def provider_name(self) -> str:
         """Return the name of the LLM provider"""
         pass
+
+    @abstractmethod
+    def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
+        """
+        Simple chat completion without tools.
+        Used for summarization and other simple LLM tasks.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            The response text from the LLM
+        """
+        pass

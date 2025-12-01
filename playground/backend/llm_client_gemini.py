@@ -256,3 +256,24 @@ class GeminiClient(BaseLLMClient):
     @property
     def provider_name(self) -> str:
         return "Gemini"
+
+    def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
+        """
+        Simple chat completion without tools.
+        Used for summarization and other simple LLM tasks.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            max_tokens: Maximum tokens in response (not used by Gemini directly)
+
+        Returns:
+            The response text from the LLM
+        """
+        try:
+            # Create a simple model without tools for completion
+            simple_model = genai.GenerativeModel(cfg.GEMINI_MODEL)
+            response = simple_model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            log_debug_message(f"Gemini chat_completion error: {e}")
+            raise

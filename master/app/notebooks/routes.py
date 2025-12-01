@@ -6,11 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime, timezone
+import httpx
+import logging
 
 from app.db.session import get_db
 from app.auth.dependencies import get_current_active_user
 from app.users.models import User
 from app.projects.service import ProjectService
+from app.playgrounds.service import PlaygroundService
+from app.playgrounds.models import PlaygroundStatus
 from .s3_client import s3_client
 from .schemas import (
     NotebookData,
@@ -21,7 +25,8 @@ from .schemas import (
     NotebookImportRequest,
 )
 import uuid
-# Note: NotebookSyncRequest, PlaygroundService, httpx removed - sync endpoint deprecated
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/notebook", tags=["Notebooks"])
 
@@ -331,6 +336,145 @@ async def import_notebook(
         "size_bytes": result["size_bytes"],
         "cells_imported": len(cells),
     }
+
+
+@router.post("/summarize")
+async def summarize_notebook(
+    project_id: str,
+    llm_provider: str = "gemini",
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate an AI summary of the notebook.
+
+    Collects all cell contents (code and markdown, excluding outputs),
+    sends them to the LLM for summarization, and returns the summary.
+
+    Args:
+        project_id: Project ID
+        llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+
+    Returns:
+        Dict with success status and summary text
+    """
+    # Verify project ownership
+    project_service = ProjectService(db)
+    project = await project_service.get_by_id_for_user(project_id, current_user.id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    # Check if playground is running
+    playground_service = PlaygroundService(db)
+    playground = await playground_service.get_by_project_id(project_id)
+
+    if not playground or playground.status != PlaygroundStatus.RUNNING:
+        return {
+            "success": False,
+            "summary": "",
+            "error": "Playground is not running. Start the playground to use AI summarization.",
+        }
+
+    # Load notebook from S3
+    notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
+
+    if notebook_data is None or not notebook_data.get("cells"):
+        return {
+            "success": False,
+            "summary": "",
+            "error": "No notebook content found to summarize.",
+        }
+
+    # Collect cell contents (excluding outputs)
+    cell_contents = []
+    for i, cell in enumerate(notebook_data.get("cells", []), 1):
+        cell_type = cell.get("cell_type", "code")
+        source = cell.get("source", "")
+        if source.strip():
+            cell_contents.append(f"[Cell {i} - {cell_type}]\n{source}")
+
+    if not cell_contents:
+        return {
+            "success": False,
+            "summary": "",
+            "error": "All cells are empty. Add some content to summarize.",
+        }
+
+    # Build the summarization prompt
+    notebook_content = "\n\n".join(cell_contents)
+    summarize_prompt = f"""Please provide a concise summary of this Jupyter notebook.
+Include:
+- The main purpose/goal of the notebook
+- Key operations or analyses performed
+- Important libraries or tools used
+- Main findings or outputs (if apparent from the code)
+
+Keep the summary clear and under 300 words.
+
+Notebook content:
+{notebook_content}"""
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Set the LLM provider
+            await client.post(
+                f"{playground.internal_url}/llm/provider",
+                headers={"X-Internal-Secret": playground.internal_secret},
+                json={"provider": llm_provider},
+                timeout=10,
+            )
+
+            # Call the playground's simple completion endpoint (no tools)
+            response = await client.post(
+                f"{playground.internal_url}/llm/complete",
+                headers={"X-Internal-Secret": playground.internal_secret},
+                json={
+                    "prompt": summarize_prompt,
+                    "max_tokens": 1000,
+                },
+                timeout=60,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"LLM completion failed: {response.text}")
+                return {
+                    "success": False,
+                    "summary": "",
+                    "error": f"Failed to generate summary: {response.text}",
+                }
+
+            data = response.json()
+            summary = data.get("response", "")
+
+            if not summary:
+                return {
+                    "success": False,
+                    "summary": "",
+                    "error": "LLM returned empty response.",
+                }
+
+            return {
+                "success": True,
+                "summary": summary,
+            }
+
+    except httpx.TimeoutException:
+        return {
+            "success": False,
+            "summary": "",
+            "error": "Request timed out. The LLM may be taking too long to respond.",
+        }
+    except Exception as e:
+        logger.error(f"Summarize error: {e}")
+        return {
+            "success": False,
+            "summary": "",
+            "error": str(e),
+        }
 
 
 # Note: /sync endpoint removed - LLM tools now fetch from /api/internal/notebook/* endpoints directly

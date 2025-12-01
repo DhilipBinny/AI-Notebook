@@ -370,3 +370,26 @@ class AnthropicClient(BaseLLMClient):
     @property
     def provider_name(self) -> str:
         return "Anthropic"
+
+    def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
+        """
+        Simple chat completion without tools.
+        Used for summarization and other simple LLM tasks.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            The response text from the LLM
+        """
+        try:
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except Exception as e:
+            log_debug_message(f"Anthropic chat_completion error: {e}")
+            raise

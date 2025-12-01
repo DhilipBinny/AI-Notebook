@@ -112,3 +112,6 @@ class LLMClient(BaseLLMClient):
     @property
     def provider_name(self) -> str:
         return self._client.provider_name
+
+    def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
+        return self._client.chat_completion(prompt, max_tokens)
