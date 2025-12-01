@@ -153,9 +153,9 @@ async def delete_project(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Delete a project permanently.
+    Soft delete a project.
 
-    This will stop any running playground and delete all associated data.
+    The project will be marked as deleted but data is preserved in the database.
     """
     project_service = ProjectService(db)
     project = await project_service.get_by_id_for_user(
@@ -170,10 +170,8 @@ async def delete_project(
             detail="Project not found",
         )
 
-    # TODO: Stop playground if running
-    # TODO: Delete notebook from S3
-
-    await project_service.delete(project)
+    # Soft delete - just mark as deleted, preserve data
+    await project_service.soft_delete(project)
 
 
 @router.post("/{project_id}/archive", response_model=ProjectResponse)

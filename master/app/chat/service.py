@@ -1,7 +1,8 @@
 """
 Chat service - handles LLM interactions and message persistence.
 
-Uses S3/MinIO JSON storage for chat history (like the original backend).
+Uses S3/MinIO JSON storage for chat history with the new folder structure:
+    {mm-yyyy}/{project_id}/chats/default.json
 """
 
 from typing import Optional, List, Dict, Any
@@ -9,7 +10,7 @@ from datetime import datetime
 import logging
 import httpx
 
-from .s3_history import chat_history_client
+from .s3_history import chat_history_client, DEFAULT_CHAT_ID
 from .schemas import CellContext, ChatResponse, LLMStep, PendingToolCall
 from app.projects.models import Project
 from app.playgrounds.models import Playground, PlaygroundStatus
@@ -20,40 +21,42 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Service for chat operations and LLM interaction."""
 
-    def __init__(self, user_id: str):
+    def __init__(self, storage_month: str):
         """
         Initialize chat service.
 
         Args:
-            user_id: Current user's ID (for S3 path)
+            storage_month: Project's storage month folder (mm-yyyy)
         """
-        self.user_id = user_id
+        self.storage_month = storage_month
         self.history_client = chat_history_client
 
-    def get_history(self, project_id: str) -> List[Dict[str, Any]]:
+    def get_history(self, project_id: str, chat_id: str = DEFAULT_CHAT_ID) -> List[Dict[str, Any]]:
         """
         Get chat history for a project.
 
         Args:
             project_id: Project ID
+            chat_id: Chat ID (default: "default")
 
         Returns:
             List of message dicts with role, content, timestamp, steps
         """
-        return self.history_client.load_history(self.user_id, project_id)
+        return self.history_client.load_history(self.storage_month, project_id, chat_id)
 
-    def save_history(self, project_id: str, messages: List[Dict[str, Any]]) -> bool:
+    def save_history(self, project_id: str, messages: List[Dict[str, Any]], chat_id: str = DEFAULT_CHAT_ID) -> bool:
         """
         Save chat history for a project.
 
         Args:
             project_id: Project ID
             messages: List of message dicts
+            chat_id: Chat ID (default: "default")
 
         Returns:
             True if successful
         """
-        return self.history_client.save_history(self.user_id, project_id, messages)
+        return self.history_client.save_history(self.storage_month, project_id, messages, chat_id)
 
     def add_message(
         self,
@@ -61,6 +64,7 @@ class ChatService:
         role: str,
         content: str,
         steps: Optional[List[Dict[str, Any]]] = None,
+        chat_id: str = DEFAULT_CHAT_ID,
     ) -> bool:
         """
         Add a message to chat history.
@@ -70,17 +74,34 @@ class ChatService:
             role: 'user' or 'assistant'
             content: Message content
             steps: Optional LLM steps (tool calls, results)
+            chat_id: Chat ID (default: "default")
 
         Returns:
             True if successful
         """
         return self.history_client.add_message(
-            self.user_id, project_id, role, content, steps
+            self.storage_month, project_id, role, content, steps, chat_id
         )
 
-    def clear_history(self, project_id: str) -> bool:
-        """Clear chat history for a project."""
-        return self.history_client.clear_history(self.user_id, project_id)
+    def clear_history(self, project_id: str, chat_id: str = DEFAULT_CHAT_ID) -> bool:
+        """Clear chat history for a project/chat."""
+        return self.history_client.clear_history(self.storage_month, project_id, chat_id)
+
+    def list_chats(self, project_id: str) -> List[Dict[str, Any]]:
+        """List all chats for a project."""
+        return self.history_client.list_chats(self.storage_month, project_id)
+
+    def create_chat(self, project_id: str, name: Optional[str] = None) -> Optional[str]:
+        """Create a new chat for a project. Returns chat_id or None."""
+        return self.history_client.create_chat(self.storage_month, project_id, name)
+
+    def rename_chat(self, project_id: str, chat_id: str, new_name: str) -> bool:
+        """Rename a chat."""
+        return self.history_client.rename_chat(self.storage_month, project_id, chat_id, new_name)
+
+    def delete_chat(self, project_id: str, chat_id: str) -> bool:
+        """Delete a chat (cannot delete default chat)."""
+        return self.history_client.delete_chat(self.storage_month, project_id, chat_id)
 
     async def send_message(
         self,
@@ -89,12 +110,14 @@ class ChatService:
         message: str,
         context: List[CellContext],
         tool_mode: str = "manual",
+        llm_provider: str = "gemini",
+        chat_id: str = DEFAULT_CHAT_ID,
     ) -> ChatResponse:
         """
         Send a message to the LLM via the playground container.
 
         The playground container handles:
-        - LLM provider selection based on project settings
+        - LLM provider selection
         - Tool execution (kernel, notebook cells, etc.)
         - Streaming responses
 
@@ -104,12 +127,14 @@ class ChatService:
             message: User message
             context: Selected cells as context
             tool_mode: "auto", "manual", or "ai_decide"
+            llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+            chat_id: Chat ID (default: "default")
 
         Returns:
             ChatResponse with LLM response
         """
         # Load existing history
-        stored_messages = self.get_history(project.id)
+        stored_messages = self.get_history(project.id, chat_id)
 
         # Add user message to history
         user_message = {
@@ -122,7 +147,7 @@ class ChatService:
         # Check if playground is running
         if not playground or playground.status != PlaygroundStatus.RUNNING:
             # Save user message even if playground not running
-            self.save_history(project.id, stored_messages)
+            self.save_history(project.id, stored_messages, chat_id)
             return ChatResponse(
                 success=False,
                 response="",
@@ -133,7 +158,7 @@ class ChatService:
             # Convert context to playground format
             context_list = [
                 {
-                    "id": cell.id,
+                    "cell_id": cell.cell_id,
                     "type": cell.type,
                     "content": cell.content,
                     "output": cell.output,
@@ -150,11 +175,11 @@ class ChatService:
 
             # Call playground's chat endpoint
             async with httpx.AsyncClient() as client:
-                # First, set the LLM provider based on project settings
+                # First, set the LLM provider
                 await client.post(
                     f"{playground.internal_url}/llm/provider",
                     headers={"X-Internal-Secret": playground.internal_secret},
-                    json={"provider": project.llm_provider.value},
+                    json={"provider": llm_provider},
                     timeout=10,
                 )
 
@@ -183,7 +208,7 @@ class ChatService:
 
                 if response.status_code != 200:
                     # Save user message even on error
-                    self.save_history(project.id, stored_messages)
+                    self.save_history(project.id, stored_messages, chat_id)
                     return ChatResponse(
                         success=False,
                         response="",
@@ -210,10 +235,10 @@ class ChatService:
                 if steps:
                     assistant_message["steps"] = [s.model_dump() for s in steps]
                 stored_messages.append(assistant_message)
-                self.save_history(project.id, stored_messages)
+                self.save_history(project.id, stored_messages, chat_id)
             else:
                 # Save just the user message for now
-                self.save_history(project.id, stored_messages)
+                self.save_history(project.id, stored_messages, chat_id)
 
             return ChatResponse(
                 success=True,
@@ -224,7 +249,7 @@ class ChatService:
             )
 
         except httpx.TimeoutException:
-            self.save_history(project.id, stored_messages)
+            self.save_history(project.id, stored_messages, chat_id)
             return ChatResponse(
                 success=False,
                 response="",
@@ -232,7 +257,7 @@ class ChatService:
             )
         except Exception as e:
             logger.error(f"Chat error: {e}")
-            self.save_history(project.id, stored_messages)
+            self.save_history(project.id, stored_messages, chat_id)
             return ChatResponse(
                 success=False,
                 response="",
@@ -244,6 +269,7 @@ class ChatService:
         project: Project,
         playground: Playground,
         approved_tools: List[PendingToolCall],
+        chat_id: str = DEFAULT_CHAT_ID,
     ) -> ChatResponse:
         """
         Execute approved tool calls.
@@ -252,6 +278,7 @@ class ChatService:
             project: Project instance
             playground: Running playground
             approved_tools: Tools approved by user
+            chat_id: Chat ID (default: "default")
 
         Returns:
             ChatResponse with results
@@ -293,7 +320,7 @@ class ChatService:
 
             # Save assistant response if complete
             if not pending_tools and response_text:
-                stored_messages = self.get_history(project.id)
+                stored_messages = self.get_history(project.id, chat_id)
                 assistant_message = {
                     "role": "assistant",
                     "content": response_text,
@@ -302,7 +329,7 @@ class ChatService:
                 if steps:
                     assistant_message["steps"] = [s.model_dump() for s in steps]
                 stored_messages.append(assistant_message)
-                self.save_history(project.id, stored_messages)
+                self.save_history(project.id, stored_messages, chat_id)
 
             return ChatResponse(
                 success=True,

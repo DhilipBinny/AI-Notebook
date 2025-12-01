@@ -7,6 +7,7 @@ interface NotebookToolbarProps {
   onAddMarkdown: () => void
   onRunAll: () => void
   onClearOutputs: () => void
+  onDeleteAllCells: () => void
   onSave: () => void
   onExport: () => void
   isExporting: boolean
@@ -28,6 +29,7 @@ export default function NotebookToolbar({
   onAddMarkdown,
   onRunAll,
   onClearOutputs,
+  onDeleteAllCells,
   onSave,
   onExport,
   isExporting,
@@ -83,8 +85,18 @@ export default function NotebookToolbar({
         <button
           onClick={onClearOutputs}
           className="px-3 py-1.5 text-sm rounded-md transition-colors bg-gray-600 hover:bg-gray-500 text-white"
+          title="Clear all cell outputs"
         >
           Clear Outputs
+        </button>
+        <button
+          onClick={onDeleteAllCells}
+          className="p-1.5 rounded-md transition-colors bg-red-600/80 hover:bg-red-500 text-white"
+          title="Delete all cells"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
         </button>
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
@@ -114,6 +126,71 @@ export default function NotebookToolbar({
           />
           <span className="text-xs capitalize" style={{ color: 'var(--nb-text-muted)' }}>{kernelStatus}</span>
         </div>
+
+        {/* Keyboard shortcuts button with hover tooltip */}
+        <div className="relative group ml-2">
+          <button
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+            title="Keyboard shortcuts"
+          >
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span className="text-xs text-gray-400">Shortcuts</span>
+          </button>
+
+          {/* Dropdown on hover */}
+          <div className="absolute top-full left-0 mt-1 w-56 py-2 rounded-lg bg-gray-800 border border-gray-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b border-gray-700 mb-1">Keyboard Shortcuts</div>
+
+            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
+              <span className="text-sm text-gray-300">Run cell</span>
+              <div className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Shift</kbd>
+                <span className="text-[10px] text-gray-500">+</span>
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Enter</kbd>
+              </div>
+            </div>
+
+            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
+              <span className="text-sm text-gray-300">Save notebook</span>
+              <div className="flex items-center gap-1">
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
+                <span className="text-[10px] text-gray-500">+</span>
+                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">S</kbd>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
+
+        {/* Save status button */}
+        <button
+          onClick={onSave}
+          disabled={isSaving}
+          className={`px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+            isSaving
+              ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
+              : isDirty
+              ? 'bg-blue-600 hover:bg-blue-500 text-white'
+              : 'bg-gray-700 text-green-400'
+          }`}
+          title={isSaving ? 'Saving...' : isDirty ? 'Save notebook (Ctrl+S)' : 'Notebook saved'}
+        >
+          {isSaving ? (
+            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          ) : isDirty ? (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+          {isSaving ? 'Saving...' : isDirty ? 'Save' : 'Saved'}
+        </button>
       </div>
 
       <div className="flex items-center gap-4">
@@ -144,26 +221,6 @@ export default function NotebookToolbar({
         <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
           <span className="text-green-400 font-medium">{contextCount}</span> cells in AI context
         </div>
-
-        {/* Save button */}
-        <button
-          onClick={onSave}
-          disabled={isSaving}
-          className={`p-2 rounded-md transition-colors flex items-center justify-center ${
-            isDirty
-              ? 'bg-blue-600 hover:bg-blue-500 text-white'
-              : 'bg-gray-600 text-gray-300'
-          } ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
-          title={isSaving ? 'Saving...' : isDirty ? 'Save notebook (Ctrl+S)' : 'Notebook saved'}
-        >
-          {isSaving ? (
-            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-            </svg>
-          )}
-        </button>
 
         {/* Export button */}
         <button

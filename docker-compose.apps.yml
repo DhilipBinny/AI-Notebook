@@ -32,7 +32,7 @@ services:
       - web
       - master-api
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/nginx-health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -175,6 +175,8 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin123
+      # Allow console access via /minio subpath (DEVELOPMENT ONLY)
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:8001/minio
     ports:
       - "9002:9000"
       - "9003:9001"

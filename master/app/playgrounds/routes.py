@@ -2,15 +2,18 @@
 Playground API routes.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import get_db, AsyncSessionLocal
 from app.auth.dependencies import get_current_active_user
+from app.auth.jwt import verify_token
 from app.users.models import User
 from app.projects.service import ProjectService
 from .service import PlaygroundService
 from .schemas import PlaygroundResponse, PlaygroundStartResponse, PlaygroundStopResponse
+from .docker_client import docker_client
 
 router = APIRouter(tags=["Playgrounds"])
 
@@ -216,3 +219,126 @@ async def update_playground_activity(
     await playground_service.update_activity(playground)
 
     return {"message": "Activity updated"}
+
+
+@router.websocket("/projects/{project_id}/playground/logs/stream")
+async def stream_playground_logs(
+    websocket: WebSocket,
+    project_id: str,
+    token: str = Query(None),
+):
+    """
+    WebSocket endpoint for streaming container logs in real-time.
+
+    Connect with: ws://host/api/projects/{id}/playground/logs/stream?token=JWT
+    Or the token can be passed via the first message after connection.
+    """
+    await websocket.accept()
+
+    # Get token from query param or wait for first message
+    if not token:
+        try:
+            # Wait for token in first message
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            token = data
+        except asyncio.TimeoutError:
+            await websocket.close(code=4001, reason="Authentication timeout")
+            return
+
+    # Validate token
+    token_data = verify_token(token, expected_type="access")
+    if token_data is None:
+        await websocket.close(code=4002, reason="Invalid token")
+        return
+    user_id = token_data.sub
+
+    # Get playground using a new session
+    async with AsyncSessionLocal() as db:
+        project_service = ProjectService(db)
+        project = await project_service.get_by_id_for_user(project_id, user_id)
+
+        if project is None:
+            await websocket.close(code=4004, reason="Project not found")
+            return
+
+        playground_service = PlaygroundService(db)
+        playground = await playground_service.get_by_project_id(project_id)
+
+        if playground is None:
+            await websocket.close(code=4004, reason="No playground found")
+            return
+
+        container_id = playground.container_id
+
+    # Stream logs using asyncio queue to avoid blocking
+    import queue
+    from concurrent.futures import ThreadPoolExecutor
+
+    log_queue: queue.Queue = queue.Queue()
+    stop_event = asyncio.Event()
+
+    def stream_logs_sync():
+        """Synchronous function to stream Docker logs into a queue."""
+        try:
+            container = docker_client.client.containers.get(container_id)
+            log_stream = container.logs(
+                stream=True,
+                follow=True,
+                tail=0,
+                timestamps=False,
+            )
+            for log_chunk in log_stream:
+                if stop_event.is_set():
+                    break
+                if log_chunk:
+                    log_line = log_chunk.decode('utf-8').rstrip('\n')
+                    if log_line:
+                        log_queue.put(log_line)
+        except Exception as e:
+            log_queue.put(f"Error: {e}")
+        finally:
+            log_queue.put(None)  # Signal end of stream
+
+    # Start log streaming in a thread
+    loop = asyncio.get_event_loop()
+    executor = ThreadPoolExecutor(max_workers=1)
+    log_future = loop.run_in_executor(executor, stream_logs_sync)
+
+    try:
+        while True:
+            # Check for new log lines (non-blocking)
+            try:
+                log_line = log_queue.get_nowait()
+                if log_line is None:  # End of stream
+                    break
+                await websocket.send_text(log_line)
+            except queue.Empty:
+                # No logs available, wait a bit
+                await asyncio.sleep(0.1)
+
+            # Check if WebSocket is still connected
+            try:
+                # Use a short timeout to check for disconnect
+                await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=0.01
+                )
+            except asyncio.TimeoutError:
+                pass  # No message, continue
+            except WebSocketDisconnect:
+                break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_text(f"Error streaming logs: {e}")
+        except Exception:
+            pass
+    finally:
+        stop_event.set()
+        executor.shutdown(wait=False)
+        try:
+            await websocket.close()
+        except Exception:
+            pass

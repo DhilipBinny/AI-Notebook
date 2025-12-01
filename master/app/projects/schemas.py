@@ -6,8 +6,6 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
-from .models import LLMProvider
-
 
 class ProjectBase(BaseModel):
     """Base project schema."""
@@ -17,16 +15,13 @@ class ProjectBase(BaseModel):
 
 class ProjectCreate(ProjectBase):
     """Schema for creating a new project."""
-    llm_provider: LLMProvider = LLMProvider.GEMINI
-    llm_model: Optional[str] = None
+    pass
 
 
 class ProjectUpdate(BaseModel):
     """Schema for updating a project."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
-    llm_provider: Optional[LLMProvider] = None
-    llm_model: Optional[str] = None
     is_archived: Optional[bool] = None
 
 
@@ -46,8 +41,6 @@ class ProjectResponse(ProjectBase):
     id: str
     user_id: str
     storage_path: str
-    llm_provider: LLMProvider
-    llm_model: Optional[str]
     is_archived: bool
     created_at: datetime
     updated_at: datetime

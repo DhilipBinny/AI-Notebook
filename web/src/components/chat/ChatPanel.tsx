@@ -48,6 +48,21 @@ export default function ChatPanel({
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editContent, setEditContent] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-resize textarea based on content
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current
+    if (textarea) {
+      textarea.style.height = 'auto'
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 80), 300)
+      textarea.style.height = `${newHeight}px`
+    }
+  }
+
+  useEffect(() => {
+    adjustTextareaHeight()
+  }, [input])
   const { theme } = useTheme()
 
   // Initialize selected tools when pending tools change
@@ -411,17 +426,19 @@ export default function ChatPanel({
       <form onSubmit={handleSubmit} className="p-3" style={{ borderTop: '1px solid var(--nb-border-default)' }}>
         <div className="flex gap-2 items-end">
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask AI for help... (Enter to send)"
-            className="flex-1 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1"
+            className="flex-1 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 overflow-y-auto"
             style={{
               backgroundColor: 'var(--nb-bg-cell)',
               border: '1px solid var(--nb-border-default)',
               color: 'var(--nb-text-primary)',
+              minHeight: '80px',
+              maxHeight: '300px',
             }}
-            rows={2}
             disabled={isLoading}
           />
           <button

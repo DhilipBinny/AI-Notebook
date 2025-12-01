@@ -4,6 +4,12 @@ Notebook Cell Tools - Allows LLM to read and edit notebook cells
 These tools fetch notebook data from Master API (single source of truth in S3).
 The project_id is obtained from the current session.
 
+CELL IDENTIFICATION:
+- Each cell has a unique, stable cell_id (e.g., "cell-a1b2c3d4")
+- Cell IDs do NOT change when other cells are inserted/deleted
+- Always use cell_id for reliable cell targeting
+- Use get_notebook_overview() to see all cell IDs
+
 LAZY LOAD ARCHITECTURE:
 - No pre-sync needed
 - Tools call Master API on-demand
@@ -83,19 +89,28 @@ def get_notebook_overview() -> dict:
     """
     Get a high-level overview of all cells in the current notebook.
 
+    IMPORTANT: Always call this first before editing cells to get their cell_id values.
+    Cell IDs are stable identifiers that don't change when cells are inserted/deleted.
+
     Use this tool when you need to:
     - Understand the notebook structure before making changes
+    - Get the cell_id of cells you want to read or edit
     - See what cells exist and their types
     - Get a quick preview of cell contents
-    - Identify which cell to edit or investigate
 
     Returns:
         Dictionary with:
         - total_cells: Number of cells in notebook
-        - cells: List of cell summaries with index (0-based), type, and content preview (first 100 chars)
+        - cells: List of cell summaries with:
+            - id: Unique cell identifier (use this for editing!)
+            - cell_number: Position number (1-based, matches what user sees)
+            - type: "code" or "markdown"
+            - preview: First 100 chars of content
 
     Example:
-        To see what's in the notebook before improving a function, call this first.
+        1. Call get_notebook_overview() to see all cells and their IDs
+        2. User says "update cell 3" → find cell with cell_number=3, use its id
+        3. Use the cell_id from the response to read or update specific cells
     """
     log_debug_message("==> get_notebook_overview called from LLM")
 
@@ -119,9 +134,9 @@ def get_notebook_overview() -> dict:
     return result
 
 
-def get_cell_content(cell_index: int) -> dict:
+def get_cell_content(cell_id: str) -> dict:
     """
-    Read the full content of a specific cell.
+    Read the full content of a specific cell by its unique ID.
 
     Use this tool when you need to:
     - Investigate a cell's code or markdown before editing
@@ -130,25 +145,24 @@ def get_cell_content(cell_index: int) -> dict:
     - Check what a cell contains before making improvements
 
     Args:
-        cell_index: The 0-based index of the cell to read (e.g., 0 for first cell, 1 for second cell)
+        cell_id: The unique cell identifier (e.g., "cell-a1b2c3d4").
+                 Get this from get_notebook_overview().
 
     Returns:
         Dictionary with:
         - success: Whether the cell was found
-        - cell_index: The requested index
-        - cell_number: Display number (1-based)
+        - cell_id: The cell's unique identifier
+        - cell_number: Position number (1-based, matches what user sees)
         - type: Cell type ("code" or "markdown")
         - content: Full cell content
         - output: Cell output if it's a code cell that has been executed
         - error: Error message if cell not found
 
     Example:
-        To read cell at index 2 (the 3rd cell): get_cell_content(2)
+        1. First call get_notebook_overview() to find the cell_id
+        2. Then: get_cell_content("cell-a1b2c3d4")
     """
-    # Convert to int in case LLM sends float
-    cell_index = int(cell_index)
-
-    log_debug_message(f"==> get_cell_content({cell_index}) called from LLM")
+    log_debug_message(f"==> get_cell_content({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -157,12 +171,12 @@ def get_cell_content(cell_index: int) -> dict:
             "error": "No active session - cannot determine project"
         }
 
-    return _call_master_api("GET", f"/internal/notebook/{project_id}/cell/{cell_index}")
+    return _call_master_api("GET", f"/internal/notebook/{project_id}/cell/by-id/{cell_id}")
 
 
-def update_cell_content(cell_index: int, new_content: str, cell_type: Optional[str] = None) -> dict:
+def update_cell_content(cell_id: str, new_content: str, cell_type: Optional[str] = None) -> dict:
     """
-    Update the content of a specific cell (and optionally change its type).
+    Update the content of a specific cell by its unique ID.
 
     Use this tool when you need to:
     - Improve or fix code in a cell
@@ -171,30 +185,27 @@ def update_cell_content(cell_index: int, new_content: str, cell_type: Optional[s
     - Update markdown content
     - Fix bugs or add error handling
 
-    IMPORTANT: Use 0-based indexing (0 for first cell, 1 for second, etc.)
-
     Args:
-        cell_index: The 0-based index of the cell to update
+        cell_id: The unique cell identifier (e.g., "cell-a1b2c3d4").
+                 Get this from get_notebook_overview().
         new_content: The new content to replace the cell's current content
         cell_type: Optional. Change cell type ("code" or "markdown"). If not provided, keeps existing type.
 
     Returns:
         Dictionary with:
         - success: Whether the update succeeded
-        - cell_index: The updated cell index
-        - cell_number: Display number (1-based)
+        - cell_id: The cell's unique identifier
+        - cell_number: Position number (1-based, matches what user sees)
         - old_content: Previous content (for reference)
         - new_content: Updated content
         - type: Cell type after update
         - error: Error message if update failed
 
     Example:
-        To improve the function in cell 2: update_cell_content(2, "def improved_function():\\n    ...")
+        1. First call get_notebook_overview() to find the cell_id
+        2. Then: update_cell_content("cell-a1b2c3d4", "def improved_function():\\n    ...")
     """
-    # Convert to int in case LLM sends float
-    cell_index = int(cell_index)
-
-    log_debug_message(f"==> update_cell_content({cell_index}) called from LLM")
+    log_debug_message(f"==> update_cell_content({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -207,25 +218,79 @@ def update_cell_content(cell_index: int, new_content: str, cell_type: Optional[s
     if cell_type:
         payload["cell_type"] = cell_type
 
-    return _call_master_api("PUT", f"/internal/notebook/{project_id}/cell/{cell_index}", payload)
+    return _call_master_api("PUT", f"/internal/notebook/{project_id}/cell/by-id/{cell_id}", payload)
 
 
-def insert_cell(position: int, content: str, cell_type: str) -> dict:
+def insert_cell_after(after_cell_id: str, content: str, cell_type: str) -> dict:
     """
-    Insert a new cell at a specific position in the notebook.
+    Insert a new cell after a specific cell (identified by cell_id).
+
+    This is the recommended way to insert cells as it uses stable cell IDs
+    rather than position indices that can change.
 
     Use this tool when you need to:
-    - Add helper functions before existing code
-    - Insert explanatory markdown before complex code
+    - Add helper functions after existing code
+    - Insert explanatory markdown after a cell
     - Add new code cells for additional functionality
     - Create documentation cells
 
     Args:
+        after_cell_id: The cell_id of the cell after which to insert.
+                       Get this from get_notebook_overview().
+        content: The content of the new cell
+        cell_type: Type of cell ("code" or "markdown")
+
+    Returns:
+        Dictionary with:
+        - success: Whether the insertion succeeded
+        - inserted_after: The reference cell_id
+        - new_cell_id: The ID of the newly created cell
+        - inserted_at_index: Current position of new cell
+        - content: The inserted content
+        - type: Cell type
+        - total_cells: New total number of cells
+        - error: Error message if insertion failed
+
+    Example:
+        1. First call get_notebook_overview() to find the cell_id
+        2. Then: insert_cell_after("cell-a1b2c3d4", "def helper():\\n    ...", "code")
+    """
+    log_debug_message(f"==> insert_cell_after({after_cell_id}, type={cell_type}) called from LLM")
+
+    project_id = _get_project_id()
+    if not project_id:
+        return {
+            "success": False,
+            "error": "No active session - cannot determine project"
+        }
+
+    if cell_type not in ["code", "markdown"]:
+        return {
+            "success": False,
+            "error": f"Invalid cell_type '{cell_type}'. Must be 'code' or 'markdown'"
+        }
+
+    payload = {
+        "content": content,
+        "cell_type": cell_type
+    }
+
+    return _call_master_api("POST", f"/internal/notebook/{project_id}/cell/by-id/{after_cell_id}/insert-after", payload)
+
+
+def insert_cell_at_position(position: int, content: str, cell_type: str) -> dict:
+    """
+    Insert a new cell at a specific position in the notebook.
+
+    NOTE: Prefer insert_cell_after() when possible, as it uses stable cell IDs.
+    Use this only when you need to insert at the beginning (position=0) or
+    at the very end of the notebook.
+
+    Args:
         position: Where to insert the cell (0-based index)
                  - 0 = insert at beginning (before first cell)
-                 - n = insert after cell n-1 (between cells)
-                 - Use len(cells) to append at end
-                 - position should be integer and not float or string
+                 - n = insert at position n
+                 - Use total_cells from get_notebook_overview() to append at end
         content: The content of the new cell
         cell_type: Type of cell ("code" or "markdown")
 
@@ -233,19 +298,20 @@ def insert_cell(position: int, content: str, cell_type: str) -> dict:
         Dictionary with:
         - success: Whether the insertion succeeded
         - inserted_at: The index where cell was inserted
+        - cell_id: The ID of the newly created cell
         - content: The inserted content
         - type: Cell type
         - total_cells: New total number of cells
         - error: Error message if insertion failed
 
     Example:
-        To insert a helper function before cell 3: insert_cell(3, "def helper():\\n    ...", "code")
-        To append at end: insert_cell(5, "# Summary", "markdown") where 5 is current cell count
+        To insert at the beginning: insert_cell_at_position(0, "# Introduction", "markdown")
+        To append at end: insert_cell_at_position(5, "# Summary", "markdown") where 5 is total_cells
     """
     # Convert to int in case LLM sends float
     position = int(position)
 
-    log_debug_message(f"==> insert_cell(position={position}, type={cell_type}) called from LLM")
+    log_debug_message(f"==> insert_cell_at_position(position={position}, type={cell_type}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -268,9 +334,9 @@ def insert_cell(position: int, content: str, cell_type: str) -> dict:
     return _call_master_api("POST", f"/internal/notebook/{project_id}/cell/{position}", payload)
 
 
-def execute_cell(cell_index: int) -> dict:
+def execute_cell(cell_id: str) -> dict:
     """
-    Execute a specific code cell in the Jupyter kernel.
+    Execute a specific code cell in the Jupyter kernel by its unique ID.
 
     Use this tool when you need to:
     - Test code changes after editing a cell
@@ -281,23 +347,23 @@ def execute_cell(cell_index: int) -> dict:
     Note: Only works for code cells. Markdown cells cannot be executed.
 
     Args:
-        cell_index: The 0-based index of the cell to execute
+        cell_id: The unique cell identifier (e.g., "cell-a1b2c3d4").
+                 Get this from get_notebook_overview().
 
     Returns:
         Dictionary with:
         - success: Whether execution succeeded
-        - cell_index: The executed cell index
+        - cell_id: The cell's unique identifier
+        - cell_number: Position number (1-based, matches what user sees)
         - output: Text output from execution
         - error: Error message if execution failed
         - execution_count: Kernel execution count
 
     Example:
-        After improving cell 2, test it: execute_cell(2)
+        1. First call get_notebook_overview() to find the cell_id
+        2. After editing a cell, test it: execute_cell("cell-a1b2c3d4")
     """
-    # Convert to int in case LLM sends float
-    cell_index = int(cell_index)
-
-    log_debug_message(f"==> execute_cell({cell_index}) called from LLM")
+    log_debug_message(f"==> execute_cell({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -306,8 +372,8 @@ def execute_cell(cell_index: int) -> dict:
             "error": "No active session - cannot determine project"
         }
 
-    # First, get the cell content from Master API
-    cell_result = _call_master_api("GET", f"/internal/notebook/{project_id}/cell/{cell_index}")
+    # First, get the cell content from Master API using cell_id
+    cell_result = _call_master_api("GET", f"/internal/notebook/{project_id}/cell/by-id/{cell_id}")
 
     if not cell_result.get("success"):
         return cell_result
@@ -315,7 +381,7 @@ def execute_cell(cell_index: int) -> dict:
     if cell_result.get("type") != "code":
         return {
             "success": False,
-            "error": f"Cell {cell_index} is a {cell_result.get('type')} cell. Only code cells can be executed."
+            "error": f"Cell '{cell_id}' is a {cell_result.get('type')} cell. Only code cells can be executed."
         }
 
     # Get kernel from session
@@ -377,12 +443,11 @@ def execute_cell(cell_index: int) -> dict:
                     "traceback": output.get("traceback", [])
                 })
 
-    # Update cell output in Master API (persist to S3)
-    # Send full outputs structure including images
+    # Update cell output in Master API (persist to S3) using cell_id
     try:
         _call_master_api(
             "PUT",
-            f"/internal/notebook/{project_id}/cell/{cell_index}/output",
+            f"/internal/notebook/{project_id}/cell/by-id/{cell_id}/output",
             {
                 "outputs": outputs_for_storage,
                 "execution_count": result["execution_count"]
@@ -393,7 +458,8 @@ def execute_cell(cell_index: int) -> dict:
 
     return {
         "success": result["success"],
-        "cell_index": cell_index,
+        "cell_id": cell_id,
+        "cell_number": cell_result.get("cell_number"),  # 1-based (human-friendly)
         "output": output_text.strip(),
         "error": str(result["error"]) if result["error"] else None,
         "execution_count": result["execution_count"]

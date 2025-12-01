@@ -7,7 +7,8 @@ from backend.llm_tools.tool_notebook_cells import (
     get_notebook_overview,
     get_cell_content,
     update_cell_content,
-    insert_cell,
+    insert_cell_after,
+    insert_cell_at_position,
     execute_cell
 )
 from backend.llm_tools.tool_file_utils import (
@@ -36,11 +37,12 @@ TOOL_FUNCTIONS = [
     # Kernel execution
     execute_python_code,
 
-    # Notebook cell operations
+    # Notebook cell operations (use cell_id for reliable targeting)
     get_notebook_overview,
     get_cell_content,
     update_cell_content,
-    insert_cell,
+    insert_cell_after,
+    insert_cell_at_position,
     execute_cell,
 
     # File operations

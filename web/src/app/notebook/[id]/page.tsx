@@ -6,6 +6,7 @@ import { auth, projects, playgrounds, chat, notebooks } from '@/lib/api'
 import { useAuthStore, useProjectsStore, useNotebookStore } from '@/lib/store'
 import Cell from '@/components/notebook/Cell'
 import NotebookToolbar from '@/components/notebook/NotebookToolbar'
+import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
 import { useKernel } from '@/hooks/useKernel'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -18,11 +19,13 @@ function generateCellId(): string {
 
 // Create empty cell
 function createCell(type: 'code' | 'markdown'): CellType {
+  const cellId = generateCellId()
   return {
-    id: generateCellId(),
+    id: cellId,
     type,
     source: '',
     outputs: [],
+    metadata: { cell_id: cellId },  // Store in metadata for ipynb compatibility
   }
 }
 
@@ -52,10 +55,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatLoading, setChatLoading] = useState(false)
   const [pendingTools, setPendingTools] = useState<PendingToolCall[]>([])
-  const [llmProvider, setLlmProvider] = useState('ollama')
+  const [llmProvider, setLlmProvider] = useState('gemini')
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('manual')
   const [showChat, setShowChat] = useState(true)
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
+  const [confirmPopup, setConfirmPopup] = useState<{
+    title: string
+    message: string
+    onConfirm: () => void
+    confirmText?: string
+    confirmColor?: string
+  } | null>(null)
 
   // Kernel hook - connect to playground when running
   // Construct URL through nginx proxy: /playground/{container_name}
@@ -69,13 +79,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     if (!currentProject) return false
 
     try {
+      // Save in Jupyter .ipynb standard format
       const cellsToSave = cells.map((cell) => ({
-        id: cell.id,
-        type: cell.type,
+        cell_type: cell.type,  // Jupyter standard field name
         source: cell.source,
         outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
         execution_count: cell.execution_count,
-        metadata: cell.metadata || {},
+        metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
       }))
 
       await notebooks.save(projectId, cellsToSave)
@@ -94,8 +104,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       const notebookData = await notebooks.get(projectId)
       if (notebookData.notebook.cells.length > 0) {
         const loadedCells = notebookData.notebook.cells.map((cell) => ({
-          id: cell.id,
-          type: cell.type as 'code' | 'markdown',
+          id: cell.metadata?.cell_id || generateCellId(),  // cell_id from metadata (Jupyter standard)
+          type: (cell.cell_type || 'code') as 'code' | 'markdown',
           source: cell.source,
           outputs: cell.outputs as any[],
           execution_count: cell.execution_count,
@@ -128,7 +138,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         // Get project
         const project = await projects.get(projectId)
         setCurrentProject(project)
-        setLlmProvider(project.llm_provider)
 
         // Get existing playground status
         const pg = await playgrounds.get(projectId)
@@ -151,10 +160,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         try {
           const notebookData = await notebooks.get(projectId)
           if (notebookData.notebook.cells.length > 0) {
-            // Convert to our cell format
+            // Convert to our cell format (Jupyter standard: cell_type and metadata.cell_id)
             const loadedCells = notebookData.notebook.cells.map((cell) => ({
-              id: cell.id,
-              type: cell.type as 'code' | 'markdown',
+              id: cell.metadata?.cell_id || generateCellId(),  // cell_id from metadata
+              type: (cell.cell_type || 'code') as 'code' | 'markdown',
               source: cell.source,
               outputs: cell.outputs as any[],
               execution_count: cell.execution_count,
@@ -252,6 +261,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     setSelectedCellId(newCell.id)
   }, [cells, selectedCellId, addCell])
 
+  // Insert cell at specific position (used by insert buttons between cells)
+  const handleInsertCellAt = useCallback((type: 'code' | 'markdown', index: number) => {
+    const newCell = createCell(type)
+    addCell(newCell, index)
+    setSelectedCellId(newCell.id)
+  }, [addCell])
+
   const handleRunCell = useCallback((cellId: string) => {
     const cell = cells.find((c) => c.id === cellId)
     if (!cell || cell.type !== 'code' || !cell.source.trim()) return
@@ -295,18 +311,35 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     })
   }, [cells, updateCell])
 
+  const handleDeleteAllCells = useCallback(() => {
+    if (cells.length === 0) return
+
+    setConfirmPopup({
+      title: 'Delete All Cells',
+      message: `Are you sure you want to delete all ${cells.length} cell${cells.length > 1 ? 's' : ''}?\n\nThis action cannot be undone.`,
+      confirmText: 'Delete All',
+      confirmColor: 'red',
+      onConfirm: () => {
+        // Clear all cells and add one empty code cell
+        setCells([createCell('code')])
+        setContextCellIds(new Set())
+        setSelectedCellId(null)
+        setConfirmPopup(null)
+      },
+    })
+  }, [cells.length])
+
   const handleSave = useCallback(async () => {
     if (!currentProject) return
     setIsSaving(true)
     try {
-      // Save notebook to S3 via API
+      // Save notebook to S3 via API (Jupyter .ipynb standard format)
       const cellsToSave = cells.map((cell) => ({
-        id: cell.id,
-        type: cell.type,
+        cell_type: cell.type,  // Jupyter standard field name
         source: cell.source,
         outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
         execution_count: cell.execution_count,
-        metadata: cell.metadata || {},
+        metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
       }))
 
       const result = await notebooks.save(projectId, cellsToSave)
@@ -392,17 +425,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [kernel, cells, updateCell])
 
-  // Handle LLM provider change - update project
-  const handleProviderChange = useCallback(async (provider: string) => {
+  // Handle LLM provider change (local state only, not persisted)
+  const handleProviderChange = useCallback((provider: string) => {
     setLlmProvider(provider)
-    if (currentProject) {
-      try {
-        await projects.update(projectId, { llm_provider: provider as any })
-      } catch (err) {
-        console.error('Failed to update LLM provider:', err)
-      }
-    }
-  }, [currentProject, projectId])
+  }, [])
 
   // Chat handlers
   const handleSendMessage = useCallback(async (message: string) => {
@@ -441,8 +467,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       // Build context from selected cells only (lightweight)
       const contextCells = cells
         .filter((c) => contextCellIds.has(c.id))
-        .map((c, idx) => ({
-          id: c.id,
+        .map((c) => ({
+          cell_id: c.id,  // Frontend id is derived from metadata.cell_id
           type: c.type,
           content: c.source,
           output: c.outputs
@@ -457,7 +483,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         }))
 
       // Call chat API - LLM tools will fetch notebook data from Master API (S3)
-      const response = await chat.sendMessage(projectId, message, contextCells, toolMode)
+      const response = await chat.sendMessage(projectId, message, contextCells, toolMode, llmProvider)
 
       if (response.success) {
         // Handle pending tools
@@ -504,7 +530,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, cells, contextCellIds, toolMode, playground, isDirty, saveNotebook, reloadNotebook])
+  }, [projectId, cells, contextCellIds, toolMode, llmProvider, playground, isDirty, saveNotebook, reloadNotebook])
 
   const handleApproveTools = useCallback(async (tools: PendingToolCall[]) => {
     setChatLoading(true)
@@ -666,24 +692,34 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [chatMessages, projectId, handleSendMessage])
 
   // Clear all chat history
-  const handleClearHistory = useCallback(async () => {
-    if (!confirm('Clear all chat messages?')) return
+  const handleClearHistory = useCallback(() => {
+    if (chatMessages.length === 0) return
 
-    try {
-      await chat.clearHistory(projectId)
-      setChatMessages([])
-    } catch (err) {
-      console.error('Failed to clear chat history:', err)
-      setErrorPopup('Failed to clear chat history. Please try again.')
-    }
-  }, [projectId])
+    setConfirmPopup({
+      title: 'Clear Chat History',
+      message: `Are you sure you want to clear all ${chatMessages.length} message${chatMessages.length > 1 ? 's' : ''}?\n\nThis action cannot be undone.`,
+      confirmText: 'Clear All',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        try {
+          await chat.clearHistory(projectId)
+          setChatMessages([])
+          setConfirmPopup(null)
+        } catch (err) {
+          console.error('Failed to clear chat history:', err)
+          setConfirmPopup(null)
+          setErrorPopup('Failed to clear chat history. Please try again.')
+        }
+      },
+    })
+  }, [projectId, chatMessages.length])
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900/50 to-slate-900">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
-          <span className="text-purple-300 text-sm">Loading notebook...</span>
+          <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+          <span className="text-blue-300 text-sm">Loading notebook...</span>
         </div>
       </div>
     )
@@ -698,14 +734,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         color: 'var(--nb-text-primary)',
       }}
     >
-      {/* Header */}
-      <header
-        className="flex items-center justify-between px-4 py-2 backdrop-blur-sm"
-        style={{
-          backgroundColor: 'var(--nb-bg-header)',
-          borderBottom: '1px solid var(--nb-border-default)',
-        }}
-      >
+      {/* Header - Fixed dark styling, not affected by theme */}
+      <header className="flex items-center justify-between px-4 py-2 backdrop-blur-xl bg-slate-900/95 border-b border-white/10">
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/dashboard')}
@@ -716,12 +746,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             </svg>
           </button>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
             </div>
-            <h1 className="text-lg font-semibold">{currentProject?.name || 'Notebook'}</h1>
+            <h1 className="text-lg font-semibold text-white">{currentProject?.name || 'Notebook'}</h1>
           </div>
           {isDirty && <span className="text-amber-400 text-sm flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> Unsaved</span>}
         </div>
@@ -731,7 +761,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             onClick={() => setShowChat(!showChat)}
             className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all ${
               showChat
-                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                 : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
             }`}
             title={showChat ? 'Hide AI Chat' : 'Show AI Chat'}
@@ -793,6 +823,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onAddMarkdown={() => handleAddCell('markdown')}
         onRunAll={handleRunAll}
         onClearOutputs={handleClearOutputs}
+        onDeleteAllCells={handleDeleteAllCells}
         onSave={handleSave}
         onExport={handleExport}
         isExporting={isExporting}
@@ -820,7 +851,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 <div className="flex justify-center gap-3">
                   <button
                     onClick={() => handleAddCell('code')}
-                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-medium shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all flex items-center gap-2"
+                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white rounded-xl font-medium shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -839,41 +870,46 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 </div>
               </div>
             ) : (
-              cells.map((cell, index) => (
-                <Cell
-                  key={cell.id}
-                  cell={cell}
-                  index={index}
-                  isSelected={selectedCellId === cell.id}
-                  isRunning={kernel.runningCellId === cell.id}
-                  onSelect={() => setSelectedCellId(cell.id)}
-                  onRun={() => handleRunCell(cell.id)}
-                  onStop={() => kernel.interrupt()}
-                  onDelete={() => deleteCell(cell.id)}
-                  onMoveUp={() => moveCell(cell.id, 'up')}
-                  onMoveDown={() => moveCell(cell.id, 'down')}
-                  onUpdate={(updates) => updateCell(cell.id, updates)}
-                  onToggleContext={() => handleToggleContext(cell.id)}
-                  isInContext={contextCellIds.has(cell.id)}
+              <>
+                {/* Insert button at the very top */}
+                <CellInsertButtons
+                  onInsertCode={() => handleInsertCellAt('code', 0)}
+                  onInsertMarkdown={() => handleInsertCellAt('markdown', 0)}
                 />
-              ))
+
+                {cells.map((cell, index) => (
+                  <div key={cell.id}>
+                    <Cell
+                      cell={cell}
+                      index={index}
+                      isSelected={selectedCellId === cell.id}
+                      isRunning={kernel.runningCellId === cell.id}
+                      onSelect={() => setSelectedCellId(cell.id)}
+                      onRun={() => handleRunCell(cell.id)}
+                      onStop={() => kernel.interrupt()}
+                      onDelete={() => deleteCell(cell.id)}
+                      onMoveUp={() => moveCell(cell.id, 'up')}
+                      onMoveDown={() => moveCell(cell.id, 'down')}
+                      onUpdate={(updates) => updateCell(cell.id, updates)}
+                      onToggleContext={() => handleToggleContext(cell.id)}
+                      isInContext={contextCellIds.has(cell.id)}
+                    />
+                    {/* Insert button after each cell */}
+                    <CellInsertButtons
+                      onInsertCode={() => handleInsertCellAt('code', index + 1)}
+                      onInsertMarkdown={() => handleInsertCellAt('markdown', index + 1)}
+                    />
+                  </div>
+                ))}
+              </>
             )}
 
-            {/* Add cell button at bottom */}
+            {/* Add cell button at bottom (fallback for empty state, though we now have insert buttons) */}
             {cells.length > 0 && (
-              <div className="flex justify-center gap-2 py-4">
-                <button
-                  onClick={() => handleAddCell('code')}
-                  className="px-3 py-1.5 text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 rounded-md"
-                >
-                  + Code
-                </button>
-                <button
-                  onClick={() => handleAddCell('markdown')}
-                  className="px-3 py-1.5 text-sm text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 rounded-md"
-                >
-                  + Markdown
-                </button>
+              <div className="flex justify-center gap-2 py-2">
+                <span className="text-xs text-gray-500">
+                  Hover between cells to insert
+                </span>
               </div>
             )}
           </div>
@@ -948,6 +984,59 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                   Start Playground
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Popup Modal */}
+      {confirmPopup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div
+            className="rounded-lg p-6 max-w-md mx-4 shadow-xl"
+            style={{
+              backgroundColor: 'var(--nb-bg-cell)',
+              border: `1px solid ${confirmPopup.confirmColor === 'red' ? 'var(--nb-accent-error)' : 'var(--nb-border-default)'}`,
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+                style={{
+                  backgroundColor: confirmPopup.confirmColor === 'red' ? 'var(--nb-accent-error)' : 'var(--nb-accent-code)',
+                  color: '#fff'
+                }}
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--nb-text-primary)' }}>
+                  {confirmPopup.title}
+                </h3>
+                <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--nb-text-secondary)' }}>
+                  {confirmPopup.message}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmPopup(null)}
+                className="px-4 py-2 text-sm rounded-md bg-gray-600 hover:bg-gray-500 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmPopup.onConfirm}
+                className={`px-4 py-2 text-sm rounded-md text-white ${
+                  confirmPopup.confirmColor === 'red'
+                    ? 'bg-red-600 hover:bg-red-500'
+                    : 'bg-blue-600 hover:bg-blue-500'
+                }`}
+              >
+                {confirmPopup.confirmText || 'Confirm'}
+              </button>
             </div>
           </div>
         </div>

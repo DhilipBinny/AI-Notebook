@@ -136,7 +136,7 @@ export const projects = {
     return data
   },
 
-  create: async (project: { name: string; description?: string; llm_provider?: string; llm_model?: string }): Promise<Project> => {
+  create: async (project: { name: string; description?: string }): Promise<Project> => {
     const { data } = await api.post('/projects', project)
     return data
   },
@@ -194,9 +194,10 @@ export const chat = {
     projectId: string,
     message: string,
     context: CellContext[],
-    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual'
+    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
+    llmProvider: string = 'gemini'
   ): Promise<ChatResponse> => {
-    const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}`, {
+    const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}`, {
       message,
       context,
     })

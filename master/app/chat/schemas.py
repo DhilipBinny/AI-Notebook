@@ -1,16 +1,16 @@
 """
 Chat Pydantic schemas for LLM interaction.
+
+Note: Chat history is stored as JSON in S3/MinIO, not in the database.
 """
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from datetime import datetime
-from .models import MessageRole
 
 
 class CellContext(BaseModel):
     """A notebook cell provided as context to the LLM."""
-    id: str
+    cell_id: str  # From metadata.cell_id (Jupyter standard)
     type: str  # "code" or "markdown"
     content: str
     output: Optional[str] = None
@@ -21,19 +21,6 @@ class ChatMessageCreate(BaseModel):
     """Schema for creating a chat message."""
     message: str
     context: List[CellContext] = []
-
-
-class ChatMessageResponse(BaseModel):
-    """Schema for a chat message response."""
-    id: str
-    role: MessageRole
-    content: str
-    created_at: datetime
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    tool_results: Optional[List[Dict[str, Any]]] = None
-
-    class Config:
-        from_attributes = True
 
 
 class PendingToolCall(BaseModel):
@@ -65,9 +52,3 @@ class ChatResponse(BaseModel):
 class ExecuteToolsRequest(BaseModel):
     """Request to execute approved tools."""
     approved_tools: List[PendingToolCall]
-
-
-class ChatHistoryResponse(BaseModel):
-    """Response containing chat history."""
-    messages: List[ChatMessageResponse]
-    total: int

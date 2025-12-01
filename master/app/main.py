@@ -17,7 +17,7 @@ from app.users.models import User
 from app.projects.models import Project
 from app.playgrounds.models import Playground
 from app.auth.models import Session
-from app.chat.models import ChatMessage
+# Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
 
 # Import routers
 from app.auth.routes import router as auth_router

@@ -44,14 +44,22 @@ export default function Cell({
 }: CellProps) {
   // For markdown cells with content, default to rendered view (not editing)
   // For code cells, always show editor
-  const [isEditing, setIsEditing] = useState(cell.type === 'code')
+  const [isEditing, setIsEditing] = useState(cell.type === 'code' || !cell.source.trim())
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // When cell content changes externally (e.g., from LLM), exit editing mode for markdown
+  // Track the previous source to detect external changes (e.g., from LLM)
+  const prevSourceRef = useRef(cell.source)
+  const isUserEditingRef = useRef(false)
+
+  // Only exit editing mode for markdown when content changes externally (not from user typing)
   useEffect(() => {
-    if (cell.type === 'markdown' && cell.source.trim()) {
-      setIsEditing(false)
+    // If the source changed and user is not actively editing, it's an external update
+    if (cell.type === 'markdown' && cell.source !== prevSourceRef.current && !isUserEditingRef.current) {
+      if (cell.source.trim()) {
+        setIsEditing(false)
+      }
     }
+    prevSourceRef.current = cell.source
   }, [cell.source, cell.type])
 
   // Render markdown with sanitization
@@ -273,6 +281,19 @@ export default function Cell({
               {cell.execution_count ? `In [${cell.execution_count}]:` : 'In [ ]:'}
             </span>
           )}
+
+          {/* Cell ID - shown on hover or always visible as muted text */}
+          <span
+            className="text-[10px] font-mono opacity-50 hover:opacity-100 cursor-pointer transition-opacity"
+            style={{ color: 'var(--nb-text-muted)' }}
+            title="Click to copy cell ID"
+            onClick={(e) => {
+              e.stopPropagation()
+              navigator.clipboard.writeText(cell.id)
+            }}
+          >
+            [{index + 1}] {cell.id}
+          </span>
         </div>
 
         {/* Cell actions */}
@@ -340,16 +361,28 @@ export default function Cell({
         {cell.type === 'markdown' && !isEditing && cell.source.trim() ? (
           <div
             className="prose prose-sm max-w-none cursor-text"
-            onClick={() => setIsEditing(true)}
+            onClick={() => {
+              isUserEditingRef.current = true
+              setIsEditing(true)
+            }}
             dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
           />
         ) : (
           <textarea
             ref={textareaRef}
             value={cell.source}
-            onChange={(e) => onUpdate({ source: e.target.value })}
+            onChange={(e) => {
+              isUserEditingRef.current = true
+              onUpdate({ source: e.target.value })
+            }}
             onKeyDown={handleKeyDown}
-            onBlur={() => cell.type === 'markdown' && cell.source.trim() && setIsEditing(false)}
+            onFocus={() => {
+              isUserEditingRef.current = true
+            }}
+            onBlur={() => {
+              isUserEditingRef.current = false
+              // Don't auto-render on blur - only render on Shift+Enter
+            }}
             placeholder={cell.type === 'code' ? 'Enter Python code...' : 'Enter markdown... (Shift+Enter to preview)'}
             className="w-full bg-transparent font-mono text-sm resize-none outline-none"
             style={{

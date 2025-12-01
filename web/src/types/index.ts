@@ -14,8 +14,6 @@ export interface Project {
   id: string
   name: string
   description?: string
-  llm_provider: 'ollama' | 'openai' | 'anthropic' | 'gemini'
-  llm_model?: string
   is_archived: boolean
   created_at: string
   updated_at: string
@@ -30,18 +28,33 @@ export interface Playground {
   container_name: string
   status: 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
   error_message?: string
+  memory_limit_mb: number
+  cpu_limit: number
   started_at: string
   last_activity_at: string
   url?: string
 }
 
+// Frontend cell type (for React state)
 export interface Cell {
-  id: string
+  id: string  // Derived from metadata.cell_id when loading
   type: 'code' | 'markdown'
   source: string
   outputs: CellOutput[]
   execution_count?: number
   metadata?: Record<string, unknown>
+}
+
+// API cell type (Jupyter .ipynb standard format)
+export interface ApiCell {
+  cell_type: string  // "code" or "markdown" (Jupyter standard)
+  source: string
+  outputs: Record<string, unknown>[]
+  execution_count?: number
+  metadata: {
+    cell_id: string  // Jupyter standard location for cell ID
+    [key: string]: unknown
+  }
 }
 
 export interface CellOutput {
