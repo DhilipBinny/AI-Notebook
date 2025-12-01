@@ -12,8 +12,8 @@ _source_project/
 *.backup
 **/*.backup
 
-# Sample notebooks
-notebooks/
+# Sample notebooks (only at root level)
+/notebooks/
 
 # Environment files
 .env
