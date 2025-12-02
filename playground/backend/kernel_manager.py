@@ -219,6 +219,51 @@ if user_site and user_site not in sys.path:
                 "error": str(e)
             }
 
+    def _is_pip_install(self, code: str) -> bool:
+        """Check if code contains a pip install command"""
+        import re
+        # Match !pip install, %pip install, or pip.main(['install'...])
+        pip_patterns = [
+            r'^\s*!pip\s+install',
+            r'^\s*%pip\s+install',
+            r'pip\.main\s*\(\s*\[.*install',
+            r'subprocess.*pip.*install',
+        ]
+        for pattern in pip_patterns:
+            if re.search(pattern, code, re.MULTILINE | re.IGNORECASE):
+                return True
+        return False
+
+    def _refresh_module_cache(self):
+        """Refresh Python's module cache after pip install"""
+        refresh_code = '''
+import importlib
+import sys
+
+# Invalidate all module caches
+importlib.invalidate_caches()
+
+# Refresh site-packages path
+import site
+try:
+    # Re-add user site-packages if not present
+    user_site = site.getusersitepackages()
+    if user_site and user_site not in sys.path:
+        sys.path.insert(0, user_site)
+except Exception:
+    pass
+
+# Also refresh the standard site-packages
+for path in site.getsitepackages():
+    if path not in sys.path:
+        sys.path.insert(0, path)
+'''
+        try:
+            self.kc.execute(refresh_code, silent=True)
+            print("[Kernel] Module cache refreshed after pip install")
+        except Exception as e:
+            print(f"[Kernel] Failed to refresh module cache: {e}")
+
     def execute_streaming(self, code: str, timeout: int = 60):
         """
         Execute code and yield outputs as they come in (generator).
@@ -235,6 +280,9 @@ if user_site and user_site not in sys.path:
             yield {"type": "error", "ename": "KernelError", "evalue": "Kernel is not running", "traceback": []}
             yield {"type": "status", "status": "error"}
             return
+
+        # Check if this is a pip install command
+        is_pip_install = self._is_pip_install(code)
 
         self.execution_count += 1
         current_count = self.execution_count
@@ -265,6 +313,9 @@ if user_site and user_site not in sys.path:
                         if execution_state == 'busy':
                             execution_started = True
                         elif execution_state == 'idle' and execution_started:
+                            # If this was a pip install, refresh module cache
+                            if is_pip_install:
+                                self._refresh_module_cache()
                             yield {"type": "status", "status": "complete"}
                             break
 
