@@ -12,14 +12,87 @@ import { useKernel } from '@/hooks/useKernel'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import type { Cell as CellType, Playground, ChatMessage } from '@/types'
 
-// Strip ANSI escape codes from log text
-function stripAnsi(text: string): string {
-  return text
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // Standard ANSI sequences like \x1b[32m
-    .replace(/\x1b\][^\x07]*\x07/g, '')      // OSC sequences
-    .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '') // Private mode sequences
-    .replace(/\x1b[=>]/g, '')                // Simple escape sequences
-    .replace(/␛\[[0-9;]*[a-zA-Z]/g, '')      // Unicode escape representation (␛ = ESC)
+// ANSI color code to CSS color mapping
+const ansiColors: Record<number, string> = {
+  30: '#4b5563', // black (gray for visibility)
+  31: '#ef4444', // red
+  32: '#22c55e', // green
+  33: '#eab308', // yellow
+  34: '#3b82f6', // blue
+  35: '#a855f7', // magenta
+  36: '#06b6d4', // cyan
+  37: '#e5e7eb', // white
+  90: '#6b7280', // bright black (gray)
+  91: '#f87171', // bright red
+  92: '#4ade80', // bright green
+  93: '#facc15', // bright yellow
+  94: '#60a5fa', // bright blue
+  95: '#c084fc', // bright magenta
+  96: '#22d3ee', // bright cyan
+  97: '#ffffff', // bright white
+}
+
+// Parse ANSI escape codes and return array of styled segments
+interface AnsiSegment {
+  text: string
+  color?: string
+  bold?: boolean
+}
+
+function parseAnsi(text: string): AnsiSegment[] {
+  const segments: AnsiSegment[] = []
+  let currentColor: string | undefined
+  let currentBold = false
+
+  // Normalize different escape representations
+  const normalized = text
+    .replace(/␛/g, '\x1b')  // Unicode escape symbol to actual escape
+
+  // Match ANSI sequences or text between them
+  const regex = /\x1b\[([0-9;]*)m|([^\x1b]+)/g
+  let match
+
+  while ((match = regex.exec(normalized)) !== null) {
+    if (match[1] !== undefined) {
+      // ANSI sequence
+      const codes = match[1].split(';').map(Number)
+      for (const code of codes) {
+        if (code === 0) {
+          // Reset
+          currentColor = undefined
+          currentBold = false
+        } else if (code === 1) {
+          // Bold
+          currentBold = true
+        } else if (code === 22) {
+          // Normal intensity (not bold)
+          currentBold = false
+        } else if (ansiColors[code]) {
+          currentColor = ansiColors[code]
+        }
+      }
+    } else if (match[2]) {
+      // Regular text
+      segments.push({
+        text: match[2],
+        color: currentColor,
+        bold: currentBold,
+      })
+    }
+  }
+
+  // If no segments were found, return the original text (stripped of any remaining codes)
+  if (segments.length === 0) {
+    const stripped = text
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+      .replace(/\x1b\][^\x07]*\x07/g, '')
+      .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
+      .replace(/\x1b[=>]/g, '')
+      .replace(/␛\[[0-9;]*[a-zA-Z]/g, '')
+    return [{ text: stripped }]
+  }
+
+  return segments
 }
 
 // Generate unique cell ID
@@ -1371,21 +1444,37 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                   <div className="text-gray-500 text-center py-8">Waiting for logs...</div>
                 ) : (
                   logs.map((line, i) => {
-                    const cleanLine = stripAnsi(line)
+                    const segments = parseAnsi(line)
+                    const plainText = segments.map(s => s.text).join('')
+                    // Determine line-level color based on log level keywords
+                    const lineColor = plainText.includes('ERROR') || plainText.includes('error')
+                      ? 'text-red-400'
+                      : plainText.includes('WARNING') || plainText.includes('warning')
+                      ? 'text-amber-400'
+                      : plainText.includes('INFO')
+                      ? 'text-blue-400'
+                      : 'text-gray-300'
+
+                    // Check if any segment has ANSI colors
+                    const hasAnsiColors = segments.some(s => s.color)
+
                     return (
-                      <div
-                        key={i}
-                        className={`${
-                          cleanLine.includes('ERROR') || cleanLine.includes('error')
-                            ? 'text-red-400'
-                            : cleanLine.includes('WARNING') || cleanLine.includes('warning')
-                            ? 'text-amber-400'
-                            : cleanLine.includes('INFO')
-                            ? 'text-blue-400'
-                            : 'text-gray-300'
-                        }`}
-                      >
-                        {cleanLine || '\u00A0'}
+                      <div key={i} className={hasAnsiColors ? '' : lineColor}>
+                        {segments.length === 0 || (segments.length === 1 && !segments[0].text) ? (
+                          '\u00A0'
+                        ) : (
+                          segments.map((seg, j) => (
+                            <span
+                              key={j}
+                              style={{
+                                color: seg.color,
+                                fontWeight: seg.bold ? 'bold' : undefined,
+                              }}
+                            >
+                              {seg.text}
+                            </span>
+                          ))
+                        )}
                       </div>
                     )
                   })
