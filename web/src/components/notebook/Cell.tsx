@@ -259,8 +259,149 @@ export default function Cell({
       return
     }
 
-    // Tab - insert spaces
-    if (e.key === 'Tab' && !e.shiftKey) {
+    // Only handle Tab, Shift+Tab, and Ctrl+/ for code cells
+    if (cell.type === 'code' && textarea) {
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const value = textarea.value
+
+      // Get line information
+      const getLineInfo = () => {
+        const beforeStart = value.substring(0, start)
+        const lineStartIndex = beforeStart.lastIndexOf('\n') + 1
+        const afterEnd = value.substring(end)
+        const lineEndIndex = end + (afterEnd.indexOf('\n') === -1 ? afterEnd.length : afterEnd.indexOf('\n'))
+        return { lineStartIndex, lineEndIndex }
+      }
+
+      // Get all lines in selection
+      const getSelectedLines = () => {
+        const beforeStart = value.substring(0, start)
+        const firstLineStart = beforeStart.lastIndexOf('\n') + 1
+        const afterEnd = value.substring(end)
+        const lastLineEnd = end + (afterEnd.indexOf('\n') === -1 ? afterEnd.length : afterEnd.indexOf('\n'))
+        const selectedText = value.substring(firstLineStart, lastLineEnd)
+        return {
+          firstLineStart,
+          lastLineEnd,
+          lines: selectedText.split('\n'),
+        }
+      }
+
+      // Tab - Indent right (4 spaces)
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault()
+
+        if (start === end) {
+          // No selection - just insert 4 spaces at cursor
+          const newValue = value.substring(0, start) + '    ' + value.substring(end)
+          onUpdate({ source: newValue })
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = start + 4
+          }, 0)
+        } else {
+          // Multi-line selection - indent all selected lines
+          const { firstLineStart, lastLineEnd, lines } = getSelectedLines()
+          const indentedLines = lines.map(line => '    ' + line)
+          const newValue = value.substring(0, firstLineStart) + indentedLines.join('\n') + value.substring(lastLineEnd)
+          onUpdate({ source: newValue })
+          setTimeout(() => {
+            textarea.selectionStart = start + 4
+            textarea.selectionEnd = end + (lines.length * 4)
+          }, 0)
+        }
+        return
+      }
+
+      // Shift+Tab - Indent left (remove up to 4 spaces)
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault()
+
+        const { firstLineStart, lastLineEnd, lines } = getSelectedLines()
+        let totalRemoved = 0
+        let firstLineRemoved = 0
+
+        const outdentedLines = lines.map((line, idx) => {
+          // Remove up to 4 leading spaces
+          const match = line.match(/^( {1,4})/)
+          if (match) {
+            const removed = match[1].length
+            totalRemoved += removed
+            if (idx === 0) firstLineRemoved = removed
+            return line.substring(removed)
+          }
+          return line
+        })
+
+        const newValue = value.substring(0, firstLineStart) + outdentedLines.join('\n') + value.substring(lastLineEnd)
+        onUpdate({ source: newValue })
+        setTimeout(() => {
+          textarea.selectionStart = Math.max(firstLineStart, start - firstLineRemoved)
+          textarea.selectionEnd = Math.max(textarea.selectionStart, end - totalRemoved)
+        }, 0)
+        return
+      }
+
+      // Ctrl+/ or Cmd+/ - Toggle comment
+      // Use e.code for more reliable key detection across keyboard layouts
+      if ((e.key === '/' || e.code === 'Slash') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const { firstLineStart, lastLineEnd, lines } = getSelectedLines()
+
+        // Check if all non-empty lines are commented
+        const nonEmptyLines = lines.filter(line => line.trim().length > 0)
+        const allCommented = nonEmptyLines.length > 0 && nonEmptyLines.every(line => line.trimStart().startsWith('#'))
+
+        let newLines: string[]
+        let deltaPerLine: number
+
+        if (allCommented) {
+          // Uncomment - remove '# ' or '#' from start of each line
+          deltaPerLine = 0
+          newLines = lines.map(line => {
+            if (line.trimStart().startsWith('# ')) {
+              const idx = line.indexOf('# ')
+              return line.substring(0, idx) + line.substring(idx + 2)
+            } else if (line.trimStart().startsWith('#')) {
+              const idx = line.indexOf('#')
+              return line.substring(0, idx) + line.substring(idx + 1)
+            }
+            return line
+          })
+        } else {
+          // Comment - add '# ' at the start of each line (preserving indentation)
+          deltaPerLine = 2
+          newLines = lines.map(line => {
+            if (line.trim().length === 0) return line // Keep empty lines empty
+            const match = line.match(/^(\s*)/)
+            const indent = match ? match[1] : ''
+            return indent + '# ' + line.substring(indent.length)
+          })
+        }
+
+        const newValue = value.substring(0, firstLineStart) + newLines.join('\n') + value.substring(lastLineEnd)
+        onUpdate({ source: newValue })
+
+        // Adjust selection
+        setTimeout(() => {
+          if (allCommented) {
+            // Calculate removed characters
+            const firstLineChange = lines[0].trimStart().startsWith('# ') ? 2 : (lines[0].trimStart().startsWith('#') ? 1 : 0)
+            textarea.selectionStart = Math.max(firstLineStart, start - firstLineChange)
+            textarea.selectionEnd = end - (nonEmptyLines.length * 2) // Approximate
+          } else {
+            textarea.selectionStart = start + 2
+            textarea.selectionEnd = end + (lines.filter(l => l.trim().length > 0).length * 2)
+          }
+        }, 0)
+        return
+      }
+    }
+
+    // Tab for non-code cells - just insert spaces
+    if (e.key === 'Tab' && !e.shiftKey && cell.type !== 'code') {
       e.preventDefault()
       if (textarea) {
         const start = textarea.selectionStart
@@ -268,13 +409,12 @@ export default function Cell({
         const value = textarea.value
         const newValue = value.substring(0, start) + '    ' + value.substring(end)
         onUpdate({ source: newValue })
-        // Set cursor position after React re-renders
         setTimeout(() => {
           textarea.selectionStart = textarea.selectionEnd = start + 4
         }, 0)
       }
     }
-  }, [onRunAndAdvance, onUpdate, cell.type, onExitEditMode])
+  }, [onRunAndAdvance, onUpdate, cell.type, cell.id, onExitEditMode])
 
   const renderOutput = (output: CellOutput, idx: number) => {
     switch (output.output_type) {

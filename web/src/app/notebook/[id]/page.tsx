@@ -54,6 +54,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [isEditMode, setIsEditMode] = useState(false) // false = command mode (navigate with arrows), true = edit mode (typing)
   const [lastNavDirection, setLastNavDirection] = useState<'up' | 'down'>('down') // Track last navigation direction for Esc
 
+  // Notebook width state - stored in localStorage for persistence
+  const [notebookWidth, setNotebookWidth] = useState<number | null>(null) // null = auto (max-w-6xl)
+  const [isResizing, setIsResizing] = useState(false)
+  const notebookContainerRef = useRef<HTMLDivElement>(null)
+
   // Ref to prevent double-processing of Shift+Enter
   const shiftEnterHandledRef = useRef(false)
 
@@ -279,6 +284,57 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       }
     })
   }, [kernel, cells, updateCell])
+
+  // Load notebook width from localStorage on mount
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('notebook-width')
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10)
+      if (!isNaN(width) && width >= 400 && width <= 2400) {
+        setNotebookWidth(width)
+      }
+    }
+  }, [])
+
+  // Handle resize drag - side parameter determines direction
+  const handleResizeStart = useCallback((e: React.MouseEvent, side: 'left' | 'right') => {
+    e.preventDefault()
+    setIsResizing(true)
+
+    const startX = e.clientX
+    const container = notebookContainerRef.current
+    if (!container) return
+
+    const startWidth = container.offsetWidth
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - startX
+      // Left side: dragging left (negative deltaX) should expand
+      // Right side: dragging right (positive deltaX) should expand
+      const multiplier = side === 'left' ? -2 : 2
+      const newWidth = Math.max(400, Math.min(2400, startWidth + deltaX * multiplier))
+      setNotebookWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      // Save to localStorage
+      if (notebookContainerRef.current) {
+        localStorage.setItem('notebook-width', notebookContainerRef.current.offsetWidth.toString())
+      }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [])
+
+  // Reset notebook width to default
+  const resetNotebookWidth = useCallback(() => {
+    setNotebookWidth(null)
+    localStorage.removeItem('notebook-width')
+  }, [])
 
   // Heartbeat to keep playground alive - sends activity ping every 2 minutes
   useEffect(() => {
@@ -1158,7 +1214,45 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       <div className="flex-1 flex overflow-hidden">
         {/* Notebook panel */}
         <div className="flex-1 overflow-y-auto p-4" style={{ backgroundColor: 'var(--nb-bg-primary)' }}>
-          <div className="max-w-4xl mx-auto space-y-4">
+          <div
+            ref={notebookContainerRef}
+            className={`mx-auto space-y-4 relative ${isResizing ? 'select-none' : ''}`}
+            style={{
+              width: notebookWidth ? `${notebookWidth}px` : undefined,
+              maxWidth: notebookWidth ? undefined : '72rem', // max-w-6xl equivalent
+            }}
+          >
+            {/* Left resize handle */}
+            <div
+              className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize group hover:bg-blue-500/30 transition-colors -ml-2"
+              onMouseDown={(e) => handleResizeStart(e, 'left')}
+              title="Drag to resize notebook width"
+            >
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-gray-500/30 rounded group-hover:bg-blue-500 transition-colors" />
+            </div>
+            {/* Right resize handle */}
+            <div
+              className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize group hover:bg-blue-500/30 transition-colors -mr-2"
+              onMouseDown={(e) => handleResizeStart(e, 'right')}
+              title="Drag to resize notebook width"
+            >
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-gray-500/30 rounded group-hover:bg-blue-500 transition-colors" />
+            </div>
+            {/* Width indicator and reset button - shown when custom width is set */}
+            {notebookWidth && (
+              <div className="absolute -top-6 right-0 flex items-center gap-2 text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+                <span>{notebookWidth}px</span>
+                <button
+                  onClick={resetNotebookWidth}
+                  className="hover:text-white transition-colors"
+                  title="Reset to default width"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+              </div>
+            )}
             {cells.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
