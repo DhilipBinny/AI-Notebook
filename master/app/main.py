@@ -7,9 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import asyncio
 
 from app.core.config import settings
-from app.db.session import engine
+from app.db.session import engine, AsyncSessionLocal
 from app.db.base import Base
 
 # Import all models to ensure they're registered with SQLAlchemy
@@ -28,12 +29,45 @@ from app.chat.routes import router as chat_router
 from app.notebooks.routes import router as notebooks_router
 from app.internal.routes import router as internal_router
 
+# Import playground service for cleanup
+from app.playgrounds.service import PlaygroundService
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO if not settings.debug else logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+async def cleanup_idle_playgrounds_task():
+    """
+    Background task that periodically cleans up idle playgrounds.
+    Runs every 5 minutes and stops containers that have been idle
+    longer than the configured timeout.
+    """
+    cleanup_interval = 5 * 60  # 5 minutes
+
+    logger.info(f"Starting idle playground cleanup task (interval: {cleanup_interval}s, timeout: {settings.playground_idle_timeout}s)")
+
+    while True:
+        try:
+            await asyncio.sleep(cleanup_interval)
+
+            # Create a new database session for this cleanup run
+            async with AsyncSessionLocal() as db:
+                playground_service = PlaygroundService(db)
+                cleaned_count = await playground_service.cleanup_stale_playgrounds()
+
+                if cleaned_count > 0:
+                    logger.info(f"Cleaned up {cleaned_count} idle playground(s)")
+                    await db.commit()
+
+        except asyncio.CancelledError:
+            logger.info("Idle playground cleanup task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"Error in idle playground cleanup task: {e}")
 
 
 @asynccontextmanager
@@ -53,10 +87,21 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created/verified")
 
+    # Start background cleanup task
+    cleanup_task = asyncio.create_task(cleanup_idle_playgrounds_task())
+
     yield
 
     # Shutdown
     logger.info("Shutting down application")
+
+    # Cancel cleanup task
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+
     await engine.dispose()
 
 

@@ -130,6 +130,12 @@ async def save_notebook(
             detail="Project not found",
         )
 
+    # Update playground activity if running (user is actively working)
+    playground_service = PlaygroundService(db)
+    playground = await playground_service.get_by_project_id(project_id)
+    if playground:
+        await playground_service.update_activity(playground)
+
     # Build notebook data
     notebook_data = {
         "cells": [cell.model_dump() for cell in request.cells],

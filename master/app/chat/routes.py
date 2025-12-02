@@ -333,6 +333,10 @@ async def send_message(
                         cell_number=idx + 1,
                     ))
 
+    # Update playground activity (user is actively using it)
+    if playground:
+        await playground_service.update_activity(playground)
+
     # Send message
     chat_service = ChatService(project.storage_month)
     response = await chat_service.send_message(
@@ -381,6 +385,9 @@ async def execute_tools(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No playground running",
         )
+
+    # Update playground activity (user is actively using it)
+    await playground_service.update_activity(playground)
 
     # Execute tools
     chat_service = ChatService(project.storage_month)

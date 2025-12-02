@@ -241,6 +241,34 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     })
   }, [kernel, cells, updateCell])
 
+  // Heartbeat to keep playground alive - sends activity ping every 2 minutes
+  useEffect(() => {
+    // Only run heartbeat if playground is running
+    if (!playground || playground.status !== 'running') {
+      return
+    }
+
+    // Send initial heartbeat
+    playgrounds.updateActivity(projectId).catch((err) => {
+      console.warn('Failed to send activity heartbeat:', err)
+    })
+
+    // Set up interval for heartbeat every 2 minutes
+    const heartbeatInterval = setInterval(() => {
+      // Check if tab is visible before sending heartbeat
+      if (document.visibilityState === 'visible') {
+        playgrounds.updateActivity(projectId).catch((err) => {
+          console.warn('Failed to send activity heartbeat:', err)
+        })
+      }
+    }, 2 * 60 * 1000) // 2 minutes
+
+    // Cleanup on unmount or when playground stops
+    return () => {
+      clearInterval(heartbeatInterval)
+    }
+  }, [projectId, playground?.status])
+
   // Playground handlers
   const handleStartPlayground = async () => {
     setPlaygroundLoading(true)
