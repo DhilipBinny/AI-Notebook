@@ -3,6 +3,7 @@ Playground API routes.
 """
 
 import asyncio
+import struct
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -338,6 +339,186 @@ async def stream_playground_logs(
     finally:
         stop_event.set()
         executor.shutdown(wait=False)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@router.websocket("/projects/{project_id}/playground/terminal")
+async def terminal_websocket(
+    websocket: WebSocket,
+    project_id: str,
+    token: str = Query(None),
+):
+    """
+    WebSocket endpoint for interactive terminal access to the playground container.
+
+    Connect with: ws://host/api/projects/{id}/playground/terminal?token=JWT
+
+    Messages:
+    - From client: JSON with type "input" (terminal input) or "resize" (terminal resize)
+    - To client: terminal output as text
+    """
+    await websocket.accept()
+
+    # Get token from query param or wait for first message
+    if not token:
+        try:
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            token = data
+        except asyncio.TimeoutError:
+            await websocket.close(code=4001, reason="Authentication timeout")
+            return
+
+    # Validate token
+    token_data = verify_token(token, expected_type="access")
+    if token_data is None:
+        await websocket.close(code=4002, reason="Invalid token")
+        return
+    user_id = token_data.sub
+
+    # Get playground using a new session
+    async with AsyncSessionLocal() as db:
+        project_service = ProjectService(db)
+        project = await project_service.get_by_id_for_user(project_id, user_id)
+
+        if project is None:
+            await websocket.close(code=4004, reason="Project not found")
+            return
+
+        playground_service = PlaygroundService(db)
+        playground = await playground_service.get_by_project_id(project_id)
+
+        if playground is None:
+            await websocket.close(code=4004, reason="No playground found")
+            return
+
+        container_id = playground.container_id
+
+    # Create interactive exec session
+    import queue
+    from concurrent.futures import ThreadPoolExecutor
+    import json
+    import socket as sock
+
+    output_queue: queue.Queue = queue.Queue()
+    stop_event = asyncio.Event()
+    exec_socket = None
+    exec_id = None
+
+    def read_docker_stream():
+        """Read from docker exec socket and put data in queue."""
+        nonlocal exec_socket
+        try:
+            while not stop_event.is_set():
+                if exec_socket is None:
+                    break
+                try:
+                    # Docker uses a multiplexed stream format
+                    # First 8 bytes are header: [stream_type(1), 0, 0, 0, size(4)]
+                    header = exec_socket.recv(8)
+                    if not header or len(header) < 8:
+                        break
+
+                    # Parse header - stream type (1=stdout, 2=stderr) and size
+                    stream_type = header[0]
+                    size = struct.unpack('>I', header[4:8])[0]
+
+                    if size > 0:
+                        data = b''
+                        while len(data) < size:
+                            chunk = exec_socket.recv(size - len(data))
+                            if not chunk:
+                                break
+                            data += chunk
+                        if data:
+                            output_queue.put(data.decode('utf-8', errors='replace'))
+                except sock.timeout:
+                    continue
+                except Exception as e:
+                    if not stop_event.is_set():
+                        output_queue.put(f"\r\n[Connection error: {e}]\r\n")
+                    break
+        finally:
+            output_queue.put(None)
+
+    try:
+        # Create exec instance with TTY
+        container = docker_client.client.containers.get(container_id)
+        exec_instance = docker_client.client.api.exec_create(
+            container_id,
+            cmd=["/bin/bash"],
+            stdin=True,
+            stdout=True,
+            stderr=True,
+            tty=True,
+            environment={"TERM": "xterm-256color"},
+        )
+        exec_id = exec_instance['Id']
+
+        # Start exec and get socket
+        exec_socket = docker_client.client.api.exec_start(
+            exec_id,
+            socket=True,
+            tty=True,
+        )
+        # Get the underlying socket
+        exec_socket = exec_socket._sock
+        exec_socket.settimeout(0.1)
+
+        # Start reader thread
+        loop = asyncio.get_event_loop()
+        executor = ThreadPoolExecutor(max_workers=1)
+        reader_future = loop.run_in_executor(executor, read_docker_stream)
+
+        # Main loop
+        while True:
+            # Send any pending output to client
+            try:
+                while True:
+                    output = output_queue.get_nowait()
+                    if output is None:
+                        raise WebSocketDisconnect()
+                    await websocket.send_text(output)
+            except queue.Empty:
+                pass
+
+            # Check for client input
+            try:
+                msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.05)
+                try:
+                    data = json.loads(msg)
+                    if data.get("type") == "input":
+                        input_data = data.get("data", "")
+                        if input_data and exec_socket:
+                            exec_socket.send(input_data.encode('utf-8'))
+                    elif data.get("type") == "resize":
+                        cols = data.get("cols", 80)
+                        rows = data.get("rows", 24)
+                        if exec_id:
+                            docker_client.client.api.exec_resize(exec_id, height=rows, width=cols)
+                except json.JSONDecodeError:
+                    # Plain text input
+                    if msg and exec_socket:
+                        exec_socket.send(msg.encode('utf-8'))
+            except asyncio.TimeoutError:
+                pass
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_text(f"\r\n[Terminal error: {e}]\r\n")
+        except Exception:
+            pass
+    finally:
+        stop_event.set()
+        if exec_socket:
+            try:
+                exec_socket.close()
+            except Exception:
+                pass
         try:
             await websocket.close()
         except Exception:

@@ -1398,6 +1398,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         showLogs={showLogs}
         onToggleLogs={handleToggleLogs}
         logsConnected={logsConnected}
+        onOpenTerminal={() => window.open(`/terminal/${projectId}`, '_blank')}
       />
 
       {/* Main content */}
