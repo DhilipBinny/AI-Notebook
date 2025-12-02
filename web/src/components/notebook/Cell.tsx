@@ -218,11 +218,11 @@ export default function Cell({
     }
   }, [cell.type, cell.source])
 
-  // Auto-resize textarea
+  // Auto-resize textarea to fit content
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = Math.max(100, textareaRef.current.scrollHeight) + 'px'
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
     }
   }, [cell.source])
 
@@ -683,7 +683,7 @@ export default function Cell({
       </div>
 
       {/* Cell Input */}
-      <div className="p-3" style={{ color: 'var(--nb-text-primary)' }}>
+      <div className="px-3 py-2" style={{ color: 'var(--nb-text-primary)' }}>
         {!showTextarea ? (
           // Rendered markdown view - click to edit
           <div
@@ -711,11 +711,11 @@ export default function Cell({
               }
             }}
             style={{
-              minHeight: '100px',
               color: 'var(--nb-text-primary)',
+              lineHeight: '1.5',
             }}
             placeholder={cell.type === 'code' ? 'Enter Python code...' : cell.type === 'raw' ? 'Enter notes (plain text, not executed)...' : 'Enter markdown... (Shift+Enter to preview)'}
-            className="w-full bg-transparent font-mono text-sm resize-none outline-none"
+            className="w-full bg-transparent font-mono text-sm resize-none outline-none min-h-[24px]"
           />
         )}
       </div>
