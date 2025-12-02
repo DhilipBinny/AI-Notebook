@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { auth, projects, playgrounds, notebooks } from '@/lib/api'
+import { auth, projects, playgrounds, notebooks, workspaces } from '@/lib/api'
 import { useAuthStore, useProjectsStore } from '@/lib/store'
-import type { Project } from '@/types'
+import type { Project, Workspace } from '@/types'
 
 interface PlaygroundStatus {
   [projectId: string]: {
@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
+  const [editWorkspaceId, setEditWorkspaceId] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -43,6 +44,32 @@ export default function DashboardPage() {
   const [logs, setLogs] = useState<string[]>([])
   const [logsConnected, setLogsConnected] = useState(false)
   const logsWsRef = useRef<WebSocket | null>(null)
+
+  // Workspace state
+  const [workspaceList, setWorkspaceList] = useState<Workspace[]>([])
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null) // null = show first workspace
+  const [showNewWorkspace, setShowNewWorkspace] = useState(false)
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [newWorkspaceColor, setNewWorkspaceColor] = useState('#3B82F6')
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null)
+  const [editWorkspaceName, setEditWorkspaceName] = useState('')
+  const [editWorkspaceColor, setEditWorkspaceColor] = useState('')
+  const [updatingWorkspace, setUpdatingWorkspace] = useState(false)
+  const [deleteWorkspaceConfirm, setDeleteWorkspaceConfirm] = useState<Workspace | null>(null)
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
+
+  // Workspace colors
+  const workspaceColors = [
+    { name: 'Blue', value: '#3B82F6' },
+    { name: 'Purple', value: '#8B5CF6' },
+    { name: 'Green', value: '#10B981' },
+    { name: 'Amber', value: '#F59E0B' },
+    { name: 'Red', value: '#EF4444' },
+    { name: 'Pink', value: '#EC4899' },
+    { name: 'Teal', value: '#14B8A6' },
+    { name: 'Gray', value: '#6B7280' },
+  ]
 
   const fetchPlaygroundStatus = useCallback(async (projectId: string) => {
     try {
@@ -70,7 +97,6 @@ export default function DashboardPage() {
     if (message) {
       setNotificationMessage(message)
       sessionStorage.removeItem('notebook_redirect_message')
-      // Auto-dismiss after 5 seconds
       setTimeout(() => setNotificationMessage(null), 5000)
     }
   }, [])
@@ -85,8 +111,20 @@ export default function DashboardPage() {
         }
         const userData = await auth.getMe()
         setUser(userData)
-        const { projects: projectsData } = await projects.list()
+
+        const [{ projects: projectsData }, { workspaces: workspacesData }] = await Promise.all([
+          projects.list(),
+          workspaces.list(),
+        ])
+
         setProjects(projectsData)
+        setWorkspaceList(workspacesData)
+        // Select first workspace by default
+        if (workspacesData.length > 0) {
+          setSelectedWorkspaceId(workspacesData[0].id)
+        } else {
+          setSelectedWorkspaceId('uncategorized')
+        }
         projectsData.forEach((p: Project) => fetchPlaygroundStatus(p.id))
       } catch {
         router.push('/auth/login')
@@ -176,11 +214,16 @@ export default function DashboardPage() {
       const project = await projects.create({
         name: newProjectName.trim(),
         description: newProjectDesc.trim() || undefined,
+        workspace_id: selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' ? selectedWorkspaceId : undefined,
       })
       addProject(project)
       setShowNewProject(false)
       setNewProjectName('')
       setNewProjectDesc('')
+
+      // Refresh workspace counts
+      const { workspaces: updatedWorkspaces } = await workspaces.list()
+      setWorkspaceList(updatedWorkspaces)
 
       setPlaygroundStatuses(prev => ({
         ...prev,
@@ -231,6 +274,9 @@ export default function DashboardPage() {
         return newStatuses
       })
       setDeleteConfirm(null)
+      // Refresh workspace counts
+      const { workspaces: updatedWorkspaces } = await workspaces.list()
+      setWorkspaceList(updatedWorkspaces)
       setNotificationMessage('Notebook deleted successfully')
       setTimeout(() => setNotificationMessage(null), 3000)
     } catch (err) {
@@ -246,7 +292,6 @@ export default function DashboardPage() {
     const file = e.target.files?.[0]
     if (file) {
       setImportFile(file)
-      // Auto-fill project name from filename (without extension)
       const name = file.name.replace(/\.ipynb$/i, '')
       setImportProjectName(name)
     }
@@ -258,21 +303,17 @@ export default function DashboardPage() {
 
     setImporting(true)
     try {
-      // Read the file content
       const fileContent = await importFile.text()
       const ipynbData = JSON.parse(fileContent)
 
-      // Create the project first
       const project = await projects.create({
         name: importProjectName.trim(),
         description: `Imported from ${importFile.name}`,
+        workspace_id: selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' ? selectedWorkspaceId : undefined,
       })
       addProject(project)
-
-      // Import the notebook content
       await notebooks.import(project.id, ipynbData)
 
-      // Reset form and close modal
       setShowImportModal(false)
       setImportFile(null)
       setImportProjectName('')
@@ -280,11 +321,13 @@ export default function DashboardPage() {
         fileInputRef.current.value = ''
       }
 
-      // Show success notification
-      setNotificationMessage(`Successfully imported "${importFile.name}" with notebook cells`)
+      // Refresh workspace counts
+      const { workspaces: updatedWorkspaces } = await workspaces.list()
+      setWorkspaceList(updatedWorkspaces)
+
+      setNotificationMessage(`Successfully imported "${importFile.name}"`)
       setTimeout(() => setNotificationMessage(null), 5000)
 
-      // Start playground
       setPlaygroundStatuses(prev => ({
         ...prev,
         [project.id]: { status: 'starting', loading: true }
@@ -319,6 +362,7 @@ export default function DashboardPage() {
     setEditingProject(project)
     setEditName(project.name)
     setEditDesc(project.description || '')
+    setEditWorkspaceId(project.workspace_id || null)
   }
 
   const handleUpdateProject = async (e: React.FormEvent) => {
@@ -330,10 +374,19 @@ export default function DashboardPage() {
       const updated = await projects.update(editingProject.id, {
         name: editName.trim(),
         description: editDesc.trim() || undefined,
+        workspace_id: editWorkspaceId || undefined,
       })
-      // Update the project in the store
-      setProjects(projectList.map(p => p.id === updated.id ? updated : p))
+      // Update local state with workspace_id
+      const updatedProject = { ...updated, workspace_id: editWorkspaceId || undefined }
+      setProjects(projectList.map(p => p.id === updated.id ? updatedProject : p))
       setEditingProject(null)
+
+      // Refresh workspace counts if workspace changed
+      if (editingProject.workspace_id !== editWorkspaceId) {
+        const { workspaces: updatedWorkspaces } = await workspaces.list()
+        setWorkspaceList(updatedWorkspaces)
+      }
+
       setNotificationMessage('Notebook updated successfully')
       setTimeout(() => setNotificationMessage(null), 3000)
     } catch (err) {
@@ -350,7 +403,6 @@ export default function DashboardPage() {
     setLogs([])
     setLogsConnected(false)
 
-    // First fetch initial logs via HTTP
     try {
       const { logs: initialLogs } = await playgrounds.getLogs(project.id, 100)
       if (initialLogs) {
@@ -360,7 +412,6 @@ export default function DashboardPage() {
       console.error('Failed to fetch initial logs:', err)
     }
 
-    // Connect to WebSocket for real-time logs
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const token = localStorage.getItem('access_token')
     const wsUrl = `${wsProtocol}//${window.location.host}/api/projects/${project.id}/playground/logs/stream?token=${token}`
@@ -370,24 +421,21 @@ export default function DashboardPage() {
 
     ws.onopen = () => {
       setLogsConnected(true)
-      console.log('Logs WebSocket connected')
     }
 
     ws.onmessage = (event) => {
       const data = event.data
       if (data) {
-        setLogs(prev => [...prev, data].slice(-500)) // Keep last 500 lines
+        setLogs(prev => [...prev, data].slice(-500))
       }
     }
 
-    ws.onerror = (error) => {
-      console.error('Logs WebSocket error:', error)
+    ws.onerror = () => {
       setLogsConnected(false)
     }
 
     ws.onclose = () => {
       setLogsConnected(false)
-      console.log('Logs WebSocket closed')
     }
   }
 
@@ -426,14 +474,13 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    // Stop all running playgrounds before logout
     for (const project of projectList) {
       const status = playgroundStatuses[project.id]
       if (status?.status === 'running') {
         try {
           await playgrounds.stop(project.id)
         } catch {
-          // Ignore errors, just try to stop
+          // Ignore errors
         }
       }
     }
@@ -444,6 +491,107 @@ export default function DashboardPage() {
     setUser(null)
     router.push('/auth/login')
   }
+
+  // Workspace handlers
+  const handleCreateWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newWorkspaceName.trim()) return
+    setCreatingWorkspace(true)
+    try {
+      const workspace = await workspaces.create({
+        name: newWorkspaceName.trim(),
+        color: newWorkspaceColor,
+      })
+      setWorkspaceList(prev => [...prev, workspace])
+      setShowNewWorkspace(false)
+      setNewWorkspaceName('')
+      setNewWorkspaceColor('#3B82F6')
+      setSelectedWorkspaceId(workspace.id)
+      setNotificationMessage('Workspace created successfully')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    } catch (err) {
+      console.error('Failed to create workspace:', err)
+      setNotificationMessage('Failed to create workspace')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    } finally {
+      setCreatingWorkspace(false)
+    }
+  }
+
+  const handleEditWorkspace = (workspace: Workspace) => {
+    setEditingWorkspace(workspace)
+    setEditWorkspaceName(workspace.name)
+    setEditWorkspaceColor(workspace.color)
+  }
+
+  const handleUpdateWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingWorkspace || !editWorkspaceName.trim()) return
+    setUpdatingWorkspace(true)
+    try {
+      const updated = await workspaces.update(editingWorkspace.id, {
+        name: editWorkspaceName.trim(),
+        color: editWorkspaceColor,
+      })
+      setWorkspaceList(prev => prev.map(w => w.id === updated.id ? updated : w))
+      setEditingWorkspace(null)
+      setNotificationMessage('Workspace updated successfully')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    } catch (err) {
+      console.error('Failed to update workspace:', err)
+      setNotificationMessage('Failed to update workspace')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    } finally {
+      setUpdatingWorkspace(false)
+    }
+  }
+
+  const handleDeleteWorkspace = async () => {
+    if (!deleteWorkspaceConfirm) return
+
+    try {
+      await workspaces.delete(deleteWorkspaceConfirm.id)
+      setWorkspaceList(prev => prev.filter(w => w.id !== deleteWorkspaceConfirm.id))
+      setProjects(projectList.filter(p => p.workspace_id !== deleteWorkspaceConfirm.id))
+      if (selectedWorkspaceId === deleteWorkspaceConfirm.id) {
+        const remaining = workspaceList.filter(w => w.id !== deleteWorkspaceConfirm.id)
+        setSelectedWorkspaceId(remaining.length > 0 ? remaining[0].id : 'uncategorized')
+      }
+      setDeleteWorkspaceConfirm(null)
+      setEditingWorkspace(null)
+      setNotificationMessage('Workspace deleted successfully')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    } catch (err) {
+      console.error('Failed to delete workspace:', err)
+      setNotificationMessage('Failed to delete workspace')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    }
+  }
+
+  // Filter projects based on selected workspace
+  const getFilteredProjects = () => {
+    if (selectedWorkspaceId === 'uncategorized') {
+      return projectList.filter(p => !p.workspace_id)
+    }
+    if (selectedWorkspaceId) {
+      return projectList.filter(p => p.workspace_id === selectedWorkspaceId)
+    }
+    return projectList
+  }
+
+  const getSelectedWorkspace = () => {
+    if (!selectedWorkspaceId || selectedWorkspaceId === 'uncategorized') return null
+    return workspaceList.find(w => w.id === selectedWorkspaceId)
+  }
+
+  const getSelectedWorkspaceName = () => {
+    if (selectedWorkspaceId === 'uncategorized') return 'Uncategorized'
+    const workspace = workspaceList.find(w => w.id === selectedWorkspaceId)
+    return workspace?.name || 'Select a Workspace'
+  }
+
+  const uncategorizedCount = projectList.filter(p => !p.workspace_id).length
+  const activePlaygrounds = Object.values(playgroundStatuses).filter(s => s.status === 'running').length
 
   if (isLoading || authLoading) {
     return (
@@ -461,18 +609,18 @@ export default function DashboardPage() {
       {/* Notification Banner */}
       {notificationMessage && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full mx-4 animate-in slide-in-from-top duration-300">
-          <div className="bg-amber-500/20 border border-amber-500/50 backdrop-blur-xl rounded-xl p-4 flex items-start gap-3 shadow-lg shadow-amber-500/10">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-500/30 flex items-center justify-center">
-              <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          <div className="bg-emerald-500/20 border border-emerald-500/50 backdrop-blur-xl rounded-xl p-4 flex items-start gap-3 shadow-lg">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/30 flex items-center justify-center">
+              <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
             <div className="flex-1">
-              <p className="text-amber-200 text-sm">{notificationMessage}</p>
+              <p className="text-emerald-200 text-sm">{notificationMessage}</p>
             </div>
             <button
               onClick={() => setNotificationMessage(null)}
-              className="flex-shrink-0 text-amber-400 hover:text-amber-200 transition-colors"
+              className="flex-shrink-0 text-emerald-400 hover:text-emerald-200 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -522,7 +670,7 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="relative z-10 max-w-7xl mx-auto px-6 py-8">
         {/* Hero Section */}
-        <div className="mb-10">
+        <div className="mb-8">
           <div className="flex justify-between items-end">
             <div>
               <h2 className="text-4xl font-bold text-white mb-2">
@@ -556,7 +704,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           <div className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -564,7 +712,7 @@ export default function DashboardPage() {
                 <p className="text-3xl font-bold text-white mt-1">{projectList.length}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
               </div>
@@ -574,9 +722,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-400 text-sm">Active Playgrounds</p>
-                <p className="text-3xl font-bold text-white mt-1">
-                  {Object.values(playgroundStatuses).filter(s => s.status === 'running').length}
-                </p>
+                <p className="text-3xl font-bold text-white mt-1">{activePlaygrounds}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
                 <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -587,622 +733,691 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Section Title */}
-        <div className="flex items-center gap-3 mb-6">
-          <h3 className="text-xl font-semibold text-white">Your Notebooks</h3>
-          <div className="flex-1 h-px bg-gradient-to-r from-white/20 to-transparent" />
-        </div>
+        {/* Workspace Sidebar + Projects Grid */}
+        <div className="flex gap-6">
+          {/* Workspace Sidebar */}
+          <div className="w-64 flex-shrink-0">
+            <div className="sticky top-24 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm overflow-hidden">
+              <div className="p-4 border-b border-white/10">
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Workspaces</h3>
+              </div>
+              <div className="p-2 max-h-[60vh] overflow-y-auto">
+                {/* Workspace Items */}
+                {workspaceList.map(ws => (
+                  <div
+                    key={ws.id}
+                    className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all mb-1 cursor-pointer ${
+                      selectedWorkspaceId === ws.id
+                        ? 'bg-white/10 text-white'
+                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                    }`}
+                    onClick={() => setSelectedWorkspaceId(ws.id)}
+                  >
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: ws.color }}
+                    />
+                    <span className="flex-1 text-sm truncate">{ws.name}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEditWorkspace(ws) }}
+                      className="p-1 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-all"
+                      title="Edit workspace"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">{ws.project_count}</span>
+                  </div>
+                ))}
 
-        {/* Projects Grid */}
-        {projectList.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-              <svg className="w-10 h-10 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            </div>
-            <h4 className="text-xl font-medium text-white mb-2">No notebooks yet</h4>
-            <p className="text-gray-400 mb-6">Create your first AI-powered notebook to get started</p>
-            <button
-              onClick={() => setShowNewProject(true)}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-teal-600 text-white rounded-xl font-medium shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all"
-            >
-              Create Notebook
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projectList.map((project) => {
-              const pgStatus = playgroundStatuses[project.id] || { status: 'stopped', loading: false }
-              const isRunning = pgStatus.status === 'running'
-              const isLoading = pgStatus.loading
+                {/* Uncategorized */}
+                {uncategorizedCount > 0 && (
+                  <button
+                    onClick={() => setSelectedWorkspaceId('uncategorized')}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all mb-1 ${
+                      selectedWorkspaceId === 'uncategorized'
+                        ? 'bg-white/10 text-white'
+                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    <div className="w-3 h-3 rounded-full bg-gray-500 flex-shrink-0" />
+                    <span className="flex-1 text-left text-sm">Uncategorized</span>
+                    <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">{uncategorizedCount}</span>
+                  </button>
+                )}
 
-              return (
-                <div
-                  key={project.id}
-                  className="group relative rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm overflow-hidden hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+                {/* New Workspace Button */}
+                <button
+                  onClick={() => setShowNewWorkspace(true)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-500 hover:bg-white/5 hover:text-gray-300 transition-all mt-2 border border-dashed border-white/10"
                 >
-                  {/* Gradient accent */}
-                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-teal-500" />
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span className="text-sm">New Workspace</span>
+                </button>
+              </div>
+            </div>
+          </div>
 
-                  <div className="p-6">
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center text-white shadow-lg">
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          {/* Projects Grid */}
+          <div className="flex-1">
+            {/* Workspace Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                {getSelectedWorkspace() && (
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: getSelectedWorkspace()?.color }}
+                  />
+                )}
+                <h3 className="text-xl font-semibold text-white">{getSelectedWorkspaceName()}</h3>
+                <span className="text-sm text-gray-500">
+                  {getFilteredProjects().length} notebook{getFilteredProjects().length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              {/* View Toggle */}
+              <div className="flex items-center gap-1 p-1 rounded-lg bg-white/5 border border-white/10">
+                <button
+                  onClick={() => setViewMode('card')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'card' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                  title="Card view"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                  title="List view"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {getFilteredProjects().length === 0 ? (
+              <div className="text-center py-16 rounded-2xl bg-white/5 border border-white/10">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-medium text-white mb-2">No notebooks here</h4>
+                <p className="text-gray-400 mb-4 text-sm">Create a notebook in this workspace</p>
+                <button
+                  onClick={() => setShowNewProject(true)}
+                  className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-teal-600 text-white rounded-xl font-medium text-sm shadow-lg shadow-blue-500/25"
+                >
+                  Create Notebook
+                </button>
+              </div>
+            ) : viewMode === 'card' ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {getFilteredProjects().map((project) => {
+                  const pgStatus = playgroundStatuses[project.id] || { status: 'stopped', loading: false }
+                  const isRunning = pgStatus.status === 'running'
+                  const isLoading = pgStatus.loading
+                  const projectWorkspace = workspaceList.find(w => w.id === project.workspace_id)
+
+                  return (
+                    <div
+                      key={project.id}
+                      className="group relative rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm overflow-hidden hover:bg-white/10 hover:border-white/20 transition-all duration-300"
+                    >
+                      {/* Workspace color bar */}
+                      <div
+                        className="absolute top-0 left-0 right-0 h-1"
+                        style={{ backgroundColor: projectWorkspace?.color || '#6B7280' }}
+                      />
+
+                      <div className="p-5">
+                        {/* Header */}
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center text-blue-400">
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                              </svg>
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-white truncate">{project.name}</h4>
+                              <p className="text-xs text-gray-500">{new Date(project.updated_at).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button
+                              onClick={() => handleDownloadProject(project)}
+                              disabled={downloadingProject === project.id}
+                              className="p-1.5 text-gray-500 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all disabled:opacity-50"
+                              title="Download"
+                            >
+                              {downloadingProject === project.id ? (
+                                <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleEditProject(project)}
+                              className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all"
+                              title="Edit"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProject(project)}
+                              className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                              title="Delete"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Description */}
+                        {project.description && (
+                          <p className="text-sm text-gray-400 mb-3 line-clamp-2">{project.description}</p>
+                        )}
+
+                        {/* Status */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className={`w-2 h-2 rounded-full ${
+                            pgStatus.status === 'running' ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' :
+                            pgStatus.status === 'starting' || pgStatus.status === 'stopping' ? 'bg-amber-400 animate-pulse' :
+                            pgStatus.status === 'error' ? 'bg-red-400' : 'bg-gray-500'
+                          }`} />
+                          <span className="text-xs text-gray-400">
+                            {pgStatus.status === 'running' ? 'Running' :
+                             pgStatus.status === 'starting' ? 'Starting...' :
+                             pgStatus.status === 'stopping' ? 'Stopping...' :
+                             pgStatus.status === 'error' ? 'Error' : 'Stopped'}
+                          </span>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="flex gap-2 mb-3">
+                          {!isRunning ? (
+                            <button
+                              onClick={() => handleStartPlayground(project.id)}
+                              disabled={isLoading}
+                              className="flex-1 px-3 py-2 text-sm bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                              {isLoading ? (
+                                <div className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                </svg>
+                              )}
+                              Start
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleStopPlayground(project.id)}
+                                disabled={isLoading}
+                                className="flex-1 px-3 py-2 text-sm bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-xl transition-all disabled:opacity-50"
+                              >
+                                Stop
+                              </button>
+                              <button
+                                onClick={() => handleRestartPlayground(project.id)}
+                                disabled={isLoading}
+                                className="flex-1 px-3 py-2 text-sm bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 rounded-xl transition-all disabled:opacity-50"
+                              >
+                                Restart
+                              </button>
+                              <button
+                                onClick={() => handleViewLogs(project)}
+                                className="flex-1 px-3 py-2 text-sm bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 rounded-xl transition-all"
+                              >
+                                Logs
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Open Button */}
+                        <button
+                          onClick={() => router.push(`/notebook/${project.id}`)}
+                          disabled={!isRunning}
+                          className={`w-full py-2.5 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                            isRunning
+                              ? 'bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white shadow-lg shadow-blue-500/25'
+                              : 'bg-white/5 text-gray-500 cursor-not-allowed border border-white/10'
+                          }`}
+                        >
+                          {isRunning ? 'Open Notebook' : 'Start to Open'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              /* List View */
+              <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm overflow-hidden">
+                {/* List Header */}
+                <div className="grid grid-cols-12 gap-4 px-4 py-3 border-b border-white/10 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  <div className="col-span-4">Name</div>
+                  <div className="col-span-2">Status</div>
+                  <div className="col-span-2">Updated</div>
+                  <div className="col-span-4 text-right">Actions</div>
+                </div>
+                {/* List Items */}
+                {getFilteredProjects().map((project) => {
+                  const pgStatus = playgroundStatuses[project.id] || { status: 'stopped', loading: false }
+                  const isRunning = pgStatus.status === 'running'
+                  const isLoading = pgStatus.loading
+                  const projectWorkspace = workspaceList.find(w => w.id === project.workspace_id)
+
+                  return (
+                    <div
+                      key={project.id}
+                      className="group grid grid-cols-12 gap-4 px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-all items-center"
+                    >
+                      {/* Name */}
+                      <div className="col-span-4 flex items-center gap-3 min-w-0">
+                        <div
+                          className="w-1 h-8 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: projectWorkspace?.color || '#6B7280' }}
+                        />
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center text-blue-400 flex-shrink-0">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                           </svg>
                         </div>
-                        <div>
-                          <h4 className="font-semibold text-white group-hover:text-blue-300 transition-colors truncate max-w-[180px]">
-                            {project.name}
-                          </h4>
-                        </div>
-                      </div>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button
-                          onClick={() => handleDownloadProject(project)}
-                          disabled={downloadingProject === project.id}
-                          className="p-2 text-gray-500 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all disabled:opacity-50"
-                          title="Download as .ipynb"
-                        >
-                          {downloadingProject === project.id ? (
-                            <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
+                        <div className="min-w-0">
+                          <h4 className="font-medium text-white truncate text-sm">{project.name}</h4>
+                          {project.description && (
+                            <p className="text-xs text-gray-500 truncate">{project.description}</p>
                           )}
-                        </button>
-                        <button
-                          onClick={() => handleEditProject(project)}
-                          className="p-2 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all"
-                          title="Edit notebook"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProject(project)}
-                          className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                          title="Delete notebook"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Description */}
-                    {project.description && (
-                      <p className="text-sm text-gray-400 mb-4 line-clamp-2">
-                        {project.description}
-                      </p>
-                    )}
-
-                    {/* Status */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className={`w-2 h-2 rounded-full ${
-                        pgStatus.status === 'running' ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' :
-                        pgStatus.status === 'starting' || pgStatus.status === 'stopping' ? 'bg-amber-400 animate-pulse' :
-                        pgStatus.status === 'error' ? 'bg-red-400' : 'bg-gray-500'
-                      }`} />
-                      <span className="text-xs text-gray-400">
-                        {pgStatus.status === 'running' ? 'Environment Ready' :
-                         pgStatus.status === 'starting' ? 'Starting...' :
-                         pgStatus.status === 'stopping' ? 'Stopping...' :
-                         pgStatus.status === 'error' ? 'Error' : 'Offline'}
-                      </span>
-                    </div>
-
-                    {/* Resource Info - only show when running */}
-                    {isRunning && pgStatus.memory_limit_mb && pgStatus.cpu_limit ? (
-                      <div className="mb-4 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                            </svg>
-                            <span className="text-xs text-emerald-300">{pgStatus.cpu_limit} vCPU</span>
-                          </div>
-                          <div className="w-px h-3 bg-emerald-500/30" />
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                            </svg>
-                            <span className="text-xs text-emerald-300">{(pgStatus.memory_limit_mb / 1024).toFixed(1)} GB RAM</span>
-                          </div>
-                          <div className="w-px h-3 bg-emerald-500/30" />
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                            </svg>
-                            <span className="text-xs text-emerald-300">Python 3.11</span>
-                          </div>
                         </div>
-                        {/* Logs button */}
-                        <button
-                          onClick={() => handleViewLogs(project)}
-                          className="w-full px-3 py-1.5 text-xs rounded-lg bg-gray-500/20 hover:bg-gray-500/30 text-gray-300 border border-gray-500/30 transition-all flex items-center justify-center gap-1.5"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          View Logs
-                        </button>
                       </div>
-                    ) : (
-                      <div className="mb-2" />
-                    )}
 
-                    {/* Controls */}
-                    <div className="flex gap-2 mb-4">
-                      {!isRunning ? (
-                        <button
-                          onClick={() => handleStartPlayground(project.id)}
-                          disabled={isLoading}
-                          className="flex-1 px-4 py-2 text-sm bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {isLoading ? (
-                            <>
+                      {/* Status */}
+                      <div className="col-span-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${
+                            pgStatus.status === 'running' ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' :
+                            pgStatus.status === 'starting' || pgStatus.status === 'stopping' ? 'bg-amber-400 animate-pulse' :
+                            pgStatus.status === 'error' ? 'bg-red-400' : 'bg-gray-500'
+                          }`} />
+                          <span className={`text-xs ${
+                            pgStatus.status === 'running' ? 'text-emerald-400' :
+                            pgStatus.status === 'starting' || pgStatus.status === 'stopping' ? 'text-amber-400' :
+                            pgStatus.status === 'error' ? 'text-red-400' : 'text-gray-500'
+                          }`}>
+                            {pgStatus.status === 'running' ? 'Running' :
+                             pgStatus.status === 'starting' ? 'Starting...' :
+                             pgStatus.status === 'stopping' ? 'Stopping...' :
+                             pgStatus.status === 'error' ? 'Error' : 'Stopped'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Updated */}
+                      <div className="col-span-2 text-sm text-gray-400">
+                        {new Date(project.updated_at).toLocaleDateString()}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="col-span-4 flex items-center justify-end gap-2">
+                        {/* Playground Controls */}
+                        {!isRunning ? (
+                          <button
+                            onClick={() => handleStartPlayground(project.id)}
+                            disabled={isLoading}
+                            className="px-3 py-1.5 text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
+                          >
+                            {isLoading ? (
                               <div className="w-3 h-3 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
-                              Starting
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              Start
-                            </>
-                          )}
-                        </button>
-                      ) : (
-                        <>
+                            )}
+                            Start
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleStopPlayground(project.id)}
+                              disabled={isLoading}
+                              className="px-2 py-1.5 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg transition-all disabled:opacity-50"
+                              title="Stop"
+                            >
+                              Stop
+                            </button>
+                            <button
+                              onClick={() => handleViewLogs(project)}
+                              className="px-2 py-1.5 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/30 rounded-lg transition-all"
+                              title="Logs"
+                            >
+                              Logs
+                            </button>
+                            <button
+                              onClick={() => router.push(`/notebook/${project.id}`)}
+                              className="px-3 py-1.5 text-xs bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white rounded-lg transition-all shadow-lg shadow-blue-500/25"
+                            >
+                              Open
+                            </button>
+                          </>
+                        )}
+
+                        {/* More Actions */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                           <button
-                            onClick={() => handleStopPlayground(project.id)}
-                            disabled={isLoading}
-                            className="flex-1 px-3 py-2 text-sm bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-xl transition-all disabled:opacity-50"
+                            onClick={() => handleDownloadProject(project)}
+                            disabled={downloadingProject === project.id}
+                            className="p-1.5 text-gray-500 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-all disabled:opacity-50"
+                            title="Download"
                           >
-                            Stop
+                            {downloadingProject === project.id ? (
+                              <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                            )}
                           </button>
                           <button
-                            onClick={() => handleRestartPlayground(project.id)}
-                            disabled={isLoading}
-                            className="flex-1 px-3 py-2 text-sm bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 rounded-xl transition-all disabled:opacity-50"
+                            onClick={() => handleEditProject(project)}
+                            className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all"
+                            title="Edit"
                           >
-                            Restart
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
                           </button>
-                        </>
-                      )}
+                          <button
+                            onClick={() => handleDeleteProject(project)}
+                            className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                            title="Delete"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-
-                    {/* Meta */}
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-4 pt-4 border-t border-white/5">
-                      <span>{new Date(project.updated_at).toLocaleDateString()}</span>
-                    </div>
-
-                    {/* Open Button */}
-                    <button
-                      onClick={() => router.push(`/notebook/${project.id}`)}
-                      disabled={!isRunning}
-                      className={`w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
-                        isRunning
-                          ? 'bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40'
-                          : 'bg-white/5 text-gray-500 cursor-not-allowed border border-white/10'
-                      }`}
-                    >
-                      {isRunning ? (
-                        <>
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                          Open Notebook
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                          Start Environment First
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
 
       {/* New Project Modal */}
       {showNewProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowNewProject(false)} />
-          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-white/10 shadow-2xl overflow-hidden">
-            {/* Modal header gradient */}
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-blue-500/20 to-transparent pointer-events-none" />
-
-            <div className="relative p-8">
-              <div className="text-center mb-8">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
-                  <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl font-bold text-white">Create New Notebook</h3>
-                <p className="text-gray-400 mt-1">Set up your AI-powered workspace</p>
+          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-4">New Notebook</h3>
+            <form onSubmit={handleCreateProject} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                  placeholder="My Notebook"
+                  required
+                />
               </div>
-
-              <form onSubmit={handleCreateProject} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Notebook Name
-                  </label>
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
-                    placeholder="e.g., Data Analysis Project"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Description <span className="text-gray-500">(optional)</span>
-                  </label>
-                  <textarea
-                    value={newProjectDesc}
-                    onChange={(e) => setNewProjectDesc(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all resize-none"
-                    placeholder="What will you explore?"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowNewProject(false)}
-                    className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={creating}
-                    className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-500 hover:to-teal-500 text-white font-medium shadow-lg shadow-blue-500/25 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                  >
-                    {creating ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Notebook'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description (optional)</label>
+                <textarea
+                  value={newProjectDesc}
+                  onChange={(e) => setNewProjectDesc(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none"
+                  placeholder="What's this notebook about?"
+                  rows={2}
+                />
+              </div>
+              {selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' && (
+                <p className="text-sm text-gray-400">
+                  Will be created in: <span className="text-white">{getSelectedWorkspaceName()}</span>
+                </p>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowNewProject(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                <button type="submit" disabled={creating} className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {creating && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Create
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Import Notebook Modal */}
+      {/* Import Modal */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowImportModal(false)} />
-          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-white/10 shadow-2xl overflow-hidden">
-            {/* Modal header gradient */}
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-cyan-500/20 to-transparent pointer-events-none" />
-
-            <div className="relative p-8">
-              <div className="text-center mb-8">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/25">
-                  <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl font-bold text-white">Import Notebook</h3>
-                <p className="text-gray-400 mt-1">Upload an existing .ipynb file</p>
-              </div>
-
-              <form onSubmit={handleImportProject} className="space-y-6">
-                {/* File Upload */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Select .ipynb File
-                  </label>
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`w-full p-6 rounded-xl border-2 border-dashed transition-all cursor-pointer ${
-                      importFile
-                        ? 'border-cyan-500/50 bg-cyan-500/10'
-                        : 'border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10'
-                    }`}
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".ipynb"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                    <div className="text-center">
-                      {importFile ? (
-                        <>
-                          <svg className="w-10 h-10 mx-auto mb-2 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="text-cyan-400 font-medium">{importFile.name}</p>
-                          <p className="text-gray-500 text-sm mt-1">Click to change file</p>
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-10 h-10 mx-auto mb-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                          <p className="text-gray-400">Click to select a file</p>
-                          <p className="text-gray-500 text-sm mt-1">or drag and drop</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Project Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Notebook Name
-                  </label>
-                  <input
-                    type="text"
-                    value={importProjectName}
-                    onChange={(e) => setImportProjectName(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all"
-                    placeholder="e.g., My Imported Notebook"
-                    required
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowImportModal(false)
-                      setImportFile(null)
-                      setImportProjectName('')
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = ''
-                      }
-                    }}
-                    className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={importing || !importFile}
-                    className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium shadow-lg shadow-cyan-500/25 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                  >
-                    {importing ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Importing...
-                      </>
-                    ) : (
-                      'Import Notebook'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Notebook Modal */}
-      {editingProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingProject(null)} />
-          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-white/10 shadow-2xl overflow-hidden">
-            {/* Modal header gradient */}
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-blue-500/20 to-transparent pointer-events-none" />
-
-            <div className="relative p-8">
-              <div className="text-center mb-8">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
-                  <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl font-bold text-white">Edit Notebook</h3>
-                <p className="text-gray-400 mt-1">Update notebook details</p>
-              </div>
-
-              <form onSubmit={handleUpdateProject} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Notebook Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                    placeholder="e.g., Data Analysis Project"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Description <span className="text-gray-500">(optional)</span>
-                  </label>
-                  <textarea
-                    value={editDesc}
-                    onChange={(e) => setEditDesc(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all resize-none"
-                    placeholder="What will you explore?"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setEditingProject(null)}
-                    className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={updating}
-                    className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium shadow-lg shadow-blue-500/25 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                  >
-                    {updating ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      'Save Changes'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setDeleteConfirm(null)} />
-          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-red-500/30 shadow-2xl overflow-hidden">
-            {/* Modal header gradient */}
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-red-500/20 to-transparent pointer-events-none" />
-
-            <div className="relative p-8">
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-white mb-2">Delete Notebook</h3>
-                  <p className="text-gray-400">
-                    Are you sure you want to delete <span className="text-white font-medium">"{deleteConfirm.name}"</span>?
-                  </p>
-                  <p className="text-red-400 text-sm mt-2">
-                    This action cannot be undone. All cells and chat history will be permanently deleted.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setDeleteConfirm(null)}
-                  disabled={deleting}
-                  className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 transition-all disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDeleteProject}
-                  disabled={deleting}
-                  className="flex-1 px-6 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium shadow-lg shadow-red-500/25 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                >
-                  {deleting ? (
+          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-4">Import Notebook</h3>
+            <form onSubmit={handleImportProject} className="space-y-4">
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className={`p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all ${importFile ? 'border-blue-500/50 bg-blue-500/10' : 'border-white/20 bg-white/5 hover:border-white/40'}`}
+              >
+                <input ref={fileInputRef} type="file" accept=".ipynb" onChange={handleFileSelect} className="hidden" />
+                <div className="text-center">
+                  {importFile ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Deleting...
+                      <svg className="w-8 h-8 mx-auto mb-2 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <p className="text-blue-400 font-medium">{importFile.name}</p>
                     </>
                   ) : (
                     <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                      Delete Notebook
+                      <svg className="w-8 h-8 mx-auto mb-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                      <p className="text-gray-400">Click to select .ipynb file</p>
                     </>
                   )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Notebook Name</label>
+                <input type="text" value={importProjectName} onChange={(e) => setImportProjectName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Notebook name" required />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setShowImportModal(false); setImportFile(null); setImportProjectName('') }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                <button type="submit" disabled={importing || !importFile} className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {importing && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Import
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {editingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingProject(null)} />
+          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-4">Edit Notebook</h3>
+            <form onSubmit={handleUpdateProject} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-blue-500" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-blue-500 resize-none" rows={2} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Workspace</label>
+                <p className="text-xs text-gray-500 mb-2">Move this notebook to a different workspace</p>
+                <div className="relative">
+                  <select
+                    value={editWorkspaceId || ''}
+                    onChange={(e) => setEditWorkspaceId(e.target.value || null)}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-blue-500 cursor-pointer pr-10"
+                    style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
+                  >
+                    <option value="" style={{ backgroundColor: '#0f172a', color: 'white' }}>Uncategorized</option>
+                    {workspaceList.map(ws => (
+                      <option key={ws.id} value={ws.id} style={{ backgroundColor: '#0f172a', color: 'white' }}>{ws.name}</option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditingProject(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                <button type="submit" disabled={updating} className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {updating && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Confirm */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setDeleteConfirm(null)} />
+          <div className="relative w-full max-w-sm rounded-2xl bg-slate-900 border border-red-500/30 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-2">Delete Notebook</h3>
+            <p className="text-gray-400 mb-4">Delete &quot;{deleteConfirm.name}&quot;? This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} disabled={deleting} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5 disabled:opacity-50">Cancel</button>
+              <button onClick={confirmDeleteProject} disabled={deleting} className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                {deleting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                Delete
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Logs Viewer Modal */}
+      {/* New Workspace Modal */}
+      {showNewWorkspace && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowNewWorkspace(false)} />
+          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-4">New Workspace</h3>
+            <form onSubmit={handleCreateWorkspace} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                <input type="text" value={newWorkspaceName} onChange={(e) => setNewWorkspaceName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" placeholder="e.g., Machine Learning" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Color</label>
+                <div className="flex flex-wrap gap-2">
+                  {workspaceColors.map((color) => (
+                    <button key={color.value} type="button" onClick={() => setNewWorkspaceColor(color.value)} className={`w-8 h-8 rounded-lg transition-all ${newWorkspaceColor === color.value ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'hover:scale-105'}`} style={{ backgroundColor: color.value }} title={color.name} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setShowNewWorkspace(false); setNewWorkspaceName(''); setNewWorkspaceColor('#3B82F6') }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                <button type="submit" disabled={creatingWorkspace} className="flex-1 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {creatingWorkspace && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Workspace Modal */}
+      {editingWorkspace && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingWorkspace(null)} />
+          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-4">Edit Workspace</h3>
+            <form onSubmit={handleUpdateWorkspace} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                <input type="text" value={editWorkspaceName} onChange={(e) => setEditWorkspaceName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500" placeholder="Workspace name" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Color</label>
+                <div className="flex flex-wrap gap-2">
+                  {workspaceColors.map((color) => (
+                    <button key={color.value} type="button" onClick={() => setEditWorkspaceColor(color.value)} className={`w-8 h-8 rounded-lg transition-all ${editWorkspaceColor === color.value ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110' : 'hover:scale-105'}`} style={{ backgroundColor: color.value }} title={color.name} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditingWorkspace(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                {!editingWorkspace.is_default && (
+                  <button type="button" onClick={() => setDeleteWorkspaceConfirm(editingWorkspace)} className="px-4 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30">Delete</button>
+                )}
+                <button type="submit" disabled={updatingWorkspace} className="flex-1 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {updatingWorkspace && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Workspace Confirm */}
+      {deleteWorkspaceConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteWorkspaceConfirm(null)} />
+          <div className="relative w-full max-w-sm rounded-2xl bg-slate-900 border border-red-500/30 shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-2">Delete Workspace</h3>
+            <p className="text-gray-400 mb-4">Delete &quot;{deleteWorkspaceConfirm.name}&quot; and all its notebooks? This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteWorkspaceConfirm(null)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+              <button onClick={handleDeleteWorkspace} className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logs Modal */}
       {logsProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleCloseLogs} />
-          <div className="relative w-[90vw] h-[85vh] rounded-2xl bg-slate-900 border border-white/10 shadow-2xl overflow-hidden flex flex-col">
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-gradient-to-r from-gray-800 to-slate-800">
+          <div className="relative w-[90vw] h-[80vh] rounded-2xl bg-slate-900 border border-white/10 shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gray-700 flex items-center justify-center">
-                  <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Container Logs</h3>
-                  <p className="text-sm text-gray-400">{logsProject.name}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center gap-2 text-xs ${logsConnected ? 'text-emerald-400' : 'text-gray-400'}`}>
-                  <div className={`w-2 h-2 rounded-full ${logsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
+                <h3 className="text-white font-semibold">Logs: {logsProject.name}</h3>
+                <div className={`flex items-center gap-1.5 text-xs ${logsConnected ? 'text-emerald-400' : 'text-gray-400'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${logsConnected ? 'bg-emerald-400' : 'bg-gray-500'}`} />
                   {logsConnected ? 'Live' : 'Connecting...'}
                 </div>
-                <button
-                  onClick={() => setLogs([])}
-                  className="px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                >
-                  Clear
-                </button>
-                <button
-                  onClick={handleCloseLogs}
-                  className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
+              <button onClick={handleCloseLogs} className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
             </div>
-
-            {/* Logs content */}
-            <div className="flex-1 overflow-auto p-4 font-mono text-xs bg-black/80">
+            <div className="flex-1 overflow-auto p-4 font-mono text-xs bg-black/50">
               {logs.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  Waiting for logs...
-                </div>
+                <div className="text-gray-500 text-center py-8">Waiting for logs...</div>
               ) : (
                 logs.map((line, i) => (
-                  <div
-                    key={i}
-                    className={`${
-                      line.includes('ERROR') || line.includes('error') ? 'text-red-400' :
-                      line.includes('WARNING') || line.includes('warning') ? 'text-amber-400' :
-                      line.includes('INFO') ? 'text-blue-400' :
-                      'text-gray-300'
-                    }`}
-                  >
-                    {line || '\u00A0'}
-                  </div>
+                  <div key={i} className={`${line.includes('ERROR') ? 'text-red-400' : line.includes('WARNING') ? 'text-amber-400' : 'text-gray-300'}`}>{line || '\u00A0'}</div>
                 ))
               )}
             </div>

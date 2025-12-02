@@ -14,11 +14,26 @@ export interface Project {
   id: string
   name: string
   description?: string
+  workspace_id?: string
   is_archived: boolean
   created_at: string
   updated_at: string
   last_opened_at?: string
   playground?: Playground
+}
+
+export interface Workspace {
+  id: string
+  user_id: string
+  name: string
+  description?: string
+  color: string
+  icon?: string
+  is_default: boolean
+  sort_order: string
+  created_at: string
+  updated_at: string
+  project_count: number
 }
 
 export interface Playground {

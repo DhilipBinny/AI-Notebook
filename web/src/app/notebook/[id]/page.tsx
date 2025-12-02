@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { auth, projects, playgrounds, chat, notebooks } from '@/lib/api'
 import { useAuthStore, useProjectsStore, useNotebookStore } from '@/lib/store'
@@ -51,6 +51,14 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [playgroundLoading, setPlaygroundLoading] = useState(false)
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null)
   const [contextCellIds, setContextCellIds] = useState<Set<string>>(new Set())
+  const [isEditMode, setIsEditMode] = useState(false) // false = command mode (navigate with arrows), true = edit mode (typing)
+  const [lastNavDirection, setLastNavDirection] = useState<'up' | 'down'>('down') // Track last navigation direction for Esc
+
+  // Ref to prevent double-processing of Shift+Enter
+  const shiftEnterHandledRef = useRef(false)
+
+  // Ref for Run All to resolve promises when cells complete
+  const runAllResolveRef = useRef<(() => void) | null>(null)
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -105,8 +113,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       const notebookData = await notebooks.get(projectId)
       if (notebookData.notebook.cells.length > 0) {
         const loadedCells = notebookData.notebook.cells.map((cell) => ({
-          id: cell.metadata?.cell_id || generateCellId(),  // cell_id from metadata (Jupyter standard)
-          type: (cell.cell_type || 'code') as 'code' | 'markdown' | 'raw',
+          id: (cell.metadata?.cell_id as string) || generateCellId(),  // cell_id from metadata (Jupyter standard)
+          type: (cell.cell_type || cell.type || 'code') as 'code' | 'markdown' | 'raw',
           source: cell.source,
           outputs: cell.outputs as any[],
           execution_count: cell.execution_count,
@@ -169,8 +177,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           if (notebookData.notebook.cells.length > 0) {
             // Convert to our cell format (Jupyter standard: cell_type and metadata.cell_id)
             const loadedCells = notebookData.notebook.cells.map((cell) => ({
-              id: cell.metadata?.cell_id || generateCellId(),  // cell_id from metadata
-              type: (cell.cell_type || 'code') as 'code' | 'markdown' | 'raw',
+              id: (cell.metadata?.cell_id as string) || generateCellId(),  // cell_id from metadata
+              type: (cell.cell_type || cell.type || 'code') as 'code' | 'markdown' | 'raw',
               source: cell.source,
               outputs: cell.outputs as any[],
               execution_count: cell.execution_count,
@@ -238,6 +246,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
     kernel.setCompletionCallback((cellId, success) => {
       console.log(`Cell ${cellId} completed: ${success ? 'success' : 'error'}`)
+      // Resolve Run All promise if waiting
+      if (runAllResolveRef.current) {
+        const resolve = runAllResolveRef.current
+        runAllResolveRef.current = null
+        resolve()
+      }
     })
   }, [kernel, cells, updateCell])
 
@@ -338,13 +352,43 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       return
     }
 
-    for (const cell of cells) {
-      if (cell.type === 'code' && cell.source.trim()) {
-        updateCell(cell.id, { outputs: [] })
+    // Get all code cells with content
+    const codeCells = cells.filter(cell => cell.type === 'code' && cell.source.trim())
+
+    for (const cell of codeCells) {
+      // Select the cell and scroll to it
+      setSelectedCellId(cell.id)
+      setIsEditMode(false)
+
+      // Scroll cell into view
+      setTimeout(() => {
+        const cellElement = document.getElementById(`cell-${cell.id}`)
+        if (cellElement) {
+          cellElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 50)
+
+      // Clear outputs
+      updateCell(cell.id, { outputs: [] })
+
+      // Execute and wait for completion using a ref-based approach
+      await new Promise<void>((resolve) => {
+        runAllResolveRef.current = resolve
+
+        // Timeout after 5 minutes
+        const timeout = setTimeout(() => {
+          if (runAllResolveRef.current === resolve) {
+            runAllResolveRef.current = null
+            resolve()
+          }
+        }, 300000)
+
+        // Send execution directly via WebSocket to avoid stale closure
         kernel.execute(cell.id, cell.source)
-        // Wait a bit between executions
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      }
+      })
+
+      // Small delay before next cell
+      await new Promise(resolve => setTimeout(resolve, 200))
     }
   }, [cells, playground, kernel, updateCell])
 
@@ -484,18 +528,189 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [currentProject, projectId, cells.length, isDirty, handleSave, playground, llmProvider, addCell])
 
-  // Keyboard shortcuts (Ctrl+S to save)
+  // Get selected cell index helper
+  const getSelectedCellIndex = useCallback(() => {
+    if (!selectedCellId) return -1
+    return cells.findIndex(c => c.id === selectedCellId)
+  }, [selectedCellId, cells])
+
+  // Navigate to cell by index and optionally focus it
+  const navigateToCell = useCallback((index: number, focus: boolean = false) => {
+    if (index >= 0 && index < cells.length) {
+      const cellId = cells[index].id
+      console.log('[Page] navigateToCell called, index:', index, 'cellId:', cellId)
+      setSelectedCellId(cellId)
+      // Scroll cell into view
+      const cellElement = document.getElementById(`cell-${cellId}`)
+      if (cellElement) {
+        cellElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        // Focus the textarea if requested
+        if (focus) {
+          setTimeout(() => {
+            const textarea = cellElement.querySelector('textarea') as HTMLTextAreaElement
+            if (textarea) {
+              textarea.focus()
+              // Put cursor at the start for up navigation, end for down navigation
+              textarea.setSelectionRange(0, 0)
+            }
+          }, 50)
+        }
+      }
+    }
+  }, [cells])
+
+  // Enter edit mode on selected cell
+  const enterEditMode = useCallback(() => {
+    if (!selectedCellId) return
+    setIsEditMode(true)
+    // Focus the textarea of the selected cell
+    setTimeout(() => {
+      const cellElement = document.getElementById(`cell-${selectedCellId}`)
+      const textarea = cellElement?.querySelector('textarea') as HTMLTextAreaElement
+      if (textarea) {
+        textarea.focus()
+        // Put cursor at the end
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      }
+    }, 10)
+  }, [selectedCellId])
+
+  // Exit edit mode - optionally move to next cell in navigation direction
+  const exitEditMode = useCallback((moveToNext: boolean = false) => {
+    console.log('[Page] exitEditMode called, moveToNext:', moveToNext, 'selectedCellId:', selectedCellId)
+
+    // Set flag to prevent global handler from double-processing
+    if (moveToNext) {
+      shiftEnterHandledRef.current = true
+      // Reset the flag after a short delay
+      setTimeout(() => {
+        shiftEnterHandledRef.current = false
+      }, 100)
+    }
+
+    setIsEditMode(false)
+    // Blur any focused textarea
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur()
+    }
+
+    // Move to next cell if requested (for Shift+Enter)
+    if (moveToNext && selectedCellId) {
+      const currentIndex = cells.findIndex(c => c.id === selectedCellId)
+      console.log('[Page] Moving to next cell, currentIndex:', currentIndex, 'total cells:', cells.length)
+      if (currentIndex < cells.length - 1) {
+        const nextCellId = cells[currentIndex + 1].id
+        console.log('[Page] Setting selectedCellId to:', nextCellId)
+        setSelectedCellId(nextCellId)
+        setTimeout(() => {
+          const cellElement = document.getElementById(`cell-${nextCellId}`)
+          if (cellElement) {
+            cellElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }
+        }, 10)
+      }
+    }
+  }, [selectedCellId, cells])
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S / Cmd+S to save - works everywhere
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
+        return
+      }
+
+      // If we're in the chat panel or modal inputs, ignore all shortcuts
+      const activeElement = document.activeElement
+      const isInChatOrModal = activeElement?.closest('.chat-panel') ||
+        activeElement?.closest('[role="dialog"]') ||
+        (activeElement?.tagName === 'INPUT' && !activeElement?.closest('.cell-wrapper'))
+
+      if (isInChatOrModal) return
+
+      // If we're in a cell textarea, let the cell handle Shift+Enter (don't double-process)
+      const isInCellTextarea = activeElement?.tagName === 'TEXTAREA' && activeElement?.closest('.cell-wrapper')
+      if (isInCellTextarea && e.key === 'Enter' && e.shiftKey) {
+        console.log('[Page Global] Shift+Enter in cell textarea - skipping global handler')
+        return  // Let the cell's own handler deal with this
+      }
+
+      // Escape - exit edit mode and move in last navigation direction
+      if (e.key === 'Escape' && isEditMode) {
+        e.preventDefault()
+        exitEditMode()
+        // Move to next cell in the last navigation direction
+        const currentIndex = getSelectedCellIndex()
+        if (lastNavDirection === 'down' && currentIndex < cells.length - 1) {
+          navigateToCell(currentIndex + 1)
+        } else if (lastNavDirection === 'up' && currentIndex > 0) {
+          navigateToCell(currentIndex - 1)
+        }
+        return
+      }
+
+      // Command mode shortcuts (when NOT in edit mode)
+      if (!isEditMode) {
+        // Arrow Up - select previous cell
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          setLastNavDirection('up')
+          const currentIndex = getSelectedCellIndex()
+          console.log('[Page] ArrowUp pressed, currentIndex:', currentIndex, 'isEditMode:', isEditMode)
+          if (currentIndex > 0) {
+            navigateToCell(currentIndex - 1)
+          } else if (currentIndex === -1 && cells.length > 0) {
+            navigateToCell(cells.length - 1)
+          }
+          return
+        }
+
+        // Arrow Down - select next cell
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          setLastNavDirection('down')
+          const currentIndex = getSelectedCellIndex()
+          console.log('[Page] ArrowDown pressed, currentIndex:', currentIndex, 'isEditMode:', isEditMode)
+          if (currentIndex < cells.length - 1) {
+            navigateToCell(currentIndex + 1)
+          } else if (currentIndex === -1 && cells.length > 0) {
+            navigateToCell(0)
+          }
+          return
+        }
+
+        // Enter - enter edit mode on selected cell
+        if (e.key === 'Enter' && !e.shiftKey && selectedCellId) {
+          e.preventDefault()
+          enterEditMode()
+          return
+        }
+
+        // Shift+Enter in command mode - run selected cell and move to next
+        if (e.key === 'Enter' && e.shiftKey && selectedCellId) {
+          // Check if this was already handled by a cell's handler
+          if (shiftEnterHandledRef.current) {
+            console.log('[Page Global] Shift+Enter already handled by cell - skipping')
+            return
+          }
+          e.preventDefault()
+          console.log('[Page Global] Shift+Enter in COMMAND mode - running cell and moving to next')
+          handleRunCell(selectedCellId)
+          const currentIndex = getSelectedCellIndex()
+          if (currentIndex < cells.length - 1) {
+            navigateToCell(currentIndex + 1)
+          }
+          return
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave])
+  }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells.length, selectedCellId, enterEditMode, exitEditMode, handleRunCell, lastNavDirection])
 
   const handleToggleContext = useCallback((cellId: string) => {
     setContextCellIds((prev) => {
@@ -965,8 +1180,25 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                       index={index}
                       isSelected={selectedCellId === cell.id}
                       isRunning={kernel.runningCellId === cell.id}
-                      onSelect={() => setSelectedCellId(cell.id)}
+                      isEditMode={selectedCellId === cell.id && isEditMode}
+                      onSelect={() => {
+                        // Clicking on cell header area - just select, don't enter edit mode
+                        // (Clicking on textarea will trigger onEnterEditMode separately)
+                        if (selectedCellId !== cell.id) {
+                          // Switching to a different cell - exit edit mode
+                          // For markdown cells that were being edited, they will auto-render
+                          setIsEditMode(false)
+                        }
+                        setSelectedCellId(cell.id)
+                      }}
                       onRun={() => handleRunCell(cell.id)}
+                      onRunAndAdvance={() => {
+                        handleRunCell(cell.id)
+                        // Move to next cell after running
+                        if (index < cells.length - 1) {
+                          navigateToCell(index + 1)
+                        }
+                      }}
                       onStop={() => kernel.interrupt()}
                       onDelete={() => deleteCell(cell.id)}
                       onMoveUp={() => moveCell(cell.id, 'up')}
@@ -974,6 +1206,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                       onUpdate={(updates) => updateCell(cell.id, updates)}
                       onToggleContext={() => handleToggleContext(cell.id)}
                       isInContext={contextCellIds.has(cell.id)}
+                      onEnterEditMode={() => {
+                        // Enter edit mode on this cell
+                        setSelectedCellId(cell.id)
+                        setIsEditMode(true)
+                      }}
+                      onExitEditMode={(moveToNext) => exitEditMode(moveToNext)}
                     />
                     {/* Insert button after each cell */}
                     <CellInsertButtons
@@ -994,6 +1232,55 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 </span>
               </div>
             )}
+
+            {/* Keyboard mode indicator - fixed at bottom */}
+            <div className="sticky bottom-4 flex justify-center pointer-events-none">
+              <div
+                className={`px-4 py-2 rounded-full text-xs font-medium backdrop-blur-sm border transition-all ${
+                  isEditMode
+                    ? 'bg-emerald-900/80 text-emerald-300 border-emerald-500/30'
+                    : 'bg-blue-900/80 text-blue-300 border-blue-500/30'
+                }`}
+              >
+                {isEditMode ? (
+                  <span className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 bg-emerald-400 rounded-full" />
+                      Edit Mode
+                    </span>
+                    <span className="text-emerald-400/70">|</span>
+                    <span>
+                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Shift+Enter</kbd>
+                      <span className="ml-1">run</span>
+                    </span>
+                    <span>
+                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Esc</kbd>
+                      <span className="ml-1">exit</span>
+                    </span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full" />
+                      Command Mode
+                    </span>
+                    <span className="text-blue-400/70">|</span>
+                    <span>
+                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">↑↓</kbd>
+                      <span className="ml-1">navigate</span>
+                    </span>
+                    <span>
+                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Enter</kbd>
+                      <span className="ml-1">edit</span>
+                    </span>
+                    <span>
+                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Shift+Enter</kbd>
+                      <span className="ml-1">run</span>
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

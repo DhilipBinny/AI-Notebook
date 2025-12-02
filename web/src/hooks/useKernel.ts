@@ -158,6 +158,49 @@ export function useKernel(playgroundUrl: string | null) {
     return true
   }, [runningCellId])
 
+  // Execute code and wait for completion - useful for Run All
+  const executeAndWait = useCallback((cellId: string, code: string, timeoutMs: number = 300000): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error('[Kernel] WebSocket not connected')
+        resolve(false)
+        return
+      }
+
+      // Set up one-time completion handler
+      const originalCallback = completionCallbackRef.current
+      let resolved = false
+
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          completionCallbackRef.current = originalCallback
+          console.warn(`Cell ${cellId} execution timed out`)
+          resolve(false)
+        }
+      }, timeoutMs)
+
+      completionCallbackRef.current = (completedCellId, success) => {
+        // Call original callback too
+        originalCallback?.(completedCellId, success)
+
+        if (completedCellId === cellId && !resolved) {
+          resolved = true
+          clearTimeout(timeout)
+          completionCallbackRef.current = originalCallback
+          resolve(success)
+        }
+      }
+
+      // Send execution request directly (bypass runningCellId check for Run All)
+      setRunningCellId(cellId)
+      wsRef.current.send(JSON.stringify({
+        code,
+        cell_id: cellId,
+      }))
+    })
+  }, [])
+
   // Interrupt execution
   const interrupt = useCallback(async () => {
     if (!playgroundUrl) return false
@@ -227,6 +270,7 @@ export function useKernel(playgroundUrl: string | null) {
     executionCount: kernelState.executionCount,
     runningCellId,
     execute,
+    executeAndWait,
     interrupt,
     restart,
     setOutputCallback,

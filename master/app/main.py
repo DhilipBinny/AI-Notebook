@@ -16,6 +16,7 @@ from app.db.base import Base
 # Import all models to ensure they're registered with SQLAlchemy
 from app.users.models import User
 from app.projects.models import Project
+from app.workspaces.models import Workspace
 from app.playgrounds.models import Playground
 from app.auth.models import Session
 # Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
@@ -24,6 +25,7 @@ from app.auth.models import Session
 from app.auth.routes import router as auth_router
 from app.users.routes import router as users_router
 from app.projects.routes import router as projects_router
+from app.workspaces.routes import router as workspaces_router
 from app.playgrounds.routes import router as playgrounds_router
 from app.chat.routes import router as chat_router
 from app.notebooks.routes import router as notebooks_router
@@ -128,6 +130,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
+app.include_router(workspaces_router, prefix="/api")
 app.include_router(playgrounds_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(notebooks_router, prefix="/api")

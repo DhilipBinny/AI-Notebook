@@ -36,39 +36,61 @@ The AI Notebook Platform uses **MySQL 8.0** as its primary database for user, pr
 │ last_login_at       │
 └─────────┬───────────┘
           │
-          │ 1:N
+          │ 1:N                         1:N
+          ├──────────────────────────────────┐
+          │                                  │
+          ▼                                  ▼
+┌─────────────────────┐       ┌─────────────────────┐
+│     workspaces      │       │      sessions       │
+├─────────────────────┤       ├─────────────────────┤
+│ id (PK)             │       │ id (PK)             │
+│ user_id (FK)        │       │ user_id (FK)        │
+│ name                │       │ refresh_token_hash  │
+│ description         │       │ user_agent          │
+│ color               │       │ ip_address          │
+│ icon                │       │ expires_at          │
+│ is_default          │       │ is_revoked          │
+│ is_deleted          │       │ created_at          │
+│ sort_order          │       │ last_used_at        │
+│ created_at          │       └─────────────────────┘
+│ updated_at          │
+│ deleted_at          │
+└─────────┬───────────┘
+          │
+          │ 1:N (optional)
           ▼
 ┌─────────────────────┐       ┌─────────────────────┐
 │      projects       │       │     playgrounds     │
 ├─────────────────────┤       ├─────────────────────┤
 │ id (PK)             │──────<│ id (PK)             │
 │ user_id (FK)        │  1:1  │ project_id (FK,UQ)  │
-│ name                │       │ container_id (UQ)   │
-│ description         │       │ container_name      │
-│ storage_path        │       │ internal_url        │
-│ storage_month       │       │ internal_secret     │
-│ llm_provider *      │       │ status              │
-│ llm_model *         │       │ error_message       │
-│ is_archived         │       │ memory_limit_mb     │
-│ deleted_at          │       │ cpu_limit           │
-│ created_at          │       │ started_at          │
-│ updated_at          │       │ last_activity_at    │
-│ last_opened_at      │       │ stopped_at          │
-└─────────────────────┘       └─────────────────────┘
+│ workspace_id (FK)   │       │ container_id (UQ)   │
+│ name                │       │ container_name      │
+│ description         │       │ internal_url        │
+│ storage_path        │       │ internal_secret     │
+│ storage_month       │       │ status              │
+│ llm_provider *      │       │ error_message       │
+│ llm_model *         │       │ memory_limit_mb     │
+│ is_archived         │       │ cpu_limit           │
+│ deleted_at          │       │ started_at          │
+│ created_at          │       │ last_activity_at    │
+│ updated_at          │       │ stopped_at          │
+│ last_opened_at      │       └─────────────────────┘
+└─────────────────────┘
 
-┌─────────────────────┐       ┌─────────────────────┐
-│      sessions       │       │    activity_logs    │
-├─────────────────────┤       ├─────────────────────┤
-│ id (PK)             │       │ id (PK, AUTO_INCR)  │
-│ user_id (FK)        │       │ user_id (FK)        │
-│ refresh_token_hash  │       │ action              │
-│ user_agent          │       │ resource_type       │
-│ ip_address          │       │ resource_id         │
-│ expires_at          │       │ metadata (JSON)     │
-│ is_revoked          │       │ ip_address          │
-│ created_at          │       │ user_agent          │
-│ last_used_at        │       │ created_at          │
-└─────────────────────┘       └─────────────────────┘
+┌─────────────────────┐
+│    activity_logs    │
+├─────────────────────┤
+│ id (PK, AUTO_INCR)  │
+│ user_id (FK)        │
+│ action              │
+│ resource_type       │
+│ resource_id         │
+│ metadata (JSON)     │
+│ ip_address          │
+│ user_agent          │
+│ created_at          │
+└─────────────────────┘
 
 * llm_provider and llm_model are deprecated (kept for backward compatibility)
 ```
@@ -109,7 +131,42 @@ Stores user accounts. Supports local (email/password) and OAuth authentication.
 
 ---
 
-### 2. `projects`
+### 2. `workspaces`
+
+Organizes projects/notebooks into groups for better organization.
+
+| Column | Type | Null | Key | Default | Description |
+|--------|------|------|-----|---------|-------------|
+| `id` | CHAR(36) | NO | PK | - | UUID v4 |
+| `user_id` | CHAR(36) | NO | FK,IDX | - | Owner reference |
+| `name` | VARCHAR(255) | NO | - | - | Workspace name |
+| `description` | TEXT | YES | - | NULL | Description |
+| `color` | VARCHAR(7) | NO | - | '#3B82F6' | Hex color code |
+| `icon` | VARCHAR(50) | YES | - | 'folder' | Icon identifier |
+| `is_default` | BOOLEAN | NO | - | FALSE | Default workspace flag |
+| `is_deleted` | BOOLEAN | NO | IDX | FALSE | Soft delete flag |
+| `sort_order` | VARCHAR(50) | NO | - | '0' | Display order |
+| `created_at` | TIMESTAMP | NO | - | NOW() | Creation time |
+| `updated_at` | TIMESTAMP | NO | - | NOW() | Auto-updated |
+| `deleted_at` | DATETIME | YES | - | NULL | Soft delete timestamp |
+
+**Indexes:**
+
+| Name | Type | Columns | Description |
+|------|------|---------|-------------|
+| `PRIMARY` | PK | id | Primary key |
+| `idx_workspaces_user` | INDEX | user_id | Filter by owner |
+| `idx_workspaces_deleted` | INDEX | is_deleted | Filter active workspaces |
+
+**Notes:**
+- Each user can have multiple workspaces
+- Projects can optionally belong to a workspace
+- When a workspace is deleted, its projects become "uncategorized" (workspace_id = NULL)
+- The `color` field stores hex color codes for UI display (e.g., '#3B82F6' for blue)
+
+---
+
+### 3. `projects`
 
 Stores notebook projects. Each project maps to files in MinIO storage.
 
@@ -117,11 +174,12 @@ Stores notebook projects. Each project maps to files in MinIO storage.
 |--------|------|------|-----|---------|-------------|
 | `id` | CHAR(36) | NO | PK | - | UUID v4 |
 | `user_id` | CHAR(36) | NO | FK,IDX | - | Owner reference |
+| `workspace_id` | CHAR(36) | YES | FK,IDX | NULL | Workspace (optional) |
 | `name` | VARCHAR(255) | NO | - | - | Project name |
 | `description` | TEXT | YES | - | NULL | Description |
 | `storage_path` | VARCHAR(500) | NO | - | - | Full MinIO path |
 | `storage_month` | VARCHAR(7) | NO | - | - | Folder partition (MM-YYYY) |
-| `llm_provider` | ENUM | YES | - | 'ollama' | **Deprecated** |
+| `llm_provider` | ENUM | YES | - | 'gemini' | **Deprecated** |
 | `llm_model` | VARCHAR(100) | YES | - | NULL | **Deprecated** |
 | `is_archived` | BOOLEAN | NO | IDX | FALSE | Archive flag |
 | `deleted_at` | DATETIME | YES | IDX | NULL | Soft delete timestamp |
@@ -135,6 +193,7 @@ Stores notebook projects. Each project maps to files in MinIO storage.
 |------|------|---------|-------------|
 | `PRIMARY` | PK | id | Primary key |
 | `idx_projects_user` | INDEX | user_id | Filter by owner |
+| `idx_projects_workspace` | INDEX | workspace_id | Filter by workspace |
 | `idx_projects_user_active` | INDEX | (user_id, is_archived) | User's active projects |
 | `idx_projects_updated` | INDEX | updated_at | Sort by update time |
 | `ix_projects_deleted_at` | INDEX | deleted_at | Soft delete filtering |
@@ -155,7 +214,7 @@ MinIO: notebooks/{storage_month}/{project_id}/
 
 ---
 
-### 3. `playgrounds`
+### 4. `playgrounds`
 
 Tracks active Docker container instances. One playground per project maximum.
 
@@ -197,7 +256,7 @@ Tracks active Docker container instances. One playground per project maximum.
 
 ---
 
-### 4. `sessions`
+### 5. `sessions`
 
 Stores JWT refresh tokens. Supports multiple sessions per user (devices).
 
@@ -224,7 +283,7 @@ Stores JWT refresh tokens. Supports multiple sessions per user (devices).
 
 ---
 
-### 5. `activity_logs`
+### 6. `activity_logs`
 
 Audit log for tracking user actions. Optional for debugging and analytics.
 
@@ -247,8 +306,13 @@ Audit log for tracking user actions. Optional for debugging and analytics.
 | `user.register` | User created account |
 | `user.login` | User logged in |
 | `user.logout` | User logged out |
+| `workspace.create` | Workspace created |
+| `workspace.update` | Workspace updated |
+| `workspace.delete` | Workspace deleted |
 | `project.create` | Project created |
+| `project.update` | Project updated |
 | `project.delete` | Project deleted |
+| `project.move` | Project moved to workspace |
 | `playground.start` | Container started |
 | `playground.stop` | Container stopped |
 
@@ -258,9 +322,11 @@ Audit log for tracking user actions. Optional for debugging and analytics.
 
 | Parent | Child | Relationship | On Delete |
 |--------|-------|--------------|-----------|
+| users | workspaces | 1:N | CASCADE |
 | users | projects | 1:N | CASCADE |
 | users | sessions | 1:N | CASCADE |
 | users | activity_logs | 1:N | SET NULL |
+| workspaces | projects | 1:N (optional) | SET NULL |
 | projects | playgrounds | 1:1 | CASCADE |
 
 ---
@@ -295,7 +361,49 @@ notebooks/                          # Bucket
 
 ## Common Queries
 
+### Get user's workspaces with project counts
+```sql
+SELECT
+    w.id,
+    w.name,
+    w.color,
+    w.icon,
+    w.is_default,
+    w.sort_order,
+    COUNT(p.id) AS project_count
+FROM workspaces w
+LEFT JOIN projects p ON w.id = p.workspace_id
+    AND p.is_archived = FALSE
+    AND p.deleted_at IS NULL
+WHERE w.user_id = ?
+  AND w.is_deleted = FALSE
+GROUP BY w.id
+ORDER BY w.sort_order, w.created_at;
+```
+
 ### Get user's active projects with playground status
+```sql
+SELECT
+    p.id,
+    p.name,
+    p.description,
+    p.workspace_id,
+    p.created_at,
+    p.updated_at,
+    pg.status AS playground_status,
+    pg.started_at AS playground_started_at,
+    w.name AS workspace_name,
+    w.color AS workspace_color
+FROM projects p
+LEFT JOIN playgrounds pg ON p.id = pg.project_id
+LEFT JOIN workspaces w ON p.workspace_id = w.id
+WHERE p.user_id = ?
+  AND p.is_archived = FALSE
+  AND p.deleted_at IS NULL
+ORDER BY p.updated_at DESC;
+```
+
+### Get projects in a specific workspace
 ```sql
 SELECT
     p.id,
@@ -303,11 +411,26 @@ SELECT
     p.description,
     p.created_at,
     p.updated_at,
-    pg.status AS playground_status,
-    pg.started_at AS playground_started_at
+    pg.status AS playground_status
 FROM projects p
 LEFT JOIN playgrounds pg ON p.id = pg.project_id
+WHERE p.workspace_id = ?
+  AND p.is_archived = FALSE
+  AND p.deleted_at IS NULL
+ORDER BY p.updated_at DESC;
+```
+
+### Get uncategorized projects (no workspace)
+```sql
+SELECT
+    p.id,
+    p.name,
+    p.description,
+    p.created_at,
+    p.updated_at
+FROM projects p
 WHERE p.user_id = ?
+  AND p.workspace_id IS NULL
   AND p.is_archived = FALSE
   AND p.deleted_at IS NULL
 ORDER BY p.updated_at DESC;
@@ -357,6 +480,16 @@ These columns are kept for backward compatibility but are no longer used:
 |-------|--------|--------|
 | projects | llm_provider | LLM provider is now selected at runtime in chat |
 | projects | llm_model | LLM model is now selected at runtime in chat |
+
+---
+
+## Recent Changes
+
+### Workspaces Feature (Added)
+- New `workspaces` table for organizing projects into groups
+- New `workspace_id` column in `projects` table (optional FK)
+- Projects can be moved between workspaces or left uncategorized
+- Workspace deletion sets project `workspace_id` to NULL (SET NULL)
 
 ---
 

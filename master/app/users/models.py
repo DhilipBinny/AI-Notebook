@@ -52,6 +52,7 @@ class User(Base):
 
     # Relationships
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    workspaces = relationship("Workspace", back_populates="owner", cascade="all, delete-orphan")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

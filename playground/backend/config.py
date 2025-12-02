@@ -28,7 +28,7 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
 # === Anthropic Configuration ===
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-1-20250805")
 
 # === Function Calling Behavior ===
 # Tool execution mode:

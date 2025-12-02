@@ -15,7 +15,7 @@ class ProjectBase(BaseModel):
 
 class ProjectCreate(ProjectBase):
     """Schema for creating a new project."""
-    pass
+    workspace_id: Optional[str] = None  # Optional workspace to add project to
 
 
 class ProjectUpdate(BaseModel):
@@ -23,6 +23,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     is_archived: Optional[bool] = None
+    workspace_id: Optional[str] = None  # Move to a different workspace
 
 
 class PlaygroundStatus(BaseModel):
@@ -40,6 +41,7 @@ class ProjectResponse(ProjectBase):
     """Schema for project response."""
     id: str
     user_id: str
+    workspace_id: Optional[str] = None
     storage_path: str
     is_archived: bool
     created_at: datetime

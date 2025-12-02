@@ -31,6 +31,9 @@ class Project(Base):
     # Owner
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
+    # Workspace (optional - for grouping)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Project info
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
@@ -61,6 +64,7 @@ class Project(Base):
 
     # Relationships
     owner = relationship("User", back_populates="projects")
+    workspace = relationship("Workspace", back_populates="projects")
     playground = relationship("Playground", back_populates="project", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self) -> str:

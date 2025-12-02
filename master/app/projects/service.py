@@ -119,6 +119,7 @@ class ProjectService:
             user_id=user.id,
             name=project_data.name,
             description=project_data.description,
+            workspace_id=project_data.workspace_id,  # Optional workspace
             storage_month=storage_month,
             storage_path="",  # Will be set after we have project ID
         )

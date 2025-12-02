@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Playground, AuthTokens, ChatMessage } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage } from '@/types'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -34,8 +34,9 @@ interface ChatHistoryResponse {
 
 // Types for notebook API
 interface NotebookCell {
-  id: string
-  type: string
+  id?: string
+  type?: string
+  cell_type?: string  // Jupyter standard format
   source: string
   outputs: Record<string, unknown>[]
   execution_count?: number
@@ -129,7 +130,7 @@ export const projects = {
     return data
   },
 
-  create: async (project: { name: string; description?: string }): Promise<Project> => {
+  create: async (project: { name: string; description?: string; workspace_id?: string }): Promise<Project> => {
     const { data } = await api.post('/projects', project)
     return data
   },
@@ -141,6 +142,41 @@ export const projects = {
 
   delete: async (id: string): Promise<void> => {
     await api.delete(`/projects/${id}`)
+  },
+}
+
+// Workspaces API
+export const workspaces = {
+  list: async (): Promise<{ workspaces: Workspace[]; uncategorized_count: number }> => {
+    const { data } = await api.get('/workspaces')
+    return data
+  },
+
+  get: async (id: string): Promise<Workspace> => {
+    const { data } = await api.get(`/workspaces/${id}`)
+    return data
+  },
+
+  create: async (workspace: { name: string; description?: string; color?: string; icon?: string }): Promise<Workspace> => {
+    const { data } = await api.post('/workspaces', workspace)
+    return data
+  },
+
+  update: async (id: string, workspace: Partial<Workspace>): Promise<Workspace> => {
+    const { data } = await api.patch(`/workspaces/${id}`, workspace)
+    return data
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/workspaces/${id}`)
+  },
+
+  moveProject: async (workspaceId: string, projectId: string): Promise<void> => {
+    await api.post(`/workspaces/${workspaceId}/projects/${projectId}`)
+  },
+
+  removeProject: async (workspaceId: string, projectId: string): Promise<void> => {
+    await api.delete(`/workspaces/${workspaceId}/projects/${projectId}`)
   },
 }
 

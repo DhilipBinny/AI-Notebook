@@ -16,8 +16,10 @@ interface CellProps {
   index: number
   isSelected: boolean
   isRunning: boolean
+  isEditMode: boolean  // true when this cell is being edited
   onSelect: () => void
   onRun: () => void
+  onRunAndAdvance: () => void  // Runs cell and moves to next
   onStop: () => void
   onDelete: () => void
   onMoveUp: () => void
@@ -25,6 +27,8 @@ interface CellProps {
   onUpdate: (updates: Partial<CellType>) => void
   onToggleContext: () => void
   isInContext: boolean
+  onEnterEditMode: () => void
+  onExitEditMode: (renderMarkdown?: boolean) => void  // Optional: render markdown on exit
 }
 
 export default function Cell({
@@ -32,8 +36,10 @@ export default function Cell({
   index,
   isSelected,
   isRunning,
+  isEditMode,
   onSelect,
   onRun,
+  onRunAndAdvance,
   onStop,
   onDelete,
   onMoveUp,
@@ -41,26 +47,17 @@ export default function Cell({
   onUpdate,
   onToggleContext,
   isInContext,
+  onEnterEditMode,
+  onExitEditMode,
 }: CellProps) {
-  // For markdown cells with content, default to rendered view (not editing)
-  // For code cells, always show editor
-  const [isEditing, setIsEditing] = useState(cell.type === 'code' || !cell.source.trim())
+  // For markdown cells: show rendered view when not in edit mode and has content
+  // isEditMode from parent is the source of truth
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // Track the previous source to detect external changes (e.g., from LLM)
   const prevSourceRef = useRef(cell.source)
-  const isUserEditingRef = useRef(false)
 
-  // Only exit editing mode for markdown when content changes externally (not from user typing)
-  useEffect(() => {
-    // If the source changed and user is not actively editing, it's an external update
-    if (cell.type === 'markdown' && cell.source !== prevSourceRef.current && !isUserEditingRef.current) {
-      if (cell.source.trim()) {
-        setIsEditing(false)
-      }
-    }
-    prevSourceRef.current = cell.source
-  }, [cell.source, cell.type])
+  // For markdown cells, determine if we should show rendered view
+  // Show textarea if: in edit mode, OR no content yet, OR is code/raw cell
+  const showTextarea = cell.type !== 'markdown' || isEditMode || !cell.source.trim()
 
   // Render markdown with sanitization
   const renderedMarkdown = useMemo(() => {
@@ -83,28 +80,40 @@ export default function Cell({
 
   // Focus textarea when entering edit mode
   useEffect(() => {
-    if (isEditing && textareaRef.current && isSelected) {
+    if (isEditMode && textareaRef.current && isSelected) {
       textareaRef.current.focus()
     }
-  }, [isEditing, isSelected])
+  }, [isEditMode, isSelected])
 
-  // Handle keyboard shortcuts
+  // Handle external source changes (e.g., from LLM) - just track for reference
+  useEffect(() => {
+    prevSourceRef.current = cell.source
+  }, [cell.source])
+
+  // Handle keyboard shortcuts inside cell textarea
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const textarea = textareaRef.current
+
+    // Shift+Enter - run cell and move to next (exit edit mode)
     if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault()
+      console.log('[Cell] Shift+Enter pressed, cell type:', cell.type, 'cell id:', cell.id)
       if (cell.type === 'code') {
-        onRun()
+        // For code cells: onRunAndAdvance handles run + move to next
+        console.log('[Cell] Calling onRunAndAdvance for code cell')
+        onRunAndAdvance()
+        onExitEditMode(false)  // Just exit edit mode, don't move again
       } else {
-        // For markdown, exit edit mode on Shift+Enter
-        setIsEditing(false)
+        // For markdown/raw cells: just exit edit mode and move to next
+        console.log('[Cell] Calling onExitEditMode(true) for markdown cell')
+        onExitEditMode(true)  // Exit and move to next cell
       }
+      return
     }
-    if (e.key === 'Escape' && cell.type === 'markdown') {
-      setIsEditing(false)
-    }
+
+    // Tab - insert spaces
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault()
-      const textarea = textareaRef.current
       if (textarea) {
         const start = textarea.selectionStart
         const end = textarea.selectionEnd
@@ -117,7 +126,7 @@ export default function Cell({
         }, 0)
       }
     }
-  }, [onRun, onUpdate, cell.type])
+  }, [onRunAndAdvance, onUpdate, cell.type, onExitEditMode])
 
   const renderOutput = (output: CellOutput, idx: number) => {
     switch (output.output_type) {
@@ -207,17 +216,37 @@ export default function Cell({
     return 'var(--nb-bg-markdown-cell)'
   }
 
+  // Get selection indicator style - left border with subtle shadow
+  // Blue = command mode (selected, ready to navigate)
+  // Green = edit mode (typing inside cell)
+  const getSelectionStyle = () => {
+    if (!isSelected) {
+      return {
+        borderLeft: '3px solid transparent',
+        boxShadow: 'none',
+      }
+    }
+    if (isEditMode) {
+      return {
+        borderLeft: '3px solid #10b981', // emerald-500
+        boxShadow: '0 0 12px rgba(16, 185, 129, 0.3), inset 0 0 0 1px rgba(16, 185, 129, 0.1)',
+      }
+    }
+    return {
+      borderLeft: '3px solid #3b82f6', // blue-500
+      boxShadow: '0 0 8px rgba(59, 130, 246, 0.25)',
+    }
+  }
+
   return (
     <div
-      className={`group rounded-lg transition-all overflow-hidden ${cellTypeClass} ${
-        isSelected
-          ? 'ring-2 ring-[var(--nb-border-selected)]'
-          : 'hover:ring-1 hover:ring-[var(--nb-border-default)]'
-      }`}
+      id={`cell-${cell.id}`}
+      className={`group rounded-lg transition-all overflow-hidden cell-wrapper ${cellTypeClass}`}
       onClick={onSelect}
       style={{
         backgroundColor: getCellBgColor(),
         borderColor: 'var(--nb-border-default)',
+        ...getSelectionStyle(),
       }}
     >
       {/* Cell content wrapper - left border for context highlight (excludes output) */}
@@ -379,37 +408,38 @@ export default function Cell({
 
       {/* Cell Input */}
       <div className="p-3" style={{ color: 'var(--nb-text-primary)' }}>
-        {cell.type === 'markdown' && !isEditing && cell.source.trim() ? (
+        {!showTextarea ? (
+          // Rendered markdown view - click to edit
           <div
             className="prose prose-sm max-w-none cursor-text"
-            onClick={() => {
-              isUserEditingRef.current = true
-              setIsEditing(true)
+            onClick={(e) => {
+              e.stopPropagation()
+              onEnterEditMode()
             }}
             dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
           />
         ) : (
+          // Textarea for editing
           <textarea
             ref={textareaRef}
             value={cell.source}
             onChange={(e) => {
-              isUserEditingRef.current = true
               onUpdate({ source: e.target.value })
             }}
             onKeyDown={handleKeyDown}
-            onFocus={() => {
-              isUserEditingRef.current = true
+            onClick={(e) => {
+              e.stopPropagation()
+              // Clicking on textarea enters edit mode
+              if (!isEditMode) {
+                onEnterEditMode()
+              }
             }}
-            onBlur={() => {
-              isUserEditingRef.current = false
-              // Don't auto-render on blur - only render on Shift+Enter
-            }}
-            placeholder={cell.type === 'code' ? 'Enter Python code...' : cell.type === 'raw' ? 'Enter notes (plain text, not executed)...' : 'Enter markdown... (Shift+Enter to preview)'}
-            className="w-full bg-transparent font-mono text-sm resize-none outline-none"
             style={{
               minHeight: '100px',
               color: 'var(--nb-text-primary)',
             }}
+            placeholder={cell.type === 'code' ? 'Enter Python code...' : cell.type === 'raw' ? 'Enter notes (plain text, not executed)...' : 'Enter markdown... (Shift+Enter to preview)'}
+            className="w-full bg-transparent font-mono text-sm resize-none outline-none"
           />
         )}
       </div>

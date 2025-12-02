@@ -138,6 +138,30 @@ body {
   border-left-color: var(--nb-accent-markdown);
 }
 
+/* ============================================
+   CURSOR/CARET VISIBILITY FOR ALL THEMES
+   ============================================ */
+
+/* Ensure cursor is visible in all cell textareas */
+.cell-wrapper textarea {
+  caret-color: var(--nb-text-primary);
+}
+
+/* Dark theme - light cursor for dark backgrounds */
+[data-theme="dark"] .cell-wrapper textarea {
+  caret-color: #cdd6f4; /* Bright light color for visibility */
+}
+
+/* Light theme - dark cursor for light backgrounds */
+[data-theme="light"] .cell-wrapper textarea {
+  caret-color: #1f2937; /* Dark color for visibility */
+}
+
+/* Monokai theme - bright cursor */
+[data-theme="monokai"] .cell-wrapper textarea {
+  caret-color: #f8f8f2; /* Monokai foreground color */
+}
+
 /* Cell output area */
 .cell-output {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
