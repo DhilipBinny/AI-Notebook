@@ -11,6 +11,50 @@ marked.setOptions({
   breaks: true,
 })
 
+/**
+ * Process terminal output text:
+ * 1. Strip ANSI escape codes (colors, cursor control, etc.)
+ * 2. Handle carriage returns for progress bars (keep only the last line update)
+ */
+function processTerminalOutput(text: string): string {
+  // Strip ANSI escape sequences:
+  // - \x1b[ or \033[ followed by parameters and a command letter
+  // - Includes color codes, cursor movement, clear screen, etc.
+  let processed = text
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // Standard ANSI sequences like \x1b[32m
+    .replace(/\x1b\][^\x07]*\x07/g, '')      // OSC sequences (operating system commands)
+    .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '') // Private mode sequences like \x1b[?25h (show cursor)
+    .replace(/\x1b[=>]/g, '')                // Simple escape sequences
+
+  // Handle carriage returns for progress bars:
+  // Split by newlines, then for each line handle \r to keep only the last segment
+  const lines = processed.split('\n')
+  const processedLines = lines.map(line => {
+    if (line.includes('\r')) {
+      // Split by \r and keep only the last non-empty segment
+      const segments = line.split('\r')
+      // Find the last non-empty segment
+      for (let i = segments.length - 1; i >= 0; i--) {
+        if (segments[i].trim() !== '') {
+          return segments[i]
+        }
+      }
+      return segments[segments.length - 1] || ''
+    }
+    return line
+  })
+
+  // Remove consecutive duplicate lines (common in progress bar updates)
+  const deduped: string[] = []
+  for (const line of processedLines) {
+    if (deduped.length === 0 || line !== deduped[deduped.length - 1]) {
+      deduped.push(line)
+    }
+  }
+
+  return deduped.join('\n')
+}
+
 interface CellProps {
   cell: CellType
   index: number
@@ -131,7 +175,8 @@ export default function Cell({
   const renderOutput = (output: CellOutput, idx: number) => {
     switch (output.output_type) {
       case 'stream':
-        const text = Array.isArray(output.text) ? output.text.join('') : output.text || ''
+        const rawText = Array.isArray(output.text) ? output.text.join('') : output.text || ''
+        const text = processTerminalOutput(rawText)
         return (
           <pre
             key={idx}
@@ -144,6 +189,7 @@ export default function Cell({
       case 'execute_result':
       case 'display_data':
         if (output.data) {
+          // HTML output (tables, rich display)
           if (output.data['text/html']) {
             return (
               <div
@@ -154,6 +200,17 @@ export default function Cell({
               />
             )
           }
+          // SVG images
+          if (output.data['image/svg+xml']) {
+            return (
+              <div
+                key={idx}
+                className="max-w-full"
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(output.data['image/svg+xml'] as string) }}
+              />
+            )
+          }
+          // PNG images
           if (output.data['image/png']) {
             return (
               <img
@@ -164,6 +221,7 @@ export default function Cell({
               />
             )
           }
+          // JPEG images
           if (output.data['image/jpeg']) {
             return (
               <img
@@ -174,17 +232,131 @@ export default function Cell({
               />
             )
           }
+          // GIF images
+          if (output.data['image/gif']) {
+            return (
+              <img
+                key={idx}
+                src={`data:image/gif;base64,${output.data['image/gif']}`}
+                alt="Output"
+                className="max-w-full"
+              />
+            )
+          }
+          // Video (MP4, WebM)
+          if (output.data['video/mp4'] || output.data['video/webm']) {
+            const videoType = output.data['video/mp4'] ? 'video/mp4' : 'video/webm'
+            const videoData = output.data[videoType] as string
+            return (
+              <video
+                key={idx}
+                controls
+                className="max-w-full"
+                style={{ maxHeight: '400px' }}
+              >
+                <source src={`data:${videoType};base64,${videoData}`} type={videoType} />
+                Your browser does not support video playback.
+              </video>
+            )
+          }
+          // Audio (MP3, WAV, OGG)
+          if (output.data['audio/mpeg'] || output.data['audio/wav'] || output.data['audio/ogg']) {
+            const audioType = output.data['audio/mpeg'] ? 'audio/mpeg' :
+                             output.data['audio/wav'] ? 'audio/wav' : 'audio/ogg'
+            const audioData = output.data[audioType] as string
+            return (
+              <audio
+                key={idx}
+                controls
+                className="w-full"
+              >
+                <source src={`data:${audioType};base64,${audioData}`} type={audioType} />
+                Your browser does not support audio playback.
+              </audio>
+            )
+          }
+          // JSON data (pretty-printed)
+          if (output.data['application/json']) {
+            const jsonData = output.data['application/json']
+            return (
+              <pre
+                key={idx}
+                className="text-sm whitespace-pre-wrap font-mono p-2 rounded"
+                style={{
+                  color: 'var(--nb-text-output, var(--nb-text-primary))',
+                  backgroundColor: 'var(--nb-bg-secondary)',
+                }}
+              >
+                {typeof jsonData === 'string' ? jsonData : JSON.stringify(jsonData, null, 2)}
+              </pre>
+            )
+          }
+          // LaTeX (rendered as-is with styling, full rendering would need KaTeX/MathJax)
+          if (output.data['text/latex']) {
+            const latex = Array.isArray(output.data['text/latex'])
+              ? output.data['text/latex'].join('')
+              : output.data['text/latex']
+            return (
+              <div
+                key={idx}
+                className="text-sm font-mono p-2 rounded"
+                style={{
+                  color: 'var(--nb-accent-markdown)',
+                  backgroundColor: 'var(--nb-bg-secondary)',
+                }}
+              >
+                {latex as string}
+              </div>
+            )
+          }
+          // Markdown (rendered)
+          if (output.data['text/markdown']) {
+            const md = Array.isArray(output.data['text/markdown'])
+              ? output.data['text/markdown'].join('')
+              : output.data['text/markdown']
+            try {
+              const html = marked.parse(md as string) as string
+              return (
+                <div
+                  key={idx}
+                  className="prose prose-sm max-w-none"
+                  style={{ color: 'var(--nb-text-output, var(--nb-text-primary))' }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
+                />
+              )
+            } catch {
+              return (
+                <pre key={idx} className="text-sm whitespace-pre-wrap font-mono">
+                  {md as string}
+                </pre>
+              )
+            }
+          }
+          // PDF (embedded viewer)
+          if (output.data['application/pdf']) {
+            return (
+              <iframe
+                key={idx}
+                src={`data:application/pdf;base64,${output.data['application/pdf']}`}
+                className="w-full border-0 rounded"
+                style={{ height: '500px' }}
+                title="PDF Output"
+              />
+            )
+          }
+          // Plain text (fallback)
           if (output.data['text/plain']) {
-            const plainText = Array.isArray(output.data['text/plain'])
+            const rawPlainText = Array.isArray(output.data['text/plain'])
               ? output.data['text/plain'].join('')
               : output.data['text/plain']
+            const plainText = processTerminalOutput(rawPlainText as string)
             return (
               <pre
                 key={idx}
                 className="text-sm whitespace-pre-wrap font-mono"
                 style={{ color: 'var(--nb-text-output, var(--nb-text-primary))' }}
               >
-                {plainText as string}
+                {plainText}
               </pre>
             )
           }
@@ -196,7 +368,7 @@ export default function Cell({
             <div className="font-bold">{output.ename}: {output.evalue}</div>
             {output.traceback && (
               <pre className="whitespace-pre-wrap text-xs mt-1 opacity-80">
-                {output.traceback.join('\n').replace(/\x1b\[[0-9;]*m/g, '')}
+                {processTerminalOutput(output.traceback.join('\n'))}
               </pre>
             )}
           </div>
