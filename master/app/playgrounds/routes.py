@@ -415,25 +415,11 @@ async def terminal_websocket(
                 if exec_socket is None:
                     break
                 try:
-                    # Docker uses a multiplexed stream format
-                    # First 8 bytes are header: [stream_type(1), 0, 0, 0, size(4)]
-                    header = exec_socket.recv(8)
-                    if not header or len(header) < 8:
+                    # With TTY enabled, Docker sends raw bytes (no multiplexing)
+                    data = exec_socket.recv(4096)
+                    if not data:
                         break
-
-                    # Parse header - stream type (1=stdout, 2=stderr) and size
-                    stream_type = header[0]
-                    size = struct.unpack('>I', header[4:8])[0]
-
-                    if size > 0:
-                        data = b''
-                        while len(data) < size:
-                            chunk = exec_socket.recv(size - len(data))
-                            if not chunk:
-                                break
-                            data += chunk
-                        if data:
-                            output_queue.put(data.decode('utf-8', errors='replace'))
+                    output_queue.put(data.decode('utf-8', errors='replace'))
                 except sock.timeout:
                     continue
                 except Exception as e:

@@ -21,9 +21,9 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
     if (!terminalRef.current) return
 
     // Get token from localStorage
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem('access_token')
     if (!token) {
-      setError('Not authenticated')
+      setError('Not authenticated. Please log in first.')
       return
     }
 
@@ -104,8 +104,11 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
       setConnected(false)
       if (event.code === 4004) {
         terminal.writeln('\x1b[31mPlayground not running. Start the playground first.\x1b[0m')
+        terminal.writeln('\x1b[33mClosing in 3 seconds...\x1b[0m')
+        setTimeout(() => window.close(), 3000)
       } else {
-        terminal.writeln('\x1b[33mDisconnected\x1b[0m')
+        terminal.writeln('\x1b[33mDisconnected. Closing...\x1b[0m')
+        setTimeout(() => window.close(), 1000)
       }
     }
 
