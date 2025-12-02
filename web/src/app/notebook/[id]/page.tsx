@@ -1331,7 +1331,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                         setSelectedCellId(cell.id)
                         setIsEditMode(true)
                       }}
-                      onExitEditMode={(moveToNext) => exitEditMode(moveToNext)}
+                      onExitEditMode={(moveToNext, shiftEnterHandled) => exitEditMode(moveToNext, shiftEnterHandled)}
                     />
                     {/* Insert button after each cell */}
                     <CellInsertButtons

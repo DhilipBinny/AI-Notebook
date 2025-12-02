@@ -316,6 +316,39 @@ for path in site.getsitepackages():
                             # If this was a pip install, refresh module cache
                             if is_pip_install:
                                 self._refresh_module_cache()
+
+                            # Check for pager output BEFORE sending complete status
+                            # (for %pinfo, ?, ?? etc.)
+                            # Need to loop through shell messages to find ours (queue may have old msgs)
+                            try:
+                                for _ in range(10):  # Check up to 10 messages
+                                    try:
+                                        reply = self.kc.get_shell_msg(timeout=0.1)
+                                        reply_parent = reply.get('parent_header', {}).get('msg_id')
+                                        print(f"[Kernel] Shell reply parent={reply_parent}, our msg_id={msg_id}")
+
+                                        if reply_parent == msg_id:
+                                            reply_content = reply.get('content', {})
+                                            payloads = reply_content.get('payload', [])
+                                            print(f"[Kernel] Found our reply! Payloads ({len(payloads)}): {payloads}")
+
+                                            for payload in payloads:
+                                                if payload.get('source') == 'page':
+                                                    data = payload.get('data', {})
+                                                    text = data.get('text/plain', '')
+                                                    print(f"[Kernel] Pager text length: {len(text) if text else 0}")
+                                                    if text:
+                                                        yield {
+                                                            "type": "stream",
+                                                            "name": "stdout",
+                                                            "text": text
+                                                        }
+                                            break  # Found our reply, stop looking
+                                    except queue.Empty:
+                                        break  # No more messages
+                            except Exception as e:
+                                print(f"[Kernel] Shell msg error: {e}")
+
                             yield {"type": "status", "status": "complete"}
                             break
 
