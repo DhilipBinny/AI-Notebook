@@ -22,6 +22,9 @@ interface NotebookToolbarProps {
   onRestartKernel: () => void
   showChat: boolean
   onToggleChat: () => void
+  showLogs: boolean
+  onToggleLogs: () => void
+  logsConnected: boolean
 }
 
 const themeOptions: { value: NotebookTheme; label: string; icon: string }[] = [
@@ -50,6 +53,9 @@ export default function NotebookToolbar({
   onRestartKernel,
   showChat,
   onToggleChat,
+  showLogs,
+  onToggleLogs,
+  logsConnected,
 }: NotebookToolbarProps) {
   const { theme, setTheme } = useTheme()
 
@@ -332,6 +338,25 @@ export default function NotebookToolbar({
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
+          )}
+        </button>
+
+        {/* Logs toggle button */}
+        <button
+          onClick={onToggleLogs}
+          className={`p-2 rounded-lg transition-all flex items-center justify-center shadow-md relative ${
+            showLogs
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-500/20 hover:shadow-emerald-500/30'
+              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 shadow-none'
+          }`}
+          title={showLogs ? 'Hide Logs' : 'Show Logs'}
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          {/* Live indicator */}
+          {showLogs && (
+            <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${logsConnected ? 'bg-emerald-400' : 'bg-gray-500'}`} />
           )}
         </button>
 

@@ -164,6 +164,7 @@ interface CellProps {
   index: number
   isSelected: boolean
   isRunning: boolean
+  isAnyRunning: boolean  // true when any cell is running
   isEditMode: boolean  // true when this cell is being edited
   onSelect: () => void
   onRun: () => void
@@ -184,6 +185,7 @@ export default function Cell({
   index,
   isSelected,
   isRunning,
+  isAnyRunning,
   isEditMode,
   onSelect,
   onRun,
@@ -250,8 +252,13 @@ export default function Cell({
     const textarea = textareaRef.current
 
     // Shift+Enter - run cell and move to next (exit edit mode)
+    // Do nothing if any cell is already running
     if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault()
+      if (isAnyRunning) {
+        console.log('[Cell] Shift+Enter ignored - a cell is already running')
+        return
+      }
       console.log('[Cell] Shift+Enter pressed, cell type:', cell.type, 'cell id:', cell.id)
       if (cell.type === 'code') {
         // For code cells: onRunAndAdvance handles run + move to next

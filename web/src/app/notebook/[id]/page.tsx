@@ -12,6 +12,16 @@ import { useKernel } from '@/hooks/useKernel'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import type { Cell as CellType, Playground, ChatMessage } from '@/types'
 
+// Strip ANSI escape codes from log text
+function stripAnsi(text: string): string {
+  return text
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // Standard ANSI sequences like \x1b[32m
+    .replace(/\x1b\][^\x07]*\x07/g, '')      // OSC sequences
+    .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '') // Private mode sequences
+    .replace(/\x1b[=>]/g, '')                // Simple escape sequences
+    .replace(/␛\[[0-9;]*[a-zA-Z]/g, '')      // Unicode escape representation (␛ = ESC)
+}
+
 // Generate unique cell ID
 function generateCellId(): string {
   return `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -80,6 +90,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     confirmText?: string
     confirmColor?: string
   } | null>(null)
+
+  // Logs state
+  const [showLogs, setShowLogs] = useState(false)
+  const [logs, setLogs] = useState<string[]>([])
+  const [logsConnected, setLogsConnected] = useState(false)
+  const logsWsRef = useRef<WebSocket | null>(null)
+  const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Kernel hook - connect to playground when running
   // Construct URL through nginx proxy: /playground/{container_name}
@@ -628,6 +645,78 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [currentProject, projectId, cells.length, isDirty, handleSave, playground, llmProvider, addCell])
 
+  // Handle logs toggle
+  const handleToggleLogs = useCallback(async () => {
+    if (showLogs) {
+      // Close logs
+      if (logsWsRef.current) {
+        logsWsRef.current.close()
+        logsWsRef.current = null
+      }
+      setShowLogs(false)
+      setLogs([])
+      setLogsConnected(false)
+    } else {
+      // Open logs
+      setShowLogs(true)
+      setLogs([])
+      setLogsConnected(false)
+
+      // Fetch initial logs
+      try {
+        const { logs: initialLogs } = await playgrounds.getLogs(projectId, 100)
+        if (initialLogs) {
+          setLogs(initialLogs.split('\n'))
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial logs:', err)
+      }
+
+      // Connect WebSocket for streaming logs
+      const token = localStorage.getItem('access_token')
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${wsProtocol}//${window.location.host}/api/projects/${projectId}/playground/logs/stream?token=${token}`
+
+      const ws = new WebSocket(wsUrl)
+      logsWsRef.current = ws
+
+      ws.onopen = () => {
+        setLogsConnected(true)
+      }
+
+      ws.onmessage = (event) => {
+        const data = event.data
+        if (data) {
+          setLogs(prev => [...prev, data].slice(-500))
+        }
+      }
+
+      ws.onclose = () => {
+        setLogsConnected(false)
+      }
+
+      ws.onerror = () => {
+        setLogsConnected(false)
+      }
+    }
+  }, [showLogs, projectId])
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (logsEndRef.current && showLogs) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, showLogs])
+
+  // Cleanup logs WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      if (logsWsRef.current) {
+        logsWsRef.current.close()
+      }
+    }
+  }, [])
+
   // Get selected cell index helper
   const getSelectedCellIndex = useCallback(() => {
     if (!selectedCellId) return -1
@@ -795,6 +884,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           // Check if this was already handled by a cell's handler
           if (shiftEnterHandledRef.current) {
             console.log('[Page Global] Shift+Enter already handled by cell - skipping')
+            return
+          }
+          // Do nothing if any cell is already running
+          if (kernel.runningCellId !== null) {
+            console.log('[Page Global] Shift+Enter ignored - a cell is already running')
             return
           }
           e.preventDefault()
@@ -1228,12 +1322,81 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onRestartKernel={handleRestartKernel}
         showChat={showChat}
         onToggleChat={() => setShowChat(!showChat)}
+        showLogs={showLogs}
+        onToggleLogs={handleToggleLogs}
+        logsConnected={logsConnected}
       />
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Notebook panel */}
-        <div className="flex-1 overflow-y-auto p-4" style={{ backgroundColor: 'var(--nb-bg-primary)' }}>
+        {/* Notebook panel wrapper - contains both notebook and logs overlay */}
+        <div className="flex-1 relative" style={{ backgroundColor: 'var(--nb-bg-primary)' }}>
+          {/* Logs overlay panel - positioned inside notebook wrapper so it doesn't overlap chat */}
+          {showLogs && (
+            <div className="absolute inset-0 z-40 flex flex-col bg-black/95 backdrop-blur-sm">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-white font-semibold flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Playground Logs
+                  </h3>
+                  <div className={`flex items-center gap-1.5 text-xs ${logsConnected ? 'text-emerald-400' : 'text-gray-400'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${logsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
+                    {logsConnected ? 'Live' : 'Connecting...'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setLogs([])}
+                    className="px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    title="Clear logs"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    onClick={handleToggleLogs}
+                    className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    title="Close logs"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 font-mono text-xs min-h-0">
+                {logs.length === 0 ? (
+                  <div className="text-gray-500 text-center py-8">Waiting for logs...</div>
+                ) : (
+                  logs.map((line, i) => {
+                    const cleanLine = stripAnsi(line)
+                    return (
+                      <div
+                        key={i}
+                        className={`${
+                          cleanLine.includes('ERROR') || cleanLine.includes('error')
+                            ? 'text-red-400'
+                            : cleanLine.includes('WARNING') || cleanLine.includes('warning')
+                            ? 'text-amber-400'
+                            : cleanLine.includes('INFO')
+                            ? 'text-blue-400'
+                            : 'text-gray-300'
+                        }`}
+                      >
+                        {cleanLine || '\u00A0'}
+                      </div>
+                    )
+                  })
+                )}
+                <div ref={logsEndRef} />
+              </div>
+            </div>
+          )}
+
+          {/* Notebook scroll area */}
+          <div className="absolute inset-0 overflow-y-auto p-4">
           <div
             ref={notebookContainerRef}
             className={`mx-auto space-y-4 relative ${isResizing ? 'select-none' : ''}`}
@@ -1319,6 +1482,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                       index={index}
                       isSelected={selectedCellId === cell.id}
                       isRunning={kernel.runningCellId === cell.id}
+                      isAnyRunning={kernel.runningCellId !== null}
                       isEditMode={selectedCellId === cell.id && isEditMode}
                       onSelect={() => {
                         // Clicking on cell header area - just select, don't enter edit mode
@@ -1372,6 +1536,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               </div>
             )}
 
+          </div>
           </div>
         </div>
 
