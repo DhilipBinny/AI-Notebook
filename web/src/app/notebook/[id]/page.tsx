@@ -126,9 +126,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           metadata: cell.metadata,
         }))
         setCells(loadedCells)
-        // Auto-add any new cells to context (keep existing context, add new ones)
+        // Update context: keep cells that still exist, add new cells to context
+        const loadedCellIds = new Set(loadedCells.map(c => c.id))
         setContextCellIds((prev) => {
-          const newIds = new Set(prev)
+          const newIds = new Set<string>()
+          // Keep existing context cells that still exist
+          prev.forEach(id => {
+            if (loadedCellIds.has(id)) {
+              newIds.add(id)
+            }
+          })
+          // Add any new cells to context
           loadedCells.forEach(c => newIds.add(c.id))
           return newIds
         })
@@ -407,6 +415,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     // Auto-add new cell to context
     setContextCellIds((prev) => new Set([...prev, newCell.id]))
   }, [addCell])
+
+  // Delete cell and remove from context
+  const handleDeleteCell = useCallback((cellId: string) => {
+    deleteCell(cellId)
+    // Remove from context
+    setContextCellIds((prev) => {
+      const next = new Set(prev)
+      next.delete(cellId)
+      return next
+    })
+  }, [deleteCell])
 
   const handleRunCell = useCallback((cellId: string) => {
     const cell = cells.find((c) => c.id === cellId)
@@ -1320,7 +1339,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                         }
                       }}
                       onStop={() => kernel.interrupt()}
-                      onDelete={() => deleteCell(cell.id)}
+                      onDelete={() => handleDeleteCell(cell.id)}
                       onMoveUp={() => moveCell(cell.id, 'up')}
                       onMoveDown={() => moveCell(cell.id, 'down')}
                       onUpdate={(updates) => updateCell(cell.id, updates)}

@@ -80,7 +80,7 @@ export default function CellInsertButtons({
           }}
           className="flex items-center gap-1 px-2 py-0.5 text-xs rounded hover:opacity-80 transition-colors"
           style={{
-            backgroundColor: 'var(--nb-accent-notes, #f59e0b)',
+            backgroundColor: 'var(--nb-accent-notes)',
             color: '#11111b',
           }}
           title="Insert Notes cell"

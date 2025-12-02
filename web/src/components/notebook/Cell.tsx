@@ -219,19 +219,26 @@ export default function Cell({
   }, [cell.type, cell.source])
 
   // Auto-resize textarea to fit content
-  useEffect(() => {
+  const adjustTextareaHeight = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
     }
-  }, [cell.source])
+  }, [])
 
-  // Focus textarea when entering edit mode
+  // Resize on content change
+  useEffect(() => {
+    adjustTextareaHeight()
+  }, [cell.source, adjustTextareaHeight])
+
+  // Focus textarea and resize when entering edit mode
   useEffect(() => {
     if (isEditMode && textareaRef.current && isSelected) {
       textareaRef.current.focus()
+      // Adjust height after textarea becomes visible
+      setTimeout(adjustTextareaHeight, 0)
     }
-  }, [isEditMode, isSelected])
+  }, [isEditMode, isSelected, adjustTextareaHeight])
 
   // Handle external source changes (e.g., from LLM) - just track for reference
   useEffect(() => {
@@ -628,7 +635,7 @@ export default function Cell({
   // Get background color based on cell type
   const getCellBgColor = () => {
     if (cell.type === 'code') return 'var(--nb-bg-code-cell)'
-    if (cell.type === 'raw') return 'var(--nb-bg-raw-cell, #2d2a1f)'  // Warm amber tint
+    if (cell.type === 'raw') return 'var(--nb-bg-raw-cell)'
     return 'var(--nb-bg-markdown-cell)'
   }
 
@@ -668,7 +675,7 @@ export default function Cell({
       {/* Cell content wrapper - left border for context highlight (excludes output) */}
       <div
         style={{
-          borderLeft: isInContext ? '4px solid var(--nb-accent-success)' : 'none',
+          borderLeft: isInContext ? '4px solid var(--nb-accent-context)' : 'none',
           paddingLeft: isInContext ? '0' : '4px',  // Maintain consistent spacing
         }}
       >
@@ -690,7 +697,7 @@ export default function Cell({
             onChange={onToggleContext}
             className="w-4 h-4 rounded"
             style={{
-              accentColor: 'var(--nb-accent-success)',
+              accentColor: 'var(--nb-accent-context)',
             }}
             title="Include in AI context"
             onClick={(e) => e.stopPropagation()}
@@ -711,7 +718,7 @@ export default function Cell({
               backgroundColor: cell.type === 'code'
                 ? 'var(--nb-accent-code)'
                 : cell.type === 'raw'
-                  ? 'var(--nb-accent-notes, #f59e0b)'
+                  ? 'var(--nb-accent-notes)'
                   : 'var(--nb-accent-markdown)',
               color: '#11111b',
               opacity: 0.9,

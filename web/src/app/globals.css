@@ -46,12 +46,17 @@ body {
 
   --nb-accent-code: #89b4fa;
   --nb-accent-markdown: #cba6f7;
+  --nb-accent-notes: #94a3b8;
   --nb-accent-success: #a6e3a1;
   --nb-accent-error: #f38ba8;
   --nb-accent-warning: #f9e2af;
+  --nb-accent-context: #89b4fa;
 
   --nb-cell-code-indicator: #89b4fa;
   --nb-cell-markdown-indicator: #cba6f7;
+  --nb-cell-notes-indicator: #94a3b8;
+
+  --nb-bg-raw-cell: #1e293b;
 }
 
 /* Light Theme - Classic Jupyter inspired */
@@ -76,12 +81,17 @@ body {
 
   --nb-accent-code: #2563eb;
   --nb-accent-markdown: #7c3aed;
+  --nb-accent-notes: #64748b;
   --nb-accent-success: #059669;
   --nb-accent-error: #dc2626;
   --nb-accent-warning: #d97706;
+  --nb-accent-context: #2563eb;
 
   --nb-cell-code-indicator: #2563eb;
   --nb-cell-markdown-indicator: #7c3aed;
+  --nb-cell-notes-indicator: #64748b;
+
+  --nb-bg-raw-cell: #f1f5f9;
 }
 
 /* Monokai Theme - Classic editor theme */
@@ -106,12 +116,17 @@ body {
 
   --nb-accent-code: #66d9ef;
   --nb-accent-markdown: #ae81ff;
+  --nb-accent-notes: #75715e;
   --nb-accent-success: #a6e22e;
   --nb-accent-error: #f92672;
   --nb-accent-warning: #e6db74;
+  --nb-accent-context: #66d9ef;
 
   --nb-cell-code-indicator: #66d9ef;
   --nb-cell-markdown-indicator: #ae81ff;
+  --nb-cell-notes-indicator: #75715e;
+
+  --nb-bg-raw-cell: #3e3d32;
 }
 
 /* ============================================
