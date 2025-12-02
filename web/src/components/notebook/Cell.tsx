@@ -11,24 +11,116 @@ marked.setOptions({
   breaks: true,
 })
 
+// ANSI color code to CSS color mapping
+const ansiColors: Record<number, string> = {
+  30: '#4b5563', // black (gray for visibility)
+  31: '#ef4444', // red
+  32: '#22c55e', // green
+  33: '#eab308', // yellow
+  34: '#3b82f6', // blue
+  35: '#a855f7', // magenta
+  36: '#06b6d4', // cyan
+  37: '#e5e7eb', // white
+  90: '#6b7280', // bright black (gray)
+  91: '#f87171', // bright red
+  92: '#4ade80', // bright green
+  93: '#facc15', // bright yellow
+  94: '#60a5fa', // bright blue
+  95: '#c084fc', // bright magenta
+  96: '#22d3ee', // bright cyan
+  97: '#ffffff', // bright white
+}
+
+// Parse ANSI escape codes and return array of styled segments
+interface AnsiSegment {
+  text: string
+  color?: string
+  bold?: boolean
+}
+
+function parseAnsi(text: string): AnsiSegment[] {
+  const segments: AnsiSegment[] = []
+  let currentColor: string | undefined
+  let currentBold = false
+
+  // Normalize different escape representations
+  const normalized = text.replace(/␛/g, '\x1b')
+
+  // Match ANSI sequences or text between them
+  const regex = /\x1b\[([0-9;]*)m|([^\x1b]+)/g
+  let match
+
+  while ((match = regex.exec(normalized)) !== null) {
+    if (match[1] !== undefined) {
+      // ANSI sequence
+      const codes = match[1].split(';').map(Number)
+      for (const code of codes) {
+        if (code === 0) {
+          currentColor = undefined
+          currentBold = false
+        } else if (code === 1) {
+          currentBold = true
+        } else if (code === 22) {
+          currentBold = false
+        } else if (ansiColors[code]) {
+          currentColor = ansiColors[code]
+        }
+      }
+    } else if (match[2]) {
+      segments.push({
+        text: match[2],
+        color: currentColor,
+        bold: currentBold,
+      })
+    }
+  }
+
+  if (segments.length === 0) {
+    return [{ text }]
+  }
+
+  return segments
+}
+
+// Render text with ANSI colors as React elements
+function AnsiText({ text }: { text: string }) {
+  const segments = parseAnsi(text)
+  const hasColors = segments.some(s => s.color || s.bold)
+
+  if (!hasColors) {
+    return <>{text}</>
+  }
+
+  return (
+    <>
+      {segments.map((seg, i) => (
+        <span
+          key={i}
+          style={{
+            color: seg.color,
+            fontWeight: seg.bold ? 'bold' : undefined,
+          }}
+        >
+          {seg.text}
+        </span>
+      ))}
+    </>
+  )
+}
+
 /**
  * Process terminal output text:
- * 1. Strip ANSI escape codes (colors, cursor control, etc.)
- * 2. Handle carriage returns for progress bars using terminal-style line buffer
+ * 1. Handle carriage returns for progress bars using terminal-style line buffer
+ * 2. Preserve ANSI color codes for rendering
  */
 function processTerminalOutput(text: string): string {
-  // Strip ANSI escape sequences:
-  // - \x1b[ or \033[ followed by parameters and a command letter
-  // - Includes color codes, cursor movement, clear screen, etc.
+  // Strip non-color ANSI sequences (keep color codes for rendering)
   let processed = text
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // Standard ANSI sequences like \x1b[32m
     .replace(/\x1b\][^\x07]*\x07/g, '')      // OSC sequences (operating system commands)
     .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '') // Private mode sequences like \x1b[?25h (show cursor)
     .replace(/\x1b[=>]/g, '')                // Simple escape sequences
 
   // Terminal-style line buffer processing for \r (carriage return)
-  // This emulates how a terminal handles \r - it moves cursor to start of line
-  // and subsequent characters overwrite the existing content
   const lines: string[] = []
   let currentLine = ''
 
@@ -36,19 +128,14 @@ function processTerminalOutput(text: string): string {
     const char = processed[i]
 
     if (char === '\n') {
-      // Newline: push current line and start fresh
       lines.push(currentLine)
       currentLine = ''
     } else if (char === '\r') {
-      // Carriage return: reset to beginning of current line
-      // Don't push the line yet - next chars will overwrite
-      // But if \r is followed by \n, treat as newline
       if (processed[i + 1] === '\n') {
         lines.push(currentLine)
         currentLine = ''
-        i++ // Skip the \n
+        i++
       } else {
-        // Just \r - reset line buffer (overwrite mode)
         currentLine = ''
       }
     } else {
@@ -56,7 +143,6 @@ function processTerminalOutput(text: string): string {
     }
   }
 
-  // Don't forget the last line if it doesn't end with \n
   if (currentLine) {
     lines.push(currentLine)
   }
@@ -69,7 +155,6 @@ function processTerminalOutput(text: string): string {
     }
   }
 
-  // Remove empty lines at the end (cleanup)
   while (deduped.length > 0 && deduped[deduped.length - 1].trim() === '') {
     deduped.pop()
   }
@@ -441,7 +526,7 @@ export default function Cell({
             className="text-sm whitespace-pre-wrap font-mono"
             style={{ color: 'var(--nb-text-output, var(--nb-text-primary))' }}
           >
-            {text}
+            <AnsiText text={text} />
           </pre>
         )
       case 'execute_result':
@@ -614,7 +699,7 @@ export default function Cell({
                 className="text-sm whitespace-pre-wrap font-mono"
                 style={{ color: 'var(--nb-text-output, var(--nb-text-primary))' }}
               >
-                {plainText}
+                <AnsiText text={plainText} />
               </pre>
             )
           }
@@ -626,7 +711,7 @@ export default function Cell({
             <div className="font-bold">{output.ename}: {output.evalue}</div>
             {output.traceback && (
               <pre className="whitespace-pre-wrap text-xs mt-1 opacity-80">
-                {processTerminalOutput(output.traceback.join('\n'))}
+                <AnsiText text={processTerminalOutput(output.traceback.join('\n'))} />
               </pre>
             )}
           </div>
