@@ -176,7 +176,7 @@ interface CellProps {
   onToggleContext: () => void
   isInContext: boolean
   onEnterEditMode: () => void
-  onExitEditMode: (renderMarkdown?: boolean) => void  // Optional: render markdown on exit
+  onExitEditMode: (moveToNext?: boolean, shiftEnterHandled?: boolean) => void
 }
 
 export default function Cell({
@@ -250,11 +250,11 @@ export default function Cell({
         // For code cells: onRunAndAdvance handles run + move to next
         console.log('[Cell] Calling onRunAndAdvance for code cell')
         onRunAndAdvance()
-        onExitEditMode(false)  // Just exit edit mode, don't move again
+        onExitEditMode(false, true)  // Exit edit mode, don't move (onRunAndAdvance does it), but mark as handled
       } else {
         // For markdown/raw cells: just exit edit mode and move to next
         console.log('[Cell] Calling onExitEditMode(true) for markdown cell')
-        onExitEditMode(true)  // Exit and move to next cell
+        onExitEditMode(true, true)  // Exit and move to next cell, mark as handled
       }
       return
     }

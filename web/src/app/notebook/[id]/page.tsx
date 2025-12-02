@@ -657,11 +657,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [selectedCellId])
 
   // Exit edit mode - optionally move to next cell in navigation direction
-  const exitEditMode = useCallback((moveToNext: boolean = false) => {
-    console.log('[Page] exitEditMode called, moveToNext:', moveToNext, 'selectedCellId:', selectedCellId)
+  // shiftEnterHandled: set to true when called from Shift+Enter to prevent double execution
+  const exitEditMode = useCallback((moveToNext: boolean = false, shiftEnterHandled: boolean = false) => {
+    console.log('[Page] exitEditMode called, moveToNext:', moveToNext, 'shiftEnterHandled:', shiftEnterHandled, 'selectedCellId:', selectedCellId)
 
     // Set flag to prevent global handler from double-processing
-    if (moveToNext) {
+    if (moveToNext || shiftEnterHandled) {
       shiftEnterHandledRef.current = true
       // Reset the flag after a short delay
       setTimeout(() => {
@@ -1352,54 +1353,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               </div>
             )}
 
-            {/* Keyboard mode indicator - fixed at bottom */}
-            <div className="sticky bottom-4 flex justify-center pointer-events-none">
-              <div
-                className={`px-4 py-2 rounded-full text-xs font-medium backdrop-blur-sm border transition-all ${
-                  isEditMode
-                    ? 'bg-emerald-900/80 text-emerald-300 border-emerald-500/30'
-                    : 'bg-blue-900/80 text-blue-300 border-blue-500/30'
-                }`}
-              >
-                {isEditMode ? (
-                  <span className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 bg-emerald-400 rounded-full" />
-                      Edit Mode
-                    </span>
-                    <span className="text-emerald-400/70">|</span>
-                    <span>
-                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Shift+Enter</kbd>
-                      <span className="ml-1">run</span>
-                    </span>
-                    <span>
-                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Esc</kbd>
-                      <span className="ml-1">exit</span>
-                    </span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 bg-blue-400 rounded-full" />
-                      Command Mode
-                    </span>
-                    <span className="text-blue-400/70">|</span>
-                    <span>
-                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">↑↓</kbd>
-                      <span className="ml-1">navigate</span>
-                    </span>
-                    <span>
-                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Enter</kbd>
-                      <span className="ml-1">edit</span>
-                    </span>
-                    <span>
-                      <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-[10px]">Shift+Enter</kbd>
-                      <span className="ml-1">run</span>
-                    </span>
-                  </span>
-                )}
-              </div>
-            </div>
           </div>
         </div>
 
