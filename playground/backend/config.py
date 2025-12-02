@@ -35,7 +35,7 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-1-20250805")
 #   "auto" - LLM automatically executes tools without user approval
 #   "manual" - LLM returns pending tool calls for user to approve/reject
 #   "ai_decide" - AI validator decides which tools need approval
-TOOL_EXECUTION_MODE = os.environ.get("TOOL_EXECUTION_MODE", "manual")
+TOOL_EXECUTION_MODE = os.environ.get("TOOL_EXECUTION_MODE", "auto")
 
 # Legacy support - AUTO_FUNCTION_CALLING maps to mode
 AUTO_FUNCTION_CALLING = os.environ.get("AUTO_FUNCTION_CALLING", "false").lower() == "true"
@@ -43,12 +43,11 @@ if AUTO_FUNCTION_CALLING:
     TOOL_EXECUTION_MODE = "auto"
 
 # === Provider Selection ===
-# Auto-detect default based on availability (Ollama first as it needs no key)
+# Auto-detect default based on availability
 # User can switch via UI dropdown at runtime
 def _get_default_provider():
-    """Auto-detect default provider - Ollama first (no key needed), then others"""
-    # Ollama is default since it doesn't need an API key
-    return "ollama"
+    """Auto-detect default provider - Gemini as default"""
+    return "gemini"
 
 LLM_PROVIDER = _get_default_provider()
 

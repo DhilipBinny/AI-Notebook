@@ -70,7 +70,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [chatLoading, setChatLoading] = useState(false)
   const [pendingTools, setPendingTools] = useState<PendingToolCall[]>([])
   const [llmProvider, setLlmProvider] = useState('gemini')
-  const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('manual')
+  const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [showChat, setShowChat] = useState(true)
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
   const [confirmPopup, setConfirmPopup] = useState<{
