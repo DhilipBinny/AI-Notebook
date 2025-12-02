@@ -14,7 +14,7 @@ marked.setOptions({
 /**
  * Process terminal output text:
  * 1. Strip ANSI escape codes (colors, cursor control, etc.)
- * 2. Handle carriage returns for progress bars (keep only the last line update)
+ * 2. Handle carriage returns for progress bars using terminal-style line buffer
  */
 function processTerminalOutput(text: string): string {
   // Strip ANSI escape sequences:
@@ -26,33 +26,137 @@ function processTerminalOutput(text: string): string {
     .replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '') // Private mode sequences like \x1b[?25h (show cursor)
     .replace(/\x1b[=>]/g, '')                // Simple escape sequences
 
-  // Handle carriage returns for progress bars:
-  // Split by newlines, then for each line handle \r to keep only the last segment
-  const lines = processed.split('\n')
-  const processedLines = lines.map(line => {
-    if (line.includes('\r')) {
-      // Split by \r and keep only the last non-empty segment
-      const segments = line.split('\r')
-      // Find the last non-empty segment
-      for (let i = segments.length - 1; i >= 0; i--) {
-        if (segments[i].trim() !== '') {
-          return segments[i]
-        }
+  // Terminal-style line buffer processing for \r (carriage return)
+  // This emulates how a terminal handles \r - it moves cursor to start of line
+  // and subsequent characters overwrite the existing content
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (let i = 0; i < processed.length; i++) {
+    const char = processed[i]
+
+    if (char === '\n') {
+      // Newline: push current line and start fresh
+      lines.push(currentLine)
+      currentLine = ''
+    } else if (char === '\r') {
+      // Carriage return: reset to beginning of current line
+      // Don't push the line yet - next chars will overwrite
+      // But if \r is followed by \n, treat as newline
+      if (processed[i + 1] === '\n') {
+        lines.push(currentLine)
+        currentLine = ''
+        i++ // Skip the \n
+      } else {
+        // Just \r - reset line buffer (overwrite mode)
+        currentLine = ''
       }
-      return segments[segments.length - 1] || ''
+    } else {
+      currentLine += char
     }
-    return line
-  })
+  }
+
+  // Don't forget the last line if it doesn't end with \n
+  if (currentLine) {
+    lines.push(currentLine)
+  }
 
   // Remove consecutive duplicate lines (common in progress bar updates)
   const deduped: string[] = []
-  for (const line of processedLines) {
+  for (const line of lines) {
     if (deduped.length === 0 || line !== deduped[deduped.length - 1]) {
       deduped.push(line)
     }
   }
 
+  // Remove empty lines at the end (cleanup)
+  while (deduped.length > 0 && deduped[deduped.length - 1].trim() === '') {
+    deduped.pop()
+  }
+
   return deduped.join('\n')
+}
+
+// Maximum height for output area (in pixels)
+const MAX_OUTPUT_HEIGHT = 300
+
+/**
+ * OutputArea component with max height, auto-scroll, and expand/collapse
+ */
+function OutputArea({
+  outputs,
+  renderOutput
+}: {
+  outputs: CellOutput[]
+  renderOutput: (output: CellOutput, idx: number) => React.ReactNode
+}) {
+  const outputRef = useRef<HTMLDivElement>(null)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [needsExpand, setNeedsExpand] = useState(false)
+
+  // Check if content exceeds max height and auto-scroll to bottom
+  useEffect(() => {
+    if (outputRef.current) {
+      const shouldShowExpand = outputRef.current.scrollHeight > MAX_OUTPUT_HEIGHT
+      setNeedsExpand(shouldShowExpand)
+
+      // Auto-scroll to bottom when new output arrives
+      if (!isExpanded) {
+        outputRef.current.scrollTop = outputRef.current.scrollHeight
+      }
+    }
+  }, [outputs, isExpanded])
+
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--nb-border-default)',
+        backgroundColor: 'var(--nb-bg-output)',
+      }}
+    >
+      <div
+        ref={outputRef}
+        className="cell-output p-3 space-y-2 overflow-auto"
+        style={{
+          maxHeight: isExpanded ? 'none' : `${MAX_OUTPUT_HEIGHT}px`,
+        }}
+      >
+        {outputs.map((output, idx) => renderOutput(output, idx))}
+      </div>
+
+      {/* Expand/Collapse button */}
+      {needsExpand && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsExpanded(!isExpanded)
+          }}
+          className="w-full py-1 text-xs flex items-center justify-center gap-1 hover:opacity-80 transition-opacity"
+          style={{
+            color: 'var(--nb-text-muted)',
+            borderTop: '1px solid var(--nb-border-default)',
+            backgroundColor: 'var(--nb-bg-secondary)',
+          }}
+        >
+          {isExpanded ? (
+            <>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              </svg>
+              Collapse output
+            </>
+          ) : (
+            <>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+              Expand output
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  )
 }
 
 interface CellProps {
@@ -620,15 +724,7 @@ export default function Cell({
 
       {/* Cell Output */}
       {cell.type === 'code' && cell.outputs && cell.outputs.length > 0 && (
-        <div
-          className="cell-output p-3 space-y-2"
-          style={{
-            borderTop: '1px solid var(--nb-border-default)',
-            backgroundColor: 'var(--nb-bg-output)',
-          }}
-        >
-          {cell.outputs.map((output, idx) => renderOutput(output, idx))}
-        </div>
+        <OutputArea outputs={cell.outputs} renderOutput={renderOutput} />
       )}
     </div>
   )

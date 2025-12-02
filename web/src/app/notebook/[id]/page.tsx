@@ -231,9 +231,34 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   // Setup kernel callbacks
   useEffect(() => {
     kernel.setOutputCallback((cellId, output) => {
-      // Get current cell to append to its outputs
+      // Get current cell to append/merge outputs
       const cell = cells.find((c) => c.id === cellId)
       if (cell) {
+        // For stream outputs, merge with the last output if it's also a stream
+        // This allows proper handling of \r for progress bars
+        if (output.output_type === 'stream' && cell.outputs.length > 0) {
+          const lastOutput = cell.outputs[cell.outputs.length - 1]
+          if (lastOutput.output_type === 'stream') {
+            // Merge stream text - append new text to existing
+            const existingText = Array.isArray(lastOutput.text)
+              ? lastOutput.text.join('')
+              : lastOutput.text || ''
+            const newText = Array.isArray(output.text)
+              ? output.text.join('')
+              : output.text || ''
+
+            // Update the last output with merged text
+            const updatedOutputs = [...cell.outputs]
+            updatedOutputs[updatedOutputs.length - 1] = {
+              ...lastOutput,
+              text: existingText + newText,
+            }
+            updateCell(cellId, { outputs: updatedOutputs })
+            return
+          }
+        }
+
+        // For non-stream or first output, just append
         updateCell(cellId, {
           outputs: [...cell.outputs, output],
         })
