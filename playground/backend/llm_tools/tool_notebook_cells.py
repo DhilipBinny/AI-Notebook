@@ -18,6 +18,7 @@ LAZY LOAD ARCHITECTURE:
 """
 
 import httpx
+from typing import List, Dict, Any
 from typing import Optional
 from backend.session_manager import get_current_session
 from backend.utils.util_func import log_debug_message
@@ -219,6 +220,168 @@ def update_cell_content(cell_id: str, new_content: str, cell_type: Optional[str]
         payload["cell_type"] = cell_type
 
     return _call_master_api("PUT", f"/internal/notebook/{project_id}/cell/by-id/{cell_id}", payload)
+
+
+def delete_cell(cell_id: str) -> dict:
+    """
+    Delete a cell from the notebook by its unique ID.
+
+    Use this tool when you need to:
+    - Remove duplicate or redundant cells
+    - Clean up unused code or markdown
+    - Delete cells that are no longer needed
+    - Remove cells with errors that should be rewritten
+
+    IMPORTANT: This action cannot be undone. The cell and its contents
+    will be permanently removed.
+
+    Args:
+        cell_id: The unique cell identifier (e.g., "cell-a1b2c3d4").
+                 Get this from get_notebook_overview().
+
+    Returns:
+        Dictionary with:
+        - success: Whether the deletion succeeded
+        - deleted_cell_id: The ID of the deleted cell
+        - deleted_cell_type: Type of the deleted cell (code/markdown)
+        - deleted_from_position: Position where cell was deleted (1-based)
+        - total_cells: New total number of cells
+        - error: Error message if deletion failed
+
+    Example:
+        1. First call get_notebook_overview() to find the cell_id
+        2. Then: delete_cell("cell-a1b2c3d4")
+    """
+    log_debug_message(f"==> delete_cell({cell_id}) called from LLM")
+
+    project_id = _get_project_id()
+    if not project_id:
+        return {
+            "success": False,
+            "error": "No active session - cannot determine project"
+        }
+
+    return _call_master_api("DELETE", f"/internal/notebook/{project_id}/cell/by-id/{cell_id}")
+
+
+def multi_delete_cells(cell_ids: List[str]) -> dict:
+    """
+    Delete multiple cells from the notebook in one operation.
+
+    Use this tool when you need to:
+    - Remove multiple cells at once (more efficient than calling delete_cell multiple times)
+    - Clean up several unused or redundant cells
+    - Bulk delete cells during notebook restructuring
+
+    IMPORTANT: This action cannot be undone. All specified cells will be permanently removed.
+
+    Args:
+        cell_ids: List of cell IDs to delete (e.g., ["cell-a1b2c3d4", "cell-e5f6g7h8"]).
+                  Get these from get_notebook_overview().
+
+    Returns:
+        Dictionary with:
+        - success: Whether the operation succeeded
+        - total_requested: Number of cells requested to delete
+        - total_deleted: Number of cells actually deleted
+        - total_cells: New total number of cells in notebook
+        - results: List of results for each cell (success/failure details)
+        - message: Summary message
+
+    Example:
+        1. First call get_notebook_overview() to find the cell_ids
+        2. Then: multi_delete_cells(["cell-a1b2c3d4", "cell-e5f6g7h8", "cell-i9j0k1l2"])
+    """
+    log_debug_message(f"==> multi_delete_cells({len(cell_ids)} cells) called from LLM")
+
+    project_id = _get_project_id()
+    if not project_id:
+        return {
+            "success": False,
+            "error": "No active session - cannot determine project"
+        }
+
+    payload = {"cell_ids": cell_ids}
+    return _call_master_api("POST", f"/internal/notebook/{project_id}/cells/batch-delete", payload)
+
+
+def multi_insert_cells(cells_json: str) -> dict:
+    """
+    Insert multiple cells into the notebook in one operation.
+
+    Use this tool when you need to:
+    - Add multiple markdown explanations throughout the notebook
+    - Insert several code cells at once
+    - Bulk add documentation cells
+    - Restructure the notebook with multiple new cells
+
+    This is much more efficient than calling insert_cell_after multiple times.
+
+    Args:
+        cells_json: JSON string containing a list of cell specifications.
+                    Each item must have:
+                    - after_cell_id: The cell_id after which to insert
+                    - content: The content of the new cell
+                    - cell_type: "code" or "markdown"
+
+    Returns:
+        Dictionary with:
+        - success: Whether the operation succeeded
+        - total_requested: Number of cells requested to insert
+        - total_inserted: Number of cells actually inserted
+        - total_cells: New total number of cells in notebook
+        - results: List of results for each cell (with new_cell_id for successful inserts)
+        - message: Summary message
+
+    Example:
+        multi_insert_cells('[{"after_cell_id": "cell-a1b2", "content": "# Intro", "cell_type": "markdown"}, {"after_cell_id": "cell-c3d4", "content": "print(1)", "cell_type": "code"}]')
+    """
+    import json
+
+    # Parse JSON string
+    try:
+        cells = json.loads(cells_json)
+    except json.JSONDecodeError as e:
+        return {
+            "success": False,
+            "error": f"Invalid JSON: {e}"
+        }
+
+    if not isinstance(cells, list):
+        return {
+            "success": False,
+            "error": "cells_json must be a JSON array"
+        }
+
+    log_debug_message(f"==> multi_insert_cells({len(cells)} cells) called from LLM")
+
+    project_id = _get_project_id()
+    if not project_id:
+        return {
+            "success": False,
+            "error": "No active session - cannot determine project"
+        }
+
+    # Validate cell specifications
+    for i, cell in enumerate(cells):
+        if not isinstance(cell, dict):
+            return {
+                "success": False,
+                "error": f"Cell {i} must be an object with after_cell_id, content, cell_type"
+            }
+        if "after_cell_id" not in cell or "content" not in cell or "cell_type" not in cell:
+            return {
+                "success": False,
+                "error": f"Cell {i} missing required fields. Need: after_cell_id, content, cell_type"
+            }
+        if cell["cell_type"] not in ["code", "markdown"]:
+            return {
+                "success": False,
+                "error": f"Cell {i} has invalid cell_type '{cell['cell_type']}'. Must be 'code' or 'markdown'"
+            }
+
+    payload = {"cells": cells}
+    return _call_master_api("POST", f"/internal/notebook/{project_id}/cells/batch-insert", payload)
 
 
 def insert_cell_after(after_cell_id: str, content: str, cell_type: str) -> dict:

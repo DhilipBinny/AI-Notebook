@@ -336,7 +336,7 @@ export default function ChatPanel({
               </div>
             </div>
             <p className="text-xs mt-6" style={{ color: textMuted }}>
-              Select cells with checkboxes to include in context.
+              All notebook cells are automatically included as context.
             </p>
           </div>
         )}

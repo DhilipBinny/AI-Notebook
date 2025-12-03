@@ -187,6 +187,10 @@ class OpenAIClient(BaseLLMClient):
             dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
         try:
+            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            log_debug_message(f"📨 OpenAI send_message() - User: {message[:60]}...")
+            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
             # Add user message to history
             self.history.append({
                 "role": "user",
@@ -200,12 +204,15 @@ class OpenAIClient(BaseLLMClient):
 
             if self.auto_function_calling:
                 # Auto mode: loop until final response
+                log_debug_message(f"🤖 OpenAI AUTO mode - executing tools automatically")
                 return self._auto_execute_tools(messages)
             else:
                 # Manual mode: return pending tools for approval
+                log_debug_message(f"🤖 OpenAI MANUAL mode - returning tools for approval")
                 return self._get_pending_tools(messages)
 
         except Exception as e:
+            log_debug_message(f"❌ OpenAI error: {e}")
             return f"OpenAI Error: {e}"
 
     def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
@@ -215,6 +222,7 @@ class OpenAIClient(BaseLLMClient):
 
         while iteration < max_iterations:
             iteration += 1
+            log_debug_message(f"🔄 OpenAI iteration {iteration}/{max_iterations}")
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
@@ -224,7 +232,6 @@ class OpenAIClient(BaseLLMClient):
             )
 
             response_message = response.choices[0].message
-            log_debug_message(f"OpenAI response (iter {iteration}): {response_message}")
 
             if response_message.tool_calls:
                 # Add assistant message with tool calls
@@ -248,6 +255,7 @@ class OpenAIClient(BaseLLMClient):
                 for tool_call in response_message.tool_calls:
                     func_name = tool_call.function.name
                     func_args = json.loads(tool_call.function.arguments)
+                    log_debug_message(f"🔧 OpenAI calling tool: {func_name}")
                     result = self._execute_tool(func_name, func_args)
 
                     messages.append({
@@ -262,8 +270,10 @@ class OpenAIClient(BaseLLMClient):
                     "role": "assistant",
                     "content": final_response
                 })
+                log_debug_message(f"✅ OpenAI response received - {len(final_response)} chars")
                 return final_response
 
+        log_debug_message(f"❌ OpenAI max iterations reached")
         return "Error: Maximum tool calling iterations reached"
 
     def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
@@ -276,7 +286,6 @@ class OpenAIClient(BaseLLMClient):
         )
 
         response_message = response.choices[0].message
-        log_debug_message(f"OpenAI response (manual mode): {response_message}")
 
         if response_message.tool_calls:
             # Store state for later execution
@@ -314,6 +323,9 @@ class OpenAIClient(BaseLLMClient):
                 ]
             })
 
+            tools_names = [t["name"] for t in pending_tools]
+            log_debug_message(f"🔧 OpenAI pending tools: {', '.join(tools_names)}")
+
             return {
                 "pending_tool_calls": pending_tools,
                 "response_text": response_message.content or ""
@@ -325,6 +337,7 @@ class OpenAIClient(BaseLLMClient):
                 "role": "assistant",
                 "content": final_response
             })
+            log_debug_message(f"✅ OpenAI response (no tools) - {len(final_response)} chars")
             return final_response
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:

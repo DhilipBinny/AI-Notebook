@@ -11,7 +11,7 @@ ipykernel==6.29.5
 # LLM Providers
 openai>=1.0.0          # OpenAI + Ollama (compatible API)
 anthropic>=0.18.0       # Anthropic Claude
-google-generativeai==0.8.3  # Google Gemini
+google-genai>=1.0.0         # Google Gemini (new SDK with Google Search)
 
 # Environment & Config
 python-dotenv==1.0.1

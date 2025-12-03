@@ -186,6 +186,10 @@ class AnthropicClient(BaseLLMClient):
             dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
         try:
+            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            log_debug_message(f"📨 Anthropic send_message() - User: {message[:60]}...")
+            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
             # Add user message to history
             self.history.append({
                 "role": "user",
@@ -197,12 +201,15 @@ class AnthropicClient(BaseLLMClient):
 
             if self.auto_function_calling:
                 # Auto mode: loop until final response
+                log_debug_message(f"🤖 Anthropic AUTO mode - executing tools automatically")
                 return self._auto_execute_tools(messages)
             else:
                 # Manual mode: return pending tools for approval
+                log_debug_message(f"🤖 Anthropic MANUAL mode - returning tools for approval")
                 return self._get_pending_tools(messages)
 
         except Exception as e:
+            log_debug_message(f"❌ Anthropic error: {e}")
             return f"Anthropic Error: {e}"
 
     def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
@@ -212,6 +219,7 @@ class AnthropicClient(BaseLLMClient):
 
         while iteration < max_iterations:
             iteration += 1
+            log_debug_message(f"🔄 Anthropic iteration {iteration}/{max_iterations}")
 
             response = self.client.messages.create(
                 model=self.model_name,
@@ -221,7 +229,13 @@ class AnthropicClient(BaseLLMClient):
                 tools=self.tools
             )
 
-            log_debug_message(f"Anthropic response (iter {iteration}): {response}")
+            # Log server tool usage (like web_search)
+            for block in response.content:
+                if block.type == "server_tool_use":
+                    log_debug_message(f"🌐 Anthropic web search: {block.name}")
+                elif block.type == "web_search_tool_result":
+                    result_count = len(block.content) if hasattr(block, 'content') else 0
+                    log_debug_message(f"🌐 Anthropic web search returned {result_count} results")
 
             # Check if stop_reason is tool_use
             if response.stop_reason == "tool_use":
@@ -236,6 +250,7 @@ class AnthropicClient(BaseLLMClient):
                     if block.type == "tool_use":
                         func_name = block.name
                         func_args = block.input
+                        log_debug_message(f"🔧 Anthropic calling tool: {func_name}")
                         result = self._execute_tool(func_name, func_args)
 
                         messages.append({
@@ -249,14 +264,19 @@ class AnthropicClient(BaseLLMClient):
                             ]
                         })
             else:
-                # Final response
-                final_response = response.content[0].text
+                # Final response - extract text from content blocks
+                final_response = ""
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        final_response += block.text
                 self.history.append({
                     "role": "assistant",
                     "content": final_response
                 })
+                log_debug_message(f"✅ Anthropic response received - {len(final_response)} chars")
                 return final_response
 
+        log_debug_message(f"❌ Anthropic max iterations reached")
         return "Error: Maximum tool calling iterations reached"
 
     def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
@@ -269,7 +289,13 @@ class AnthropicClient(BaseLLMClient):
             tools=self.tools
         )
 
-        log_debug_message(f"Anthropic response (manual mode): {response}")
+        # Log server tool usage (like web_search)
+        for block in response.content:
+            if block.type == "server_tool_use":
+                log_debug_message(f"🌐 Anthropic web search: {block.name}")
+            elif block.type == "web_search_tool_result":
+                result_count = len(block.content) if hasattr(block, 'content') else 0
+                log_debug_message(f"🌐 Anthropic web search returned {result_count} results")
 
         if response.stop_reason == "tool_use":
             # Store state for later execution
@@ -297,17 +323,25 @@ class AnthropicClient(BaseLLMClient):
                     pending_tools.append(tool_info)
                     self._pending_tool_calls.append(tool_info)
 
+            tools_names = [t["name"] for t in pending_tools]
+            log_debug_message(f"🔧 Anthropic pending tools: {', '.join(tools_names)}")
+
             return {
                 "pending_tool_calls": pending_tools,
                 "response_text": response_text
             }
         else:
-            # No tools needed
-            final_response = response.content[0].text
+            # No custom tools needed - extract text from all content blocks
+            # (response may include web search results interspersed with text)
+            final_response = ""
+            for block in response.content:
+                if hasattr(block, 'text') and block.text:
+                    final_response += block.text
             self.history.append({
                 "role": "assistant",
                 "content": final_response
             })
+            log_debug_message(f"✅ Anthropic response (no custom tools) - {len(final_response)} chars")
             return final_response
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:

@@ -54,7 +54,8 @@ def _get_default_provider():
     """Auto-detect default provider - Gemini as default"""
     return "gemini"
 
-LLM_PROVIDER = _get_default_provider()
+# Read from environment or use default
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", _get_default_provider())
 
 # # === Legacy support (backwards compatibility) ===
 # API_KEY = GEMINI_API_KEY  # Keep for backward compatibility

@@ -133,7 +133,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [playground, setPlayground] = useState<Playground | null>(null)
   const [playgroundLoading, setPlaygroundLoading] = useState(false)
   const [selectedCellId, setSelectedCellId] = useState<string | null>(null)
-  const [contextCellIds, setContextCellIds] = useState<Set<string>>(new Set())
   const [isEditMode, setIsEditMode] = useState(false) // false = command mode (navigate with arrows), true = edit mode (typing)
   const [lastNavDirection, setLastNavDirection] = useState<'up' | 'down'>('down') // Track last navigation direction for Esc
 
@@ -216,20 +215,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           metadata: cell.metadata,
         }))
         setCells(loadedCells)
-        // Update context: keep cells that still exist, add new cells to context
-        const loadedCellIds = new Set(loadedCells.map(c => c.id))
-        setContextCellIds((prev) => {
-          const newIds = new Set<string>()
-          // Keep existing context cells that still exist
-          prev.forEach(id => {
-            if (loadedCellIds.has(id)) {
-              newIds.add(id)
-            }
-          })
-          // Add any new cells to context
-          loadedCells.forEach(c => newIds.add(c.id))
-          return newIds
-        })
         setDirty(false)
         console.log('Notebook reloaded from S3 after LLM update')
       }
@@ -288,19 +273,15 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               metadata: cell.metadata,
             }))
             setCells(loadedCells)
-            // Auto-add all loaded cells to context
-            setContextCellIds(new Set(loadedCells.map(c => c.id)))
           } else {
             // Initialize with one empty code cell if none
             const newCell = createCell('code')
             setCells([newCell])
-            setContextCellIds(new Set([newCell.id]))
           }
         } catch {
           // No notebook yet, start with empty cell
           const newCell = createCell('code')
           setCells([newCell])
-          setContextCellIds(new Set([newCell.id]))
         }
 
         // Load chat history
@@ -493,8 +474,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const selectedIndex = cells.findIndex((c) => c.id === selectedCellId)
     addCell(newCell, selectedIndex >= 0 ? selectedIndex + 1 : undefined)
     setSelectedCellId(newCell.id)
-    // Auto-add new cell to context
-    setContextCellIds((prev) => new Set([...prev, newCell.id]))
   }, [cells, selectedCellId, addCell])
 
   // Insert cell at specific position (used by insert buttons between cells)
@@ -502,19 +481,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const newCell = createCell(type)
     addCell(newCell, index)
     setSelectedCellId(newCell.id)
-    // Auto-add new cell to context
-    setContextCellIds((prev) => new Set([...prev, newCell.id]))
   }, [addCell])
 
-  // Delete cell and remove from context
+  // Delete cell
   const handleDeleteCell = useCallback((cellId: string) => {
     deleteCell(cellId)
-    // Remove from context
-    setContextCellIds((prev) => {
-      const next = new Set(prev)
-      next.delete(cellId)
-      return next
-    })
   }, [deleteCell])
 
   const handleRunCell = useCallback((cellId: string) => {
@@ -601,21 +572,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       onConfirm: () => {
         // Clear all cells and add one empty code cell
         setCells([createCell('code')])
-        setContextCellIds(new Set())
         setSelectedCellId(null)
         setConfirmPopup(null)
       },
     })
   }, [cells.length])
 
-  // Select/Deselect all cells for AI context
-  const handleSelectAllContext = useCallback(() => {
-    setContextCellIds(new Set(cells.map(c => c.id)))
-  }, [cells])
-
-  const handleDeselectAllContext = useCallback(() => {
-    setContextCellIds(new Set())
-  }, [])
 
   const handleSave = useCallback(async () => {
     if (!currentProject) return
@@ -980,18 +942,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells.length, selectedCellId, enterEditMode, exitEditMode, handleRunCell, lastNavDirection])
 
-  const handleToggleContext = useCallback((cellId: string) => {
-    setContextCellIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(cellId)) {
-        next.delete(cellId)
-      } else {
-        next.add(cellId)
-      }
-      return next
-    })
-  }, [])
-
   const handleRestartKernel = useCallback(() => {
     setConfirmPopup({
       title: 'Restart Kernel',
@@ -1052,11 +1002,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         await saveNotebook()
       }
 
-      // Send only cell IDs - backend loads content from S3
-      const selectedCellIds = Array.from(contextCellIds)
+      // Send ALL cell IDs - backend loads content from S3 and creates tiered context
+      const allCellIds = cells.map(c => c.id)
 
       // Call chat API - backend loads cell content from S3 notebook
-      const response = await chat.sendMessage(projectId, message, selectedCellIds, toolMode, llmProvider)
+      const response = await chat.sendMessage(projectId, message, allCellIds, toolMode, llmProvider)
 
       if (response.success) {
         // Handle pending tools
@@ -1103,7 +1053,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, cells, contextCellIds, toolMode, llmProvider, playground, isDirty, saveNotebook, reloadNotebook])
+  }, [projectId, cells, toolMode, llmProvider, playground, isDirty, saveNotebook, reloadNotebook])
 
   const handleApproveTools = useCallback(async (tools: PendingToolCall[]) => {
     setChatLoading(true)
@@ -1385,10 +1335,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onSave={handleSave}
         onExport={handleExport}
         isExporting={isExporting}
-        contextCount={contextCellIds.size}
         totalCells={cells.length}
-        onSelectAllContext={handleSelectAllContext}
-        onDeselectAllContext={handleDeselectAllContext}
         isDirty={isDirty}
         isSaving={isSaving}
         kernelStatus={kernel.status}
@@ -1597,8 +1544,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                       onMoveUp={() => moveCell(cell.id, 'up')}
                       onMoveDown={() => moveCell(cell.id, 'down')}
                       onUpdate={(updates) => updateCell(cell.id, updates)}
-                      onToggleContext={() => handleToggleContext(cell.id)}
-                      isInContext={contextCellIds.has(cell.id)}
                       onEnterEditMode={() => {
                         // Enter edit mode on this cell
                         setSelectedCellId(cell.id)

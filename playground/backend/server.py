@@ -16,8 +16,9 @@ from typing import Optional, List, Dict, Any
 
 import backend.config as cfg
 from backend.llm_client import LLMClient
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log_debug_message, log_chat_header, log_user_message, log_llm_response_box
 from backend.notebook_state import get_notebook_updates
+from backend.context_manager import ContextManager
 from backend.session_manager import get_session_manager, set_current_session, clear_current_session
 
 from backend.route_kernel import router as kernel_router
@@ -258,12 +259,9 @@ async def chat_with_llm(
     try:
         from datetime import datetime
 
-        log_debug_message(f"=== CHAT REQUEST ===")
-        log_debug_message(f"User message: {request.message[:200]}..." if len(request.message) > 200 else f"User message: {request.message}")
-        log_debug_message(f"Session ID: {request.session_id}")
-        log_debug_message(f"History length: {len(request.history) if request.history else 0}")
-        log_debug_message(f"Context cells: {len(request.context) if request.context else 0}")
-        log_debug_message(f"Tool mode: {cfg.TOOL_EXECUTION_MODE}, Auto function calling: {cfg.AUTO_FUNCTION_CALLING}")
+        # Pretty print chat request header
+        log_chat_header(cfg.LLM_PROVIDER.upper(), cfg.TOOL_EXECUTION_MODE, len(request.context) if request.context else 0)
+        log_user_message(request.message)
 
         # Get or create session - this ensures the session exists for tool execution
         # Note: LLM tools now fetch notebook data from Master API (no local sync needed)
@@ -273,16 +271,32 @@ async def chat_with_llm(
             log_debug_message(f"Session ready: {request.session_id}, kernel_alive: {session.kernel.is_alive()}")
             set_current_session(request.session_id)
 
-        # Build context string
+        # Build context string using ContextManager (with fallback to simple format)
         context_str = ""
         if request.context:
-            context_str = "\n\n--- NOTEBOOK CONTEXT ---\n"
-            for cell in request.context:
-                cell_num = cell.cellNumber if cell.cellNumber else "?"
-                context_str += f"\n[Cell {cell_num}] ({cell.type.upper()}):\n```\n{cell.content}\n```"
-                if cell.output:
-                    context_str += f"\nOutput:\n```\n{cell.output}\n```"
-            context_str += "\n--- END CONTEXT ---\n"
+            try:
+                context_manager = ContextManager()
+                cells_data = [
+                    {
+                        "id": cell.id,
+                        "type": cell.type,
+                        "content": cell.content,
+                        "output": cell.output,
+                        "cellNumber": cell.cellNumber
+                    }
+                    for cell in request.context
+                ]
+                context_str = context_manager.process_context(cells_data)
+            except Exception as e:
+                # Fallback to simple format if context manager fails
+                log_debug_message(f"⚠️ Context manager error, using simple format: {e}")
+                context_str = "\n\n--- NOTEBOOK CONTEXT ---\n"
+                for cell in request.context:
+                    cell_num = cell.cellNumber if cell.cellNumber else "?"
+                    context_str += f"\n[Cell {cell_num}] ({cell.type.upper()}):\n```\n{cell.content}\n```"
+                    if cell.output:
+                        context_str += f"\nOutput:\n```\n{cell.output}\n```"
+                context_str += "\n--- END CONTEXT ---\n"
 
         # Initialize LLM client
         try:
@@ -302,12 +316,17 @@ async def chat_with_llm(
         # Send message
         full_message = request.message
         if context_str:
-            full_message = f"{context_str}\n\nUser message: {request.message}"
+            full_message = f"=== NOTEBOOK CONTEXT ===\n\n{context_str}\n\n[MESSAGE]\n{request.message}"
+            # Log the full context being sent to LLM
+            log_debug_message(f"📋 Context prepared: {len(context_str)} chars, {len(request.context) if request.context else 0} cells")
+            print(f"\n{'='*60}")
+            print(f"CONTEXT SENT TO LLM ({len(context_str)} chars):")
+            print(f"{'='*60}")
+            print(context_str)
+            print(f"{'='*60}\n")
 
-        log_debug_message(f"Sending to LLM: {full_message[:300]}..." if len(full_message) > 300 else f"Sending to LLM: {full_message}")
+        log_debug_message(f"📤 Sending to {client.provider_name}...")
         llm_response = client.send_message(full_message)
-        log_debug_message(f"LLM response type: {type(llm_response)}")
-        log_debug_message(f"LLM response: {str(llm_response)[:500]}...")
 
         # Process response
         pending_tools = []
@@ -320,7 +339,8 @@ async def chat_with_llm(
                 session_for_steps.clear_llm_steps()
 
         if isinstance(llm_response, dict) and "pending_tool_calls" in llm_response:
-            log_debug_message(f"LLM wants to call tools: {[t.get('name') for t in llm_response.get('pending_tool_calls', [])]}")
+            tools_list = [t.get('name') for t in llm_response.get('pending_tool_calls', [])]
+            log_debug_message(f"🔧 TOOLS CALLED: {', '.join(tools_list)}")
             response_text = llm_response.get("response_text", "")
             all_pending_tools = llm_response.get("pending_tool_calls", [])
 
@@ -400,6 +420,7 @@ async def chat_with_llm(
         else:
             response_text = llm_response if isinstance(llm_response, str) else str(llm_response)
             llm_steps = session_for_steps.get_llm_steps() if session_for_steps else []
+            log_debug_message(f"💭 NO TOOLS - Direct response")
 
         # Get notebook updates
         updates = get_notebook_updates(session_id=request.session_id)
@@ -409,6 +430,9 @@ async def chat_with_llm(
             llm_steps = session_for_steps.get_llm_steps()
 
         clear_current_session()
+
+        # Pretty print final response
+        log_llm_response_box(response_text)
 
         return ChatResponse(
             success=True,

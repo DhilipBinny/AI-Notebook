@@ -76,6 +76,10 @@ class OllamaClient(BaseLLMClient):
             If no tools needed: Returns the response text
         """
         try:
+            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            log_debug_message(f"📨 Ollama send_message() - User: {message[:60]}...")
+            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
             # Add user message to history
             self.history.append({
                 "role": "user",
@@ -88,12 +92,14 @@ class OllamaClient(BaseLLMClient):
             ] + self.history
 
             if self.auto_function_calling:
+                log_debug_message(f"🤖 Ollama AUTO mode - executing tools automatically")
                 return self._auto_execute_tools(messages)
             else:
+                log_debug_message(f"🤖 Ollama MANUAL mode - returning tools for approval")
                 return self._get_pending_tools(messages)
 
         except Exception as e:
-            log_debug_message(f"Ollama error: {e}")
+            log_debug_message(f"❌ Ollama error: {e}")
             return f"Ollama Error: {e}"
 
     def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
@@ -103,6 +109,7 @@ class OllamaClient(BaseLLMClient):
 
         while iteration < max_iterations:
             iteration += 1
+            log_debug_message(f"🔄 Ollama iteration {iteration}/{max_iterations}")
 
             try:
                 response = self.client.chat.completions.create(
@@ -113,18 +120,15 @@ class OllamaClient(BaseLLMClient):
                 )
             except Exception as e:
                 # If tools fail (model doesn't support), try without tools
-                log_debug_message(f"Tool calling failed, trying without tools: {e}")
+                log_debug_message(f"⚠️ Ollama tool calling failed, trying without tools: {e}")
                 response = self.client.chat.completions.create(
                     model=self.model_name,
                     messages=messages
                 )
 
             response_message = response.choices[0].message
-            log_debug_message(f"Ollama response (iter {iteration}): finish_reason={response.choices[0].finish_reason}")
 
             if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
-                log_debug_message(f"Tool calls requested: {len(response_message.tool_calls)}")
-
                 # Add assistant message with tool calls
                 messages.append({
                     "role": "assistant",
@@ -146,9 +150,9 @@ class OllamaClient(BaseLLMClient):
                 for tool_call in response_message.tool_calls:
                     func_name = tool_call.function.name
                     func_args = json.loads(tool_call.function.arguments)
+                    log_debug_message(f"🔧 Ollama calling tool: {func_name}")
 
                     result = self._execute_tool(func_name, func_args)
-                    log_debug_message(f"Tool {func_name} result: {result[:200]}...")
 
                     messages.append({
                         "role": "tool",
@@ -162,8 +166,10 @@ class OllamaClient(BaseLLMClient):
                     "role": "assistant",
                     "content": final_response
                 })
+                log_debug_message(f"✅ Ollama response received - {len(final_response)} chars")
                 return final_response
 
+        log_debug_message(f"❌ Ollama max iterations reached")
         return "Error: Maximum tool calling iterations reached"
 
     def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
@@ -176,14 +182,13 @@ class OllamaClient(BaseLLMClient):
                 tool_choice="auto"
             )
         except Exception as e:
-            log_debug_message(f"Tool calling failed, trying without tools: {e}")
+            log_debug_message(f"⚠️ Ollama tool calling failed, trying without tools: {e}")
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=messages
             )
 
         response_message = response.choices[0].message
-        log_debug_message(f"Ollama response (manual mode): {response_message}")
 
         if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
             # Store state for later execution
@@ -221,6 +226,9 @@ class OllamaClient(BaseLLMClient):
                 ]
             })
 
+            tools_names = [t["name"] for t in pending_tools]
+            log_debug_message(f"🔧 Ollama pending tools: {', '.join(tools_names)}")
+
             return {
                 "pending_tool_calls": pending_tools,
                 "response_text": response_message.content or ""
@@ -232,6 +240,7 @@ class OllamaClient(BaseLLMClient):
                 "role": "assistant",
                 "content": final_response
             })
+            log_debug_message(f"✅ Ollama response (no tools) - {len(final_response)} chars")
             return final_response
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:

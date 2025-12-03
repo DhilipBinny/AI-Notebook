@@ -110,6 +110,23 @@ class CellInsertAfterRequest(BaseModel):
     cell_type: str  # "code" or "markdown"
 
 
+class BatchCellInsert(BaseModel):
+    """Single cell insert specification for batch operations"""
+    after_cell_id: str  # Insert after this cell
+    content: str
+    cell_type: str  # "code" or "markdown"
+
+
+class BatchInsertRequest(BaseModel):
+    """Request to insert multiple cells in one operation"""
+    cells: List[BatchCellInsert]
+
+
+class BatchDeleteRequest(BaseModel):
+    """Request to delete multiple cells in one operation"""
+    cell_ids: List[str]
+
+
 # === Helper Functions ===
 
 def get_cell_id(cell: Dict) -> str:
@@ -672,6 +689,248 @@ async def insert_cell_after_id(
             "type": request.cell_type,
             "total_cells": len(cells),
             "message": f"New {request.cell_type} cell inserted as cell {insert_position + 1}",
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.delete("/notebook/{project_id}/cell/by-id/{cell_id}")
+async def delete_cell_by_id(
+    project_id: str,
+    cell_id: str,
+    x_internal_secret: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a cell from the notebook by its unique ID.
+
+    Used by LLM tools: delete_cell()
+    """
+    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
+
+    try:
+        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
+
+        if notebook_data is None:
+            return {"success": False, "error": "Notebook not found"}
+
+        cells = notebook_data.get("cells", [])
+
+        # Find the cell to delete
+        cell_index = find_cell_index_by_id(cells, cell_id)
+
+        if cell_index == -1:
+            return {
+                "success": False,
+                "error": f"Cell with ID '{cell_id}' not found. Use get_notebook_overview() to see available cell IDs.",
+            }
+
+        # Get cell info before deleting
+        deleted_cell = cells[cell_index]
+        deleted_cell_type = get_cell_type(deleted_cell)
+
+        # Remove the cell
+        cells.pop(cell_index)
+
+        # Ensure at least one cell remains
+        if len(cells) == 0:
+            import uuid
+            new_cell_id = f"cell-{uuid.uuid4().hex[:12]}"
+            cells.append({
+                "cell_type": "code",
+                "source": "",
+                "outputs": [],
+                "execution_count": None,
+                "metadata": {"cell_id": new_cell_id},
+            })
+
+        # Save back to S3
+        notebook_data["cells"] = cells
+        await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
+
+        return {
+            "success": True,
+            "deleted_cell_id": cell_id,
+            "deleted_cell_type": deleted_cell_type,
+            "deleted_from_position": cell_index + 1,  # 1-based
+            "total_cells": len(cells),
+            "message": f"Cell {cell_id} deleted successfully",
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.post("/notebook/{project_id}/cells/batch-insert")
+async def batch_insert_cells(
+    project_id: str,
+    request: BatchInsertRequest,
+    x_internal_secret: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Insert multiple cells in one operation.
+
+    Each cell specifies which cell to insert after.
+    Cells are processed in order, so later cells can reference
+    cells created by earlier inserts in the same batch.
+
+    Used by LLM tools: multi_insert_cells()
+    """
+    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
+
+    try:
+        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
+
+        if notebook_data is None:
+            return {"success": False, "error": "Notebook not found"}
+
+        cells = notebook_data.get("cells", [])
+        results = []
+
+        for cell_spec in request.cells:
+            if cell_spec.cell_type not in ["code", "markdown"]:
+                results.append({
+                    "success": False,
+                    "after_cell_id": cell_spec.after_cell_id,
+                    "error": f"Invalid cell_type '{cell_spec.cell_type}'"
+                })
+                continue
+
+            # Find the reference cell
+            ref_index = find_cell_index_by_id(cells, cell_spec.after_cell_id)
+
+            if ref_index == -1:
+                results.append({
+                    "success": False,
+                    "after_cell_id": cell_spec.after_cell_id,
+                    "error": f"Reference cell '{cell_spec.after_cell_id}' not found"
+                })
+                continue
+
+            # Generate new cell ID
+            import uuid
+            new_cell_id = f"cell-{uuid.uuid4().hex[:12]}"
+            new_cell = {
+                "cell_type": cell_spec.cell_type,
+                "source": cell_spec.content,
+                "outputs": [],
+                "execution_count": None,
+                "metadata": {"cell_id": new_cell_id},
+            }
+
+            # Insert after the reference cell
+            insert_position = ref_index + 1
+            cells.insert(insert_position, new_cell)
+
+            results.append({
+                "success": True,
+                "inserted_after": cell_spec.after_cell_id,
+                "new_cell_id": new_cell_id,
+                "cell_number": insert_position + 1,
+                "type": cell_spec.cell_type
+            })
+
+        # Save back to S3
+        notebook_data["cells"] = cells
+        await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
+
+        successful = sum(1 for r in results if r.get("success"))
+        return {
+            "success": True,
+            "total_requested": len(request.cells),
+            "total_inserted": successful,
+            "total_cells": len(cells),
+            "results": results,
+            "message": f"Inserted {successful} of {len(request.cells)} cells"
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.post("/notebook/{project_id}/cells/batch-delete")
+async def batch_delete_cells(
+    project_id: str,
+    request: BatchDeleteRequest,
+    x_internal_secret: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete multiple cells in one operation.
+
+    Used by LLM tools: multi_delete_cells()
+    """
+    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
+
+    try:
+        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
+
+        if notebook_data is None:
+            return {"success": False, "error": "Notebook not found"}
+
+        cells = notebook_data.get("cells", [])
+        results = []
+
+        # Collect indices to delete (process in reverse to maintain indices)
+        indices_to_delete = []
+        for cell_id in request.cell_ids:
+            cell_index = find_cell_index_by_id(cells, cell_id)
+            if cell_index == -1:
+                results.append({
+                    "success": False,
+                    "cell_id": cell_id,
+                    "error": f"Cell '{cell_id}' not found"
+                })
+            else:
+                indices_to_delete.append((cell_index, cell_id, get_cell_type(cells[cell_index])))
+
+        # Sort by index descending to delete from end first (preserves indices)
+        indices_to_delete.sort(key=lambda x: x[0], reverse=True)
+
+        for cell_index, cell_id, cell_type in indices_to_delete:
+            cells.pop(cell_index)
+            results.append({
+                "success": True,
+                "cell_id": cell_id,
+                "deleted_cell_type": cell_type,
+                "deleted_from_position": cell_index + 1
+            })
+
+        # Ensure at least one cell remains
+        if len(cells) == 0:
+            import uuid
+            new_cell_id = f"cell-{uuid.uuid4().hex[:12]}"
+            cells.append({
+                "cell_type": "code",
+                "source": "",
+                "outputs": [],
+                "execution_count": None,
+                "metadata": {"cell_id": new_cell_id},
+            })
+
+        # Save back to S3
+        notebook_data["cells"] = cells
+        await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
+
+        successful = sum(1 for r in results if r.get("success"))
+        return {
+            "success": True,
+            "total_requested": len(request.cell_ids),
+            "total_deleted": successful,
+            "total_cells": len(cells),
+            "results": results,
+            "message": f"Deleted {successful} of {len(request.cell_ids)} cells"
         }
 
     except Exception as e:

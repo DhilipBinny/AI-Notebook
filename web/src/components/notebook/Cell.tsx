@@ -259,8 +259,6 @@ interface CellProps {
   onMoveUp: () => void
   onMoveDown: () => void
   onUpdate: (updates: Partial<CellType>) => void
-  onToggleContext: () => void
-  isInContext: boolean
   onEnterEditMode: () => void
   onExitEditMode: (moveToNext?: boolean, shiftEnterHandled?: boolean) => void
 }
@@ -280,8 +278,6 @@ export default function Cell({
   onMoveUp,
   onMoveDown,
   onUpdate,
-  onToggleContext,
-  isInContext,
   onEnterEditMode,
   onExitEditMode,
 }: CellProps) {
@@ -764,13 +760,8 @@ export default function Cell({
         ...getSelectionStyle(),
       }}
     >
-      {/* Cell content wrapper - left border for context highlight (excludes output) */}
-      <div
-        style={{
-          borderLeft: isInContext ? '4px solid var(--nb-accent-context)' : 'none',
-          paddingLeft: isInContext ? '0' : '4px',  // Maintain consistent spacing
-        }}
-      >
+      {/* Cell content wrapper */}
+      <div>
         {/* Cell Header */}
         <div
           className="flex items-center justify-between px-3 py-2"
@@ -782,19 +773,6 @@ export default function Cell({
           }}
         >
         <div className="flex items-center gap-3">
-          {/* Context checkbox */}
-          <input
-            type="checkbox"
-            checked={isInContext}
-            onChange={onToggleContext}
-            className="w-4 h-4 rounded"
-            style={{
-              accentColor: 'var(--nb-accent-context)',
-            }}
-            title="Include in AI context"
-            onClick={(e) => e.stopPropagation()}
-          />
-
           {/* Running indicator */}
           {isRunning && (
             <div

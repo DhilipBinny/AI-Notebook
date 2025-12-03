@@ -12,10 +12,7 @@ interface NotebookToolbarProps {
   onSave: () => void
   onExport: () => void
   isExporting: boolean
-  contextCount: number
   totalCells: number
-  onSelectAllContext: () => void
-  onDeselectAllContext: () => void
   isDirty: boolean
   isSaving: boolean
   kernelStatus: 'connected' | 'connecting' | 'disconnected'
@@ -44,10 +41,7 @@ export default function NotebookToolbar({
   onSave,
   onExport,
   isExporting,
-  contextCount,
   totalCells,
-  onSelectAllContext,
-  onDeselectAllContext,
   isDirty,
   isSaving,
   kernelStatus,
@@ -132,29 +126,9 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Context count with select/deselect */}
-        <div className="flex items-center gap-2">
-          <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
-            <span className="text-emerald-400 font-medium">{contextCount}</span>
-            <span className="text-gray-500">/{totalCells}</span> in context
-          </div>
-          {contextCount < totalCells ? (
-            <button
-              onClick={onSelectAllContext}
-              className="px-2.5 py-1 text-xs rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-all"
-              title="Select all cells for AI context"
-            >
-              Select All
-            </button>
-          ) : (
-            <button
-              onClick={onDeselectAllContext}
-              className="px-2.5 py-1 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 border border-white/10 transition-all"
-              title="Deselect all cells from AI context"
-            >
-              Deselect All
-            </button>
-          )}
+        {/* Cell count indicator */}
+        <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
+          <span className="text-emerald-400 font-medium">{totalCells}</span> cells
         </div>
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
