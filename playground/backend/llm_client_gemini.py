@@ -629,10 +629,17 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
             log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
 
-            # Check if web search might help
+            # Extract user question from the full prompt (after "USER QUESTION:")
+            # Only check the user's actual question for web search, not the system prompt
+            user_question = prompt
+            if "USER QUESTION:" in prompt:
+                user_question = prompt.split("USER QUESTION:")[-1].strip()
+                log_debug_message(f"🔍 Extracted user question: {user_question[:100]}...")
+
+            # Check if web search might help (only check user's question, not system prompt)
             search_context = ""
-            if self._needs_web_search(prompt):
-                search_context = self._do_google_search(prompt)
+            if self._needs_web_search(user_question):
+                search_context = self._do_google_search(user_question)
 
             # Build the final prompt with search context
             if search_context:
