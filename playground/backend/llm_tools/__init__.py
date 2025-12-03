@@ -34,8 +34,21 @@ from backend.llm_tools.tool_pip import (
     pip_search_installed,
     extract_missing_modules
 )
+from backend.llm_tools.tool_kernel_inspect import (
+    inspect_variables,
+    inspect_variable,
+    list_functions,
+    list_imports,
+    kernel_info
+)
+from backend.llm_tools.tool_sandbox import (
+    sandbox_execute,
+    sandbox_reset,
+    sandbox_sync_from_main,
+    sandbox_status
+)
 
-# List of all tool functions to pass to LLM
+# List of all tool functions to pass to LLM (Chat Panel - full access)
 TOOL_FUNCTIONS = [
     # Kernel execution
     execute_python_code,
@@ -69,5 +82,34 @@ TOOL_FUNCTIONS = [
     pip_list,
     pip_show,
     pip_search_installed,
-    extract_missing_modules
+    extract_missing_modules,
+
+    # Kernel inspection (read-only)
+    inspect_variables,
+    inspect_variable,
+    list_functions,
+    list_imports,
+    kernel_info,
+
+    # Sandbox execution (isolated testing)
+    sandbox_execute,
+    sandbox_reset,
+    sandbox_sync_from_main,
+    sandbox_status
+]
+
+# AI Cell tools - subset for inline AI cell (read-only + sandbox)
+AI_CELL_TOOLS = [
+    # Kernel inspection (read-only access to main kernel)
+    inspect_variables,
+    inspect_variable,
+    list_functions,
+    list_imports,
+    kernel_info,
+
+    # Sandbox execution (isolated testing environment)
+    sandbox_execute,
+    sandbox_reset,
+    sandbox_sync_from_main,
+    sandbox_status
 ]

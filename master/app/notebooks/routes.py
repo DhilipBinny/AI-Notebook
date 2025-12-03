@@ -245,15 +245,40 @@ async def export_notebook(
         cell_metadata = cell.get("metadata", {}).copy()
         cell_type = cell.get("cell_type", "code")
 
-        ipynb_cell = {
-            "cell_type": cell_type,
-            "source": cell.get("source", "").split("\n"),
-            "metadata": cell_metadata,
-        }
+        # Handle AI cells specially for .ipynb compatibility
+        if cell_type == "ai":
+            # Convert to "raw" cell type for Jupyter compatibility
+            # Store ai_data in metadata so we can restore it on import
+            ai_data = cell.get("ai_data", {})
+            cell_metadata["ai_cell"] = True
+            cell_metadata["ai_data"] = ai_data
 
-        if cell_type == "code":
-            ipynb_cell["execution_count"] = cell.get("execution_count")
-            ipynb_cell["outputs"] = cell.get("outputs", [])
+            # Build readable source from prompt + response
+            prompt = ai_data.get("user_prompt", "")
+            response = ai_data.get("llm_response", "")
+            source_lines = []
+            if prompt:
+                source_lines.append(f"[AI PROMPT]: {prompt}")
+            if response:
+                source_lines.append("")
+                source_lines.append("[AI RESPONSE]:")
+                source_lines.extend(response.split("\n"))
+
+            ipynb_cell = {
+                "cell_type": "raw",
+                "source": source_lines,
+                "metadata": cell_metadata,
+            }
+        else:
+            ipynb_cell = {
+                "cell_type": cell_type,
+                "source": cell.get("source", "").split("\n"),
+                "metadata": cell_metadata,
+            }
+
+            if cell_type == "code":
+                ipynb_cell["execution_count"] = cell.get("execution_count")
+                ipynb_cell["outputs"] = cell.get("outputs", [])
 
         ipynb_data["cells"].append(ipynb_cell)
 
@@ -297,25 +322,46 @@ async def import_notebook(
         if isinstance(source, list):
             source = "".join(source)
 
-        # Map cell_type to type
-        cell_type = cell.get("cell_type", "code")
-        if cell_type not in ["code", "markdown"]:
-            cell_type = "code"
-
-        # Get cell_id from metadata (standard location) or generate new one
+        # Get cell metadata
         cell_metadata = cell.get("metadata", {}).copy()
-        cell_id = cell_metadata.get("cell_id") or f"cell-{uuid.uuid4().hex[:12]}"
 
-        # Ensure cell_id is stored in metadata (only location - Jupyter standard)
-        cell_metadata["cell_id"] = cell_id
+        # Check if this is an AI cell (exported from our app)
+        if cell_metadata.get("ai_cell"):
+            # Restore AI cell
+            cell_type = "ai"
+            ai_data = cell_metadata.pop("ai_data", {})
+            cell_metadata.pop("ai_cell", None)  # Remove marker
 
-        cell_data = {
-            "cell_type": cell_type,  # Jupyter standard field name
-            "source": source,
-            "outputs": cell.get("outputs", []) if cell_type == "code" else [],
-            "execution_count": cell.get("execution_count") if cell_type == "code" else None,
-            "metadata": cell_metadata,
-        }
+            # Get cell_id from metadata or generate new one
+            cell_id = cell_metadata.get("cell_id") or f"cell-{uuid.uuid4().hex[:12]}"
+            cell_metadata["cell_id"] = cell_id
+
+            cell_data = {
+                "cell_type": cell_type,
+                "source": "",  # AI cells don't use source field
+                "outputs": [],
+                "metadata": cell_metadata,
+                "ai_data": ai_data,
+            }
+        else:
+            # Regular cell
+            cell_type = cell.get("cell_type", "code")
+            if cell_type not in ["code", "markdown", "raw"]:
+                cell_type = "code"
+
+            # Get cell_id from metadata (standard location) or generate new one
+            cell_id = cell_metadata.get("cell_id") or f"cell-{uuid.uuid4().hex[:12]}"
+
+            # Ensure cell_id is stored in metadata (only location - Jupyter standard)
+            cell_metadata["cell_id"] = cell_id
+
+            cell_data = {
+                "cell_type": cell_type,  # Jupyter standard field name
+                "source": source,
+                "outputs": cell.get("outputs", []) if cell_type == "code" else [],
+                "execution_count": cell.get("execution_count") if cell_type == "code" else None,
+                "metadata": cell_metadata,
+            }
         cells.append(cell_data)
 
     # Build notebook data

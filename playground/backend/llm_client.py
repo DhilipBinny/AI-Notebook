@@ -118,3 +118,9 @@ class LLMClient(BaseLLMClient):
 
     def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
         return self._client.chat_completion(prompt, max_tokens)
+
+    def ai_cell_completion(self, prompt: str) -> str:
+        return self._client.ai_cell_completion(prompt)
+
+    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+        return self._client.ai_cell_with_tools(prompt, max_iterations)

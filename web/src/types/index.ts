@@ -50,14 +50,25 @@ export interface Playground {
   url?: string
 }
 
+// AI Cell data stored in metadata
+export interface AICellData {
+  user_prompt: string
+  llm_response: string
+  status: 'idle' | 'running' | 'completed' | 'error'
+  model?: string
+  error?: string
+  timestamp?: string
+}
+
 // Frontend cell type (for React state)
 export interface Cell {
   id: string  // Derived from metadata.cell_id when loading
-  type: 'code' | 'markdown' | 'raw'
+  type: 'code' | 'markdown' | 'raw' | 'ai'
   source: string
   outputs: CellOutput[]
   execution_count?: number
   metadata?: Record<string, unknown>
+  ai_data?: AICellData  // Only present for AI cells
 }
 
 // API cell type (Jupyter .ipynb standard format)

@@ -57,6 +57,8 @@ body {
   --nb-cell-notes-indicator: #94a3b8;
 
   --nb-bg-raw-cell: #1e293b;
+  --nb-bg-ai-cell: #2a1f4e;
+  --nb-accent-ai: #a855f7;
 }
 
 /* Light Theme - Classic Jupyter inspired */
@@ -92,6 +94,8 @@ body {
   --nb-cell-notes-indicator: #64748b;
 
   --nb-bg-raw-cell: #f1f5f9;
+  --nb-bg-ai-cell: #f3e8ff;
+  --nb-accent-ai: #9333ea;
 }
 
 /* Monokai Theme - Classic editor theme */
@@ -127,6 +131,8 @@ body {
   --nb-cell-notes-indicator: #75715e;
 
   --nb-bg-raw-cell: #3e3d32;
+  --nb-bg-ai-cell: #3d2a5e;
+  --nb-accent-ai: #ae81ff;
 }
 
 /* ============================================
@@ -151,6 +157,17 @@ body {
 
 .cell-markdown:hover {
   border-left-color: var(--nb-accent-markdown);
+}
+
+/* AI cell specific styling */
+.cell-ai {
+  background-color: var(--nb-bg-ai-cell);
+  border-left: 3px solid var(--nb-accent-ai);
+}
+
+.cell-ai:hover {
+  border-left-color: var(--nb-accent-ai);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.2);
 }
 
 /* ============================================

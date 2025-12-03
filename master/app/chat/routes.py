@@ -22,6 +22,8 @@ from .schemas import (
     ChatResponse,
     CellContext,
     ExecuteToolsRequest,
+    AICellRunRequest,
+    AICellResponse,
 )
 
 router = APIRouter(prefix="/projects/{project_id}/chat", tags=["Chat"])
@@ -428,3 +430,144 @@ async def clear_chat_history(
         "success": success,
         "message": f"Chat history cleared for project {project_id}, chat {chat_id}",
     }
+
+
+@router.post("/ai-cell/run", response_model=AICellResponse)
+async def run_ai_cell(
+    project_id: str,
+    request: AICellRunRequest,
+    llm_provider: str = "gemini",
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run an AI Cell - inline Q&A with notebook context and web search.
+
+    AI Cells are a simpler form of LLM interaction:
+    - Read-only access to notebook context
+    - Web search capability for documentation/examples
+    - No tool calling or cell modification
+    - Returns markdown response with code suggestions
+
+    Args:
+        project_id: Project ID
+        request: AI Cell run request with prompt and context cell IDs
+        llm_provider: LLM provider to use
+
+    Returns:
+        AICellResponse with AI response
+    """
+    import httpx
+
+    # Verify project ownership
+    project_service = ProjectService(db)
+    project = await project_service.get_by_id_for_user(project_id, current_user.id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    # Get playground
+    playground_service = PlaygroundService(db)
+    playground = await playground_service.get_by_project_id(project_id)
+
+    if not playground or playground.status.value != "running":
+        return AICellResponse(
+            success=False,
+            response="",
+            error="Playground is not running. Start the playground to use AI cells.",
+        )
+
+    # Load full cell content from S3 for context
+    context_list = []
+    if request.context_cell_ids:
+        notebook_data = await notebook_s3_client.load_notebook(project.storage_month, project_id)
+        if notebook_data and "cells" in notebook_data:
+            cell_id_set = set(request.context_cell_ids)
+            for idx, cell in enumerate(notebook_data["cells"]):
+                cell_id = cell.get("metadata", {}).get("cell_id", "")
+                if cell_id in cell_id_set:
+                    # Get output text if available
+                    output_text = None
+                    outputs = cell.get("outputs", [])
+                    if outputs:
+                        for output in outputs:
+                            if output.get("output_type") == "stream":
+                                text = output.get("text", "")
+                                if isinstance(text, list):
+                                    text = "".join(text)
+                                output_text = text
+                                break
+                            elif output.get("output_type") in ("execute_result", "display_data"):
+                                data = output.get("data", {})
+                                if "text/plain" in data:
+                                    output_text = data["text/plain"]
+                                    if isinstance(output_text, list):
+                                        output_text = "".join(output_text)
+                                    break
+                            elif output.get("output_type") == "error":
+                                output_text = f"Error: {output.get('ename', '')}: {output.get('evalue', '')}"
+                                break
+
+                    context_list.append({
+                        "id": cell_id,
+                        "type": cell.get("cell_type", "code"),
+                        "content": cell.get("source", ""),
+                        "output": output_text,
+                        "cellNumber": idx + 1,
+                    })
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Set the LLM provider
+            await client.post(
+                f"{playground.internal_url}/llm/provider",
+                headers={"X-Internal-Secret": playground.internal_secret},
+                json={"provider": llm_provider},
+                timeout=10,
+            )
+
+            # Call AI Cell endpoint
+            response = await client.post(
+                f"{playground.internal_url}/ai-cell/run",
+                headers={"X-Internal-Secret": playground.internal_secret},
+                json={
+                    "prompt": request.prompt,
+                    "context": context_list,
+                    "ai_cell_id": request.ai_cell_id,
+                    "ai_cell_index": request.ai_cell_index,
+                    "session_id": project_id,
+                },
+                timeout=120,  # LLM can take a while
+            )
+
+            if response.status_code != 200:
+                return AICellResponse(
+                    success=False,
+                    response="",
+                    error=f"Playground returned error: {response.text}",
+                )
+
+            data = response.json()
+
+            return AICellResponse(
+                success=data.get("success", False),
+                response=data.get("response", ""),
+                model=data.get("model", llm_provider),
+                error=data.get("error"),
+            )
+
+    except httpx.TimeoutException:
+        return AICellResponse(
+            success=False,
+            response="",
+            error="Request timed out. The AI is taking too long to respond.",
+        )
+    except Exception as e:
+        return AICellResponse(
+            success=False,
+            response="",
+            error=f"Error: {str(e)}",
+        )

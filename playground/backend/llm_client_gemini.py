@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional, Union
 
 from backend.llm_client_base import BaseLLMClient
 from backend.utils.util_func import log_response_details, log_debug_message
-from backend.llm_tools import TOOL_FUNCTIONS
+from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
 
@@ -23,6 +23,9 @@ import backend.config as cfg
 # Filter out web_search since we handle it natively
 TOOL_FUNCTIONS_NO_SEARCH = [f for f in TOOL_FUNCTIONS if f.__name__ != 'web_search']
 TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS_NO_SEARCH}
+
+# AI Cell tool map (inspection + sandbox only)
+AI_CELL_TOOL_MAP = {func.__name__: func for func in AI_CELL_TOOLS}
 
 # Keywords that suggest web search is needed
 SEARCH_KEYWORDS = [
@@ -565,4 +568,115 @@ class GeminiClient(BaseLLMClient):
             return response.text
         except Exception as e:
             log_debug_message(f"Gemini chat_completion error: {e}")
+            raise
+
+    def ai_cell_completion(self, prompt: str) -> str:
+        """
+        AI Cell completion - with web search but no notebook tools.
+        Used for inline Q&A in AI cells.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+
+        Returns:
+            The response text from the LLM (may include web search results)
+        """
+        try:
+            log_debug_message(f"🤖 Gemini AI Cell completion starting...")
+
+            # Check if web search might help
+            search_context = ""
+            if self._needs_web_search(prompt):
+                search_context = self._do_google_search(prompt)
+
+            # Build the final prompt with search context if available
+            if search_context:
+                enhanced_prompt = f"{search_context}\n\n{prompt}"
+                log_debug_message(f"🤖 AI Cell: Using web search context")
+            else:
+                enhanced_prompt = prompt
+
+            # Use simple generate_content (no tools, no chat session)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=enhanced_prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=4096  # Allow longer responses for AI cells
+                )
+            )
+
+            result = response.text or ""
+            log_debug_message(f"🤖 Gemini AI Cell response: {len(result)} chars")
+            return result
+
+        except Exception as e:
+            log_debug_message(f"Gemini ai_cell_completion error: {e}")
+            raise
+
+    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+        """
+        AI Cell completion with tool calling support.
+        Uses automatic function calling for kernel inspection and sandbox tools.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+            max_iterations: Maximum number of tool-calling iterations
+
+        Returns:
+            The final response text from the LLM
+        """
+        try:
+            log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
+            log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
+
+            # Check if web search might help
+            search_context = ""
+            if self._needs_web_search(prompt):
+                search_context = self._do_google_search(prompt)
+
+            # Build the final prompt with search context
+            if search_context:
+                enhanced_prompt = f"{search_context}\n\n{prompt}"
+                log_debug_message(f"🤖 AI Cell: Using web search context")
+            else:
+                enhanced_prompt = prompt
+
+            # Create a new chat session with AI Cell tools (auto function calling)
+            ai_cell_config = types.GenerateContentConfig(
+                system_instruction="You are an AI assistant in a notebook cell. Use the provided tools to inspect variables and test code before answering.",
+                tools=AI_CELL_TOOLS,  # Pass Python functions directly for auto execution
+            )
+
+            chat = self.client.chats.create(
+                model=self.model_name,
+                config=ai_cell_config,
+            )
+
+            # Send the message - tools will be auto-executed
+            log_debug_message(f"🤖 Sending AI Cell message with auto tool execution...")
+            response = chat.send_message(message=enhanced_prompt)
+
+            # In auto mode, tools are already executed - just return text
+            result = response.text or ""
+
+            # Handle edge cases
+            if not result:
+                # Check for malformed function calls or other issues
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
+                    if str(finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
+                        log_debug_message(f"⚠️ AI Cell: MALFORMED_FUNCTION_CALL detected")
+                        result = "I encountered an error while trying to analyze your notebook. Please try a more specific question."
+
+                if not result:
+                    result = "I've analyzed your notebook using the available tools. Please let me know if you need more specific information."
+
+            log_debug_message(f"🤖 Gemini AI Cell with tools response: {len(result)} chars")
+            return result
+
+        except Exception as e:
+            log_debug_message(f"Gemini ai_cell_with_tools error: {e}")
+            import traceback
+            log_debug_message(f"Traceback: {traceback.format_exc()}")
             raise

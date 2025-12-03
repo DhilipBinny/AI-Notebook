@@ -13,7 +13,7 @@ from anthropic import Anthropic
 
 from backend.llm_client_base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
-from backend.llm_tools import TOOL_FUNCTIONS
+from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
 
@@ -447,3 +447,224 @@ class AnthropicClient(BaseLLMClient):
         except Exception as e:
             log_debug_message(f"Anthropic chat_completion error: {e}")
             raise
+
+    def ai_cell_completion(self, prompt: str) -> str:
+        """
+        AI Cell completion - with web search but no notebook tools.
+        Used for inline Q&A in AI cells.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+
+        Returns:
+            The response text from the LLM (may include web search results)
+        """
+        try:
+            log_debug_message(f"🤖 Anthropic AI Cell completion starting...")
+
+            # Anthropic has web search via tool - use it if enabled
+            tools = []
+            if self.enable_web_search:
+                tools.append({
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 3
+                })
+
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+                tools=tools if tools else None,
+            )
+
+            # Extract text from response (may have multiple content blocks)
+            result = ""
+            for block in response.content:
+                if hasattr(block, 'text') and block.text:
+                    result += block.text
+
+            log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars")
+            return result
+
+        except Exception as e:
+            log_debug_message(f"Anthropic ai_cell_completion error: {e}")
+            raise
+
+    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+        """
+        AI Cell completion with tool calling support.
+        Uses automatic function calling for kernel inspection and sandbox tools.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+            max_iterations: Maximum number of tool-calling iterations
+
+        Returns:
+            The final response text from the LLM
+        """
+        try:
+            log_debug_message(f"🤖 Anthropic AI Cell with tools starting...")
+
+            # Build AI Cell tool schemas
+            ai_cell_tools = self._build_ai_cell_tools()
+            ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
+
+            # Add web search if enabled
+            if self.enable_web_search:
+                ai_cell_tools.append({
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 3
+                })
+
+            messages = [{"role": "user", "content": prompt}]
+
+            for iteration in range(max_iterations):
+                log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
+
+                response = self.client.messages.create(
+                    model=self.model_name,
+                    max_tokens=4096,
+                    messages=messages,
+                    tools=ai_cell_tools,
+                )
+
+                # Check stop reason
+                if response.stop_reason == "end_turn":
+                    # No more tool calls, extract final text
+                    result = ""
+                    for block in response.content:
+                        if hasattr(block, 'text') and block.text:
+                            result += block.text
+                    log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars")
+                    return result
+
+                # Process tool calls
+                tool_calls = []
+                text_response = ""
+
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        text_response += block.text
+                    elif block.type == "tool_use":
+                        tool_calls.append(block)
+
+                if not tool_calls:
+                    return text_response
+
+                # Add assistant's response to messages
+                messages.append({"role": "assistant", "content": response.content})
+
+                # Execute tools and add results
+                tool_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.input or {}
+
+                    log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
+
+                    if tool_name in ai_cell_tool_map:
+                        try:
+                            result = ai_cell_tool_map[tool_name](**tool_args)
+                            tool_result = json.dumps(result)
+                        except Exception as e:
+                            tool_result = json.dumps({"error": str(e)})
+                    else:
+                        tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_call.id,
+                        "content": tool_result
+                    })
+
+                messages.append({"role": "user", "content": tool_results})
+
+            # Max iterations reached
+            return "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question."
+
+        except Exception as e:
+            log_debug_message(f"Anthropic ai_cell_with_tools error: {e}")
+            import traceback
+            log_debug_message(f"Traceback: {traceback.format_exc()}")
+            raise
+
+    def _build_ai_cell_tools(self) -> List[Dict[str, Any]]:
+        """Build tool schemas for AI Cell tools only"""
+        tools = []
+        for func in AI_CELL_TOOLS:
+            func_name = func.__name__
+            func_doc = func.__doc__ or ""
+            annotations = func.__annotations__
+
+            # Parse docstring
+            doc_lines = func_doc.strip().split('\n')
+            description = ""
+            param_descriptions = {}
+            current_section = None
+
+            for line in doc_lines:
+                line = line.strip()
+                if line.lower().startswith('args:'):
+                    current_section = 'args'
+                    continue
+                elif line.lower().startswith('returns:'):
+                    current_section = 'returns'
+                    continue
+                elif line.lower().startswith('example:'):
+                    current_section = 'example'
+                    continue
+
+                if current_section is None and line:
+                    description += line + " "
+                elif current_section == 'args' and ':' in line:
+                    param_name = line.split(':')[0].strip()
+                    param_desc = ':'.join(line.split(':')[1:]).strip()
+                    param_descriptions[param_name] = param_desc
+
+            # Build parameters
+            properties = {}
+            required = []
+
+            for param_name, param_type in annotations.items():
+                if param_name == 'return':
+                    continue
+
+                json_type = "string"
+                if param_type == int:
+                    json_type = "integer"
+                elif param_type == float:
+                    json_type = "number"
+                elif param_type == bool:
+                    json_type = "boolean"
+
+                properties[param_name] = {
+                    "type": json_type,
+                    "description": param_descriptions.get(param_name, f"The {param_name} parameter")
+                }
+
+                # Check for required params
+                defaults = func.__defaults__ or ()
+                code = func.__code__
+                num_params = code.co_argcount
+                num_defaults = len(defaults)
+                params_without_defaults = num_params - num_defaults
+                param_names = code.co_varnames[:num_params]
+
+                if param_name in param_names:
+                    param_index = list(param_names).index(param_name)
+                    if param_index < params_without_defaults:
+                        required.append(param_name)
+
+            tools.append({
+                "name": func_name,
+                "description": description.strip()[:500],
+                "input_schema": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required
+                }
+            })
+
+        return tools

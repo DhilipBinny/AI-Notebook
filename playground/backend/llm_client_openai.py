@@ -12,7 +12,7 @@ from openai import OpenAI
 
 from backend.llm_client_base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
-from backend.llm_tools import TOOL_FUNCTIONS
+from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
 
@@ -438,3 +438,188 @@ class OpenAIClient(BaseLLMClient):
         except Exception as e:
             log_debug_message(f"OpenAI chat_completion error: {e}")
             raise
+
+    def ai_cell_completion(self, prompt: str) -> str:
+        """
+        AI Cell completion - with web search but no notebook tools.
+        Used for inline Q&A in AI cells.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+
+        Returns:
+            The response text from the LLM
+        """
+        try:
+            log_debug_message(f"🤖 OpenAI AI Cell completion starting...")
+
+            # OpenAI doesn't have native web search, so just do completion
+            # Could integrate with a search API in the future
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=4096,
+            )
+
+            result = response.choices[0].message.content or ""
+            log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars")
+            return result
+
+        except Exception as e:
+            log_debug_message(f"OpenAI ai_cell_completion error: {e}")
+            raise
+
+    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+        """
+        AI Cell completion with tool calling support.
+        Uses automatic function calling for kernel inspection and sandbox tools.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+            max_iterations: Maximum number of tool-calling iterations
+
+        Returns:
+            The final response text from the LLM
+        """
+        try:
+            log_debug_message(f"🤖 OpenAI AI Cell with tools starting...")
+
+            # Build AI Cell tool schemas
+            ai_cell_tools = self._build_ai_cell_tools()
+            ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
+
+            messages = [{"role": "user", "content": prompt}]
+
+            for iteration in range(max_iterations):
+                log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
+
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    tools=ai_cell_tools,
+                    tool_choice="auto",
+                    max_tokens=4096,
+                )
+
+                message = response.choices[0].message
+
+                # If no tool calls, return the response
+                if not message.tool_calls:
+                    result = message.content or ""
+                    log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars")
+                    return result
+
+                # Execute tool calls
+                messages.append(message.model_dump())
+
+                for tool_call in message.tool_calls:
+                    tool_name = tool_call.function.name
+                    tool_args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+
+                    log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
+
+                    if tool_name in ai_cell_tool_map:
+                        try:
+                            result = ai_cell_tool_map[tool_name](**tool_args)
+                            tool_result = json.dumps(result)
+                        except Exception as e:
+                            tool_result = json.dumps({"error": str(e)})
+                    else:
+                        tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": tool_result
+                    })
+
+            # Max iterations reached
+            return "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question."
+
+        except Exception as e:
+            log_debug_message(f"OpenAI ai_cell_with_tools error: {e}")
+            import traceback
+            log_debug_message(f"Traceback: {traceback.format_exc()}")
+            raise
+
+    def _build_ai_cell_tools(self) -> List[Dict[str, Any]]:
+        """Build tool schemas for AI Cell tools only"""
+        tools = []
+        for func in AI_CELL_TOOLS:
+            func_name = func.__name__
+            func_doc = func.__doc__ or ""
+            annotations = func.__annotations__
+
+            # Parse docstring
+            doc_lines = func_doc.strip().split('\n')
+            description = ""
+            param_descriptions = {}
+            current_section = None
+
+            for line in doc_lines:
+                line = line.strip()
+                if line.lower().startswith('args:'):
+                    current_section = 'args'
+                    continue
+                elif line.lower().startswith('returns:'):
+                    current_section = 'returns'
+                    continue
+                elif line.lower().startswith('example:'):
+                    current_section = 'example'
+                    continue
+
+                if current_section is None and line:
+                    description += line + " "
+                elif current_section == 'args' and ':' in line:
+                    param_name = line.split(':')[0].strip()
+                    param_desc = ':'.join(line.split(':')[1:]).strip()
+                    param_descriptions[param_name] = param_desc
+
+            # Build parameters
+            properties = {}
+            required = []
+
+            for param_name, param_type in annotations.items():
+                if param_name == 'return':
+                    continue
+
+                json_type = "string"
+                if param_type == int:
+                    json_type = "integer"
+                elif param_type == float:
+                    json_type = "number"
+                elif param_type == bool:
+                    json_type = "boolean"
+
+                properties[param_name] = {
+                    "type": json_type,
+                    "description": param_descriptions.get(param_name, f"The {param_name} parameter")
+                }
+
+                # Check for required params
+                defaults = func.__defaults__ or ()
+                code = func.__code__
+                num_params = code.co_argcount
+                num_defaults = len(defaults)
+                params_without_defaults = num_params - num_defaults
+                param_names = code.co_varnames[:num_params]
+
+                if param_name in param_names:
+                    param_index = list(param_names).index(param_name)
+                    if param_index < params_without_defaults:
+                        required.append(param_name)
+
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": func_name,
+                    "description": description.strip()[:500],
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required
+                    }
+                }
+            })
+
+        return tools

@@ -143,3 +143,38 @@ You are prohibited from performing actions that could compromise system security
             The response text from the LLM
         """
         pass
+
+    @abstractmethod
+    def ai_cell_completion(self, prompt: str) -> str:
+        """
+        AI Cell completion - with web search but no notebook tools.
+        Used for inline Q&A in AI cells.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+
+        Returns:
+            The response text from the LLM (may include web search results)
+        """
+        pass
+
+    @abstractmethod
+    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+        """
+        AI Cell completion with tool calling support.
+        Used for inline Q&A with kernel inspection and sandbox execution.
+
+        The AI cell has access to:
+        - Kernel inspection tools (inspect_variables, inspect_variable, list_functions, list_imports, kernel_info)
+        - Sandbox tools (sandbox_execute, sandbox_reset, sandbox_sync_from_main, sandbox_status)
+
+        Tools are automatically executed in a loop until the LLM produces a final response.
+
+        Args:
+            prompt: The full prompt including notebook context and user question
+            max_iterations: Maximum number of tool-calling iterations (default: 10)
+
+        Returns:
+            The final response text from the LLM after all tool executions
+        """
+        pass

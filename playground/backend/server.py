@@ -215,6 +215,201 @@ class LLMCompleteRequest(BaseModel):
     max_tokens: int = 1000
 
 
+class AICellRequest(BaseModel):
+    """Request for AI Cell execution"""
+    prompt: str
+    context: List[CellContext] = []  # Full notebook context
+    ai_cell_id: Optional[str] = None  # The AI cell's own ID for positional awareness
+    ai_cell_index: Optional[int] = None  # The AI cell's position (0-based)
+    session_id: Optional[str] = None
+
+
+class AICellResponse(BaseModel):
+    """Response from AI Cell"""
+    success: bool
+    response: str
+    model: str = ""
+    error: Optional[str] = None
+
+
+# AI Cell system prompt - focused on notebook analysis with tools for inspection and experimentation
+AI_CELL_SYSTEM_PROMPT = """You are an AI assistant embedded directly in a Jupyter-style notebook cell.
+You have powerful tools to inspect the notebook's runtime state and test code before suggesting it.
+
+YOUR POSITION:
+{position_info}
+
+CELL REFERENCE SYNTAX:
+- Each cell has a unique ID shown as @cell_id (e.g., @cell-abc123)
+- When the user says "above" or "the code above", they mean the cell(s) BEFORE your position
+- When the user says "below", they mean the cell(s) AFTER your position
+
+YOUR TOOLS:
+
+**Kernel Inspection (read the user's kernel state):**
+- inspect_variables() - List all variables with types, shapes, and previews
+- inspect_variable(name) - Get detailed info about a specific variable
+- list_functions() - List user-defined functions with signatures
+- list_imports() - List imported modules and their aliases
+- kernel_info() - Get kernel memory usage and execution count
+
+**Sandbox (isolated testing environment):**
+- sandbox_execute(code) - Run code in a separate, isolated kernel to TEST it first
+- sandbox_reset() - Reset sandbox to clean state
+- sandbox_sync_from_main(variable_names) - Copy variables from main kernel to sandbox
+- sandbox_status() - Check if sandbox is running
+
+WORKFLOW FOR ANSWERING QUESTIONS:
+
+1. **Understand the context**: Use inspect_variables() to see what data the user has
+2. **Investigate specifics**: Use inspect_variable("df") to examine a particular variable
+3. **Test your suggestions**: Use sandbox_execute() to verify code works before suggesting it
+4. **Provide verified code**: Give code that you've tested and know works
+
+EXAMPLE WORKFLOW:
+User asks: "How do I plot the sales data?"
+
+1. inspect_variables() → See what variables exist
+2. inspect_variable("sales_df") → Understand the DataFrame structure
+3. sandbox_sync_from_main(["sales_df"]) → Copy data to sandbox
+4. sandbox_execute("import matplotlib.pyplot as plt\\nsales_df.plot(kind='bar')\\nplt.show()") → Test the code
+5. If successful, suggest the verified code to the user
+
+GUIDELINES:
+- ALWAYS inspect variables before suggesting code that uses them
+- TEST code in sandbox before suggesting complex solutions
+- Reference specific cells using @cell_id when relevant
+- Wrap code suggestions in ```python blocks
+- Show actual sandbox output when it helps explain results
+- Be concise but thorough
+
+{notebook_context}
+
+USER QUESTION:
+{user_prompt}
+"""
+
+
+@app.post("/ai-cell/run", response_model=AICellResponse)
+async def run_ai_cell(
+    request: AICellRequest,
+    authorized: bool = Depends(verify_internal_secret)
+):
+    """
+    Run an AI Cell - inline Q&A with notebook context and web search.
+    No tool calling for cell modification - just analysis and suggestions.
+    """
+    try:
+        log_debug_message(f"🤖 AI Cell request: {request.prompt[:100]}...")
+
+        # Build positional context with cells above and below
+        ai_cell_index = request.ai_cell_index if request.ai_cell_index is not None else -1
+        total_cells = len(request.context) + 1  # +1 for the AI cell itself
+
+        # Build position info
+        if ai_cell_index >= 0:
+            position_info = f"You are in Cell #{ai_cell_index + 1} of {total_cells} total cells."
+            if ai_cell_index > 0:
+                position_info += f" There are {ai_cell_index} cell(s) ABOVE you."
+            if ai_cell_index < total_cells - 1:
+                position_info += f" There are {total_cells - ai_cell_index - 1} cell(s) BELOW you."
+        else:
+            position_info = "Position unknown."
+
+        # Build notebook context with positional sections
+        cells_above = []
+        cells_below = []
+
+        if request.context:
+            for i, cell in enumerate(request.context):
+                cell_type = "Code" if cell.type == "code" else cell.type.capitalize()
+
+                # Build cell info with @cell_id reference
+                cell_info = f"[@{cell.id}] ({cell_type}):\n"
+                cell_info += cell.content
+                if cell.output:
+                    cell_info += f"\n[Output]: {cell.output[:500]}"
+
+                # Determine if this cell is above or below the AI cell
+                # Context cells are ordered, but we need to map their original position
+                cell_position = cell.cellNumber - 1 if cell.cellNumber else i
+
+                if ai_cell_index >= 0 and cell_position < ai_cell_index:
+                    cells_above.append((cell_position, cell_info, cell.id))
+                else:
+                    cells_below.append((cell_position, cell_info, cell.id))
+
+        # Sort by position
+        cells_above.sort(key=lambda x: x[0])
+        cells_below.sort(key=lambda x: x[0])
+
+        # Build structured context
+        notebook_context = ""
+
+        if cells_above:
+            notebook_context += "=== CELLS ABOVE YOU ===\n"
+            for pos, info, cell_id in cells_above:
+                # Mark the immediately above cell
+                if pos == ai_cell_index - 1:
+                    notebook_context += f"\n[IMMEDIATELY ABOVE] {info}\n"
+                else:
+                    notebook_context += f"\n{info}\n"
+
+        notebook_context += f"\n=== YOUR POSITION (AI Cell #{ai_cell_index + 1}) ===\n"
+
+        if cells_below:
+            notebook_context += "\n=== CELLS BELOW YOU ===\n"
+            for pos, info, cell_id in cells_below:
+                # Mark the immediately below cell
+                if pos == ai_cell_index + 1:
+                    notebook_context += f"\n[IMMEDIATELY BELOW] {info}\n"
+                else:
+                    notebook_context += f"\n{info}\n"
+
+        if not cells_above and not cells_below:
+            notebook_context = "(No other cells in notebook)"
+
+        # Build the prompt with context
+        full_prompt = AI_CELL_SYSTEM_PROMPT.format(
+            position_info=position_info,
+            notebook_context=notebook_context,
+            user_prompt=request.prompt
+        )
+
+        log_debug_message(f"📋 AI Cell context: {len(notebook_context)} chars, position: {ai_cell_index + 1}/{total_cells}")
+
+        # Set up session for AI cell tools to access main kernel
+        from backend.session_manager import get_session_manager, set_current_session
+        session_id = request.session_id or "ai-cell-default"
+        session = get_session_manager().get_or_create_session(session_id, "ai-cell")
+        set_current_session(session_id)
+
+        # Use LLM client with AI cell tools (inspection + sandbox)
+        from backend.llm_client import LLMClient
+        client = LLMClient()
+
+        # AI cells now have access to kernel inspection and sandbox tools
+        response_text = client.ai_cell_with_tools(full_prompt)
+
+        log_debug_message(f"🤖 AI Cell response: {len(response_text)} chars")
+
+        return AICellResponse(
+            success=True,
+            response=response_text,
+            model=cfg.LLM_PROVIDER
+        )
+
+    except Exception as e:
+        log_debug_message(f"🤖 AI Cell error: {e}")
+        import traceback
+        traceback.print_exc()
+        return AICellResponse(
+            success=False,
+            response="",
+            error=str(e)
+        )
+
+
 @app.post("/llm/complete")
 async def llm_complete(
     request: LLMCompleteRequest,

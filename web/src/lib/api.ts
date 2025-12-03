@@ -246,6 +246,23 @@ export const chat = {
   clearHistory: async (projectId: string): Promise<void> => {
     await api.delete(`/projects/${projectId}/chat`)
   },
+
+  runAICell: async (
+    projectId: string,
+    prompt: string,
+    contextCellIds: string[],
+    llmProvider: string = 'gemini',
+    aiCellId?: string,
+    aiCellIndex?: number
+  ): Promise<{ success: boolean; response: string; model: string; error?: string }> => {
+    const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}`, {
+      prompt,
+      context_cell_ids: contextCellIds,
+      ai_cell_id: aiCellId,
+      ai_cell_index: aiCellIndex,
+    })
+    return data
+  },
 }
 
 // Notebook API

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { auth, projects, playgrounds, chat, notebooks } from '@/lib/api'
 import { useAuthStore, useProjectsStore, useNotebookStore } from '@/lib/store'
 import Cell from '@/components/notebook/Cell'
+import AICell from '@/components/notebook/AICell'
 import NotebookToolbar from '@/components/notebook/NotebookToolbar'
 import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
@@ -101,15 +102,26 @@ function generateCellId(): string {
 }
 
 // Create empty cell
-function createCell(type: 'code' | 'markdown' | 'raw'): CellType {
+function createCell(type: 'code' | 'markdown' | 'raw' | 'ai'): CellType {
   const cellId = generateCellId()
-  return {
+  const cell: CellType = {
     id: cellId,
     type,
     source: '',
     outputs: [],
     metadata: { cell_id: cellId },  // Store in metadata for ipynb compatibility
   }
+
+  // Add AI-specific data for AI cells
+  if (type === 'ai') {
+    cell.ai_data = {
+      user_prompt: '',
+      llm_response: '',
+      status: 'idle',
+    }
+  }
+
+  return cell
 }
 
 interface PendingToolCall {
@@ -183,13 +195,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
     try {
       // Save in Jupyter .ipynb standard format
-      const cellsToSave = cells.map((cell) => ({
-        cell_type: cell.type,  // Jupyter standard field name
-        source: cell.source,
-        outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
-        execution_count: cell.execution_count,
-        metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
-      }))
+      const cellsToSave = cells.map((cell) => {
+        const cellToSave: Record<string, unknown> = {
+          cell_type: cell.type,  // Jupyter standard field name
+          source: cell.source,
+          outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
+          execution_count: cell.execution_count,
+          metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
+        }
+        // Include ai_data for AI cells
+        if (cell.type === 'ai' && cell.ai_data) {
+          cellToSave.ai_data = cell.ai_data
+        }
+        return cellToSave
+      })
 
       await notebooks.save(projectId, cellsToSave)
       setDirty(false)
@@ -206,14 +225,22 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     try {
       const notebookData = await notebooks.get(projectId)
       if (notebookData.notebook.cells.length > 0) {
-        const loadedCells = notebookData.notebook.cells.map((cell) => ({
-          id: (cell.metadata?.cell_id as string) || generateCellId(),  // cell_id from metadata (Jupyter standard)
-          type: (cell.cell_type || cell.type || 'code') as 'code' | 'markdown' | 'raw',
-          source: cell.source,
-          outputs: cell.outputs as any[],
-          execution_count: cell.execution_count,
-          metadata: cell.metadata,
-        }))
+        const loadedCells = notebookData.notebook.cells.map((cell) => {
+          const cellType = (cell.cell_type || cell.type || 'code') as 'code' | 'markdown' | 'raw' | 'ai'
+          const loadedCell: CellType = {
+            id: (cell.metadata?.cell_id as string) || generateCellId(),
+            type: cellType,
+            source: cell.source,
+            outputs: cell.outputs as any[],
+            execution_count: cell.execution_count,
+            metadata: cell.metadata,
+          }
+          // Load ai_data for AI cells
+          if (cellType === 'ai' && (cell as any).ai_data) {
+            loadedCell.ai_data = (cell as any).ai_data
+          }
+          return loadedCell
+        })
         setCells(loadedCells)
         setDirty(false)
         console.log('Notebook reloaded from S3 after LLM update')
@@ -264,14 +291,22 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           const notebookData = await notebooks.get(projectId)
           if (notebookData.notebook.cells.length > 0) {
             // Convert to our cell format (Jupyter standard: cell_type and metadata.cell_id)
-            const loadedCells = notebookData.notebook.cells.map((cell) => ({
-              id: (cell.metadata?.cell_id as string) || generateCellId(),  // cell_id from metadata
-              type: (cell.cell_type || cell.type || 'code') as 'code' | 'markdown' | 'raw',
-              source: cell.source,
-              outputs: cell.outputs as any[],
-              execution_count: cell.execution_count,
-              metadata: cell.metadata,
-            }))
+            const loadedCells = notebookData.notebook.cells.map((cell) => {
+              const cellType = (cell.cell_type || cell.type || 'code') as 'code' | 'markdown' | 'raw' | 'ai'
+              const loadedCell: CellType = {
+                id: (cell.metadata?.cell_id as string) || generateCellId(),
+                type: cellType,
+                source: cell.source,
+                outputs: cell.outputs as any[],
+                execution_count: cell.execution_count,
+                metadata: cell.metadata,
+              }
+              // Load ai_data for AI cells
+              if (cellType === 'ai' && (cell as any).ai_data) {
+                loadedCell.ai_data = (cell as any).ai_data
+              }
+              return loadedCell
+            })
             setCells(loadedCells)
           } else {
             // Initialize with one empty code cell if none
@@ -477,7 +512,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [cells, selectedCellId, addCell])
 
   // Insert cell at specific position (used by insert buttons between cells)
-  const handleInsertCellAt = useCallback((type: 'code' | 'markdown' | 'raw', index: number) => {
+  const handleInsertCellAt = useCallback((type: 'code' | 'markdown' | 'raw' | 'ai', index: number) => {
     const newCell = createCell(type)
     addCell(newCell, index)
     setSelectedCellId(newCell.id)
@@ -487,6 +522,70 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const handleDeleteCell = useCallback((cellId: string) => {
     deleteCell(cellId)
   }, [deleteCell])
+
+  // Run AI cell - send prompt to LLM with notebook context
+  const handleRunAICell = useCallback(async (cellId: string, prompt: string) => {
+    if (!playground || playground.status !== 'running') {
+      updateCell(cellId, {
+        ai_data: {
+          user_prompt: prompt,
+          llm_response: '',
+          status: 'error',
+          error: 'Playground is not running. Start the playground first.',
+        },
+      })
+      return
+    }
+
+    // Save notebook first to ensure context is up to date
+    await saveNotebook()
+
+    // Get all cell IDs for context (excluding the AI cell itself)
+    const contextCellIds = cells
+      .filter(c => c.id !== cellId && c.type !== 'ai')
+      .map(c => c.id)
+
+    // Get AI cell's position for positional awareness
+    const aiCellIndex = cells.findIndex(c => c.id === cellId)
+
+    try {
+      const response = await chat.runAICell(projectId, prompt, contextCellIds, llmProvider, cellId, aiCellIndex)
+
+      updateCell(cellId, {
+        ai_data: {
+          user_prompt: prompt,
+          llm_response: response.response,
+          status: response.success ? 'completed' : 'error',
+          model: response.model,
+          error: response.error,
+          timestamp: new Date().toISOString(),
+        },
+      })
+
+      // Auto-save after AI cell completion to persist the response
+      await saveNotebook()
+    } catch (err) {
+      updateCell(cellId, {
+        ai_data: {
+          user_prompt: prompt,
+          llm_response: '',
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        },
+      })
+    }
+  }, [cells, playground, projectId, llmProvider, updateCell, saveNotebook])
+
+  // Insert code cell from AI cell suggestion
+  const handleInsertCodeFromAICell = useCallback((afterCellId: string, code: string) => {
+    const cellIndex = cells.findIndex(c => c.id === afterCellId)
+    if (cellIndex === -1) return
+
+    const newCell = createCell('code')
+    newCell.source = code
+    addCell(newCell, cellIndex + 1)
+    setSelectedCellId(newCell.id)
+  }, [cells, addCell])
 
   const handleRunCell = useCallback((cellId: string) => {
     const cell = cells.find((c) => c.id === cellId)
@@ -584,13 +683,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     setIsSaving(true)
     try {
       // Save notebook to S3 via API (Jupyter .ipynb standard format)
-      const cellsToSave = cells.map((cell) => ({
-        cell_type: cell.type,  // Jupyter standard field name
-        source: cell.source,
-        outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
-        execution_count: cell.execution_count,
-        metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
-      }))
+      const cellsToSave = cells.map((cell) => {
+        const cellToSave: Record<string, unknown> = {
+          cell_type: cell.type,  // Jupyter standard field name
+          source: cell.source,
+          outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
+          execution_count: cell.execution_count,
+          metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
+        }
+        // Include ai_data for AI cells
+        if (cell.type === 'ai' && cell.ai_data) {
+          cellToSave.ai_data = cell.ai_data
+        }
+        return cellToSave
+      })
 
       const result = await notebooks.save(projectId, cellsToSave)
       console.log('Notebook saved:', result)
@@ -1510,52 +1616,74 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                   onInsertCode={() => handleInsertCellAt('code', 0)}
                   onInsertMarkdown={() => handleInsertCellAt('markdown', 0)}
                   onInsertNotes={() => handleInsertCellAt('raw', 0)}
+                  onInsertAI={() => handleInsertCellAt('ai', 0)}
                 />
 
                 {cells.map((cell, index) => (
                   <div key={cell.id}>
-                    <Cell
-                      cell={cell}
-                      index={index}
-                      isSelected={selectedCellId === cell.id}
-                      isRunning={kernel.runningCellId === cell.id}
-                      isAnyRunning={kernel.runningCellId !== null}
-                      isEditMode={selectedCellId === cell.id && isEditMode}
-                      onSelect={() => {
-                        // Clicking on cell header area - just select, don't enter edit mode
-                        // (Clicking on textarea will trigger onEnterEditMode separately)
-                        if (selectedCellId !== cell.id) {
-                          // Switching to a different cell - exit edit mode
-                          // For markdown cells that were being edited, they will auto-render
-                          setIsEditMode(false)
-                        }
-                        setSelectedCellId(cell.id)
-                      }}
-                      onRun={() => handleRunCell(cell.id)}
-                      onRunAndAdvance={() => {
-                        handleRunCell(cell.id)
-                        // Move to next cell after running
-                        if (index < cells.length - 1) {
-                          navigateToCell(index + 1)
-                        }
-                      }}
-                      onStop={() => kernel.interrupt()}
-                      onDelete={() => handleDeleteCell(cell.id)}
-                      onMoveUp={() => moveCell(cell.id, 'up')}
-                      onMoveDown={() => moveCell(cell.id, 'down')}
-                      onUpdate={(updates) => updateCell(cell.id, updates)}
-                      onEnterEditMode={() => {
-                        // Enter edit mode on this cell
-                        setSelectedCellId(cell.id)
-                        setIsEditMode(true)
-                      }}
-                      onExitEditMode={(moveToNext, shiftEnterHandled) => exitEditMode(moveToNext, shiftEnterHandled)}
-                    />
+                    {cell.type === 'ai' ? (
+                      <AICell
+                        cell={cell}
+                        index={index}
+                        isSelected={selectedCellId === cell.id}
+                        onSelect={() => {
+                          if (selectedCellId !== cell.id) {
+                            setIsEditMode(false)
+                          }
+                          setSelectedCellId(cell.id)
+                        }}
+                        onDelete={() => handleDeleteCell(cell.id)}
+                        onMoveUp={() => moveCell(cell.id, 'up')}
+                        onMoveDown={() => moveCell(cell.id, 'down')}
+                        onUpdate={(updates) => updateCell(cell.id, updates)}
+                        onRunAICell={handleRunAICell}
+                        onInsertCodeCell={handleInsertCodeFromAICell}
+                      />
+                    ) : (
+                      <Cell
+                        cell={cell}
+                        index={index}
+                        isSelected={selectedCellId === cell.id}
+                        isRunning={kernel.runningCellId === cell.id}
+                        isAnyRunning={kernel.runningCellId !== null}
+                        isEditMode={selectedCellId === cell.id && isEditMode}
+                        onSelect={() => {
+                          // Clicking on cell header area - just select, don't enter edit mode
+                          // (Clicking on textarea will trigger onEnterEditMode separately)
+                          if (selectedCellId !== cell.id) {
+                            // Switching to a different cell - exit edit mode
+                            // For markdown cells that were being edited, they will auto-render
+                            setIsEditMode(false)
+                          }
+                          setSelectedCellId(cell.id)
+                        }}
+                        onRun={() => handleRunCell(cell.id)}
+                        onRunAndAdvance={() => {
+                          handleRunCell(cell.id)
+                          // Move to next cell after running
+                          if (index < cells.length - 1) {
+                            navigateToCell(index + 1)
+                          }
+                        }}
+                        onStop={() => kernel.interrupt()}
+                        onDelete={() => handleDeleteCell(cell.id)}
+                        onMoveUp={() => moveCell(cell.id, 'up')}
+                        onMoveDown={() => moveCell(cell.id, 'down')}
+                        onUpdate={(updates) => updateCell(cell.id, updates)}
+                        onEnterEditMode={() => {
+                          // Enter edit mode on this cell
+                          setSelectedCellId(cell.id)
+                          setIsEditMode(true)
+                        }}
+                        onExitEditMode={(moveToNext, shiftEnterHandled) => exitEditMode(moveToNext, shiftEnterHandled)}
+                      />
+                    )}
                     {/* Insert button after each cell */}
                     <CellInsertButtons
                       onInsertCode={() => handleInsertCellAt('code', index + 1)}
                       onInsertMarkdown={() => handleInsertCellAt('markdown', index + 1)}
                       onInsertNotes={() => handleInsertCellAt('raw', index + 1)}
+                      onInsertAI={() => handleInsertCellAt('ai', index + 1)}
                     />
                   </div>
                 ))}

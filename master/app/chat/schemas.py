@@ -52,3 +52,19 @@ class ChatResponse(BaseModel):
 class ExecuteToolsRequest(BaseModel):
     """Request to execute approved tools."""
     approved_tools: List[PendingToolCall]
+
+
+class AICellRunRequest(BaseModel):
+    """Request to run an AI Cell."""
+    prompt: str
+    context_cell_ids: List[str] = []  # Cell IDs for context - backend loads content from S3
+    ai_cell_id: Optional[str] = None  # The AI cell's own ID for positional awareness
+    ai_cell_index: Optional[int] = None  # The AI cell's position (0-based index)
+
+
+class AICellResponse(BaseModel):
+    """Response from AI Cell execution."""
+    success: bool
+    response: str
+    model: str = ""
+    error: Optional[str] = None

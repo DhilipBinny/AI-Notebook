@@ -7,15 +7,26 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
+class AICellData(BaseModel):
+    """AI Cell specific data."""
+    user_prompt: str = ""
+    llm_response: str = ""
+    status: str = "idle"  # idle, running, completed, error
+    model: Optional[str] = None
+    error: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
 class CellData(BaseModel):
     """Notebook cell data - follows Jupyter .ipynb standard."""
     # Note: cell_id is stored in metadata.cell_id (Jupyter standard)
     # No top-level 'id' field - that's not standard .ipynb format
-    cell_type: str  # "code" or "markdown" - matches .ipynb format
+    cell_type: str  # "code", "markdown", "raw", or "ai"
     source: str
     outputs: List[Dict[str, Any]] = []
     execution_count: Optional[int] = None
     metadata: Dict[str, Any] = {}  # cell_id stored here
+    ai_data: Optional[AICellData] = None  # Only for AI cells
 
 
 class NotebookData(BaseModel):
