@@ -131,13 +131,14 @@ class UserService:
         await self.db.flush()
 
     async def count_projects(self, user_id: str) -> int:
-        """Count user's active (non-archived) projects."""
+        """Count user's active (non-archived, non-deleted) projects."""
         from app.projects.models import Project
 
         result = await self.db.execute(
             select(Project).where(
                 Project.user_id == user_id,
-                Project.is_archived == False
+                Project.is_archived == False,
+                Project.deleted_at.is_(None)
             )
         )
         return len(result.scalars().all())

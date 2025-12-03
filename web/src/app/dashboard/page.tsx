@@ -25,12 +25,14 @@ export default function DashboardPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDesc, setNewProjectDesc] = useState('')
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [playgroundStatuses, setPlaygroundStatuses] = useState<PlaygroundStatus>({})
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importProjectName, setImportProjectName] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editName, setEditName] = useState('')
@@ -135,6 +137,51 @@ export default function DashboardPage() {
     init()
   }, [router, setUser, setProjects, fetchPlaygroundStatus])
 
+  // Poll playground statuses every 10 seconds to detect external changes (e.g., container killed)
+  useEffect(() => {
+    if (projectList.length === 0) return
+
+    const pollStatuses = async () => {
+      // Only poll for projects that are currently shown as running or starting
+      const projectsToCheck = projectList.filter(p => {
+        const status = playgroundStatuses[p.id]
+        return status?.status === 'running' || status?.status === 'starting'
+      })
+
+      for (const project of projectsToCheck) {
+        try {
+          const pg = await playgrounds.get(project.id)
+          const newStatus = pg?.status || 'stopped'
+          const currentStatus = playgroundStatuses[project.id]?.status
+
+          // Only update if status actually changed
+          if (currentStatus !== newStatus) {
+            setPlaygroundStatuses(prev => ({
+              ...prev,
+              [project.id]: {
+                status: newStatus,
+                loading: false,
+                memory_limit_mb: pg?.memory_limit_mb,
+                cpu_limit: pg?.cpu_limit,
+              }
+            }))
+          }
+        } catch {
+          // If we can't fetch status, assume stopped
+          if (playgroundStatuses[project.id]?.status !== 'stopped') {
+            setPlaygroundStatuses(prev => ({
+              ...prev,
+              [project.id]: { status: 'stopped', loading: false }
+            }))
+          }
+        }
+      }
+    }
+
+    const interval = setInterval(pollStatuses, 10000) // Poll every 10 seconds
+    return () => clearInterval(interval)
+  }, [projectList, playgroundStatuses])
+
   const handleStartPlayground = async (projectId: string) => {
     setPlaygroundStatuses(prev => ({
       ...prev,
@@ -210,6 +257,7 @@ export default function DashboardPage() {
     e.preventDefault()
     if (!newProjectName.trim()) return
     setCreating(true)
+    setCreateError(null)
     try {
       const project = await projects.create({
         name: newProjectName.trim(),
@@ -246,8 +294,12 @@ export default function DashboardPage() {
           [project.id]: { status: 'stopped', loading: false }
         }))
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to create project:', err)
+      // Extract error message from API response
+      const axiosError = err as { response?: { data?: { detail?: string } } }
+      const errorMessage = axiosError.response?.data?.detail || 'Failed to create project'
+      setCreateError(errorMessage)
     } finally {
       setCreating(false)
     }
@@ -302,6 +354,7 @@ export default function DashboardPage() {
     if (!importFile || !importProjectName.trim()) return
 
     setImporting(true)
+    setImportError(null)
     try {
       const fileContent = await importFile.text()
       const ipynbData = JSON.parse(fileContent)
@@ -349,10 +402,12 @@ export default function DashboardPage() {
           [project.id]: { status: 'stopped', loading: false }
         }))
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to import notebook:', err)
-      setNotificationMessage('Failed to import notebook. Please check the file format.')
-      setTimeout(() => setNotificationMessage(null), 5000)
+      // Extract error message from API response
+      const axiosError = err as { response?: { data?: { detail?: string } } }
+      const errorMessage = axiosError.response?.data?.detail || 'Failed to import notebook. Please check the file format.'
+      setImportError(errorMessage)
     } finally {
       setImporting(false)
     }
@@ -605,7 +660,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Notification Banner */}
       {notificationMessage && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full mx-4 animate-in slide-in-from-top duration-300">
@@ -632,8 +687,8 @@ export default function DashboardPage() {
 
       {/* Background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20" />
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-teal-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10" />
       </div>
 
       {/* Header */}
@@ -1194,8 +1249,13 @@ export default function DashboardPage() {
                   Will be created in: <span className="text-white">{getSelectedWorkspaceName()}</span>
                 </p>
               )}
+              {createError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                  <p className="text-sm text-red-400">{createError}</p>
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowNewProject(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                <button type="button" onClick={() => { setShowNewProject(false); setCreateError(null) }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
                 <button type="submit" disabled={creating} className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
                   {creating && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                   Create
@@ -1236,8 +1296,13 @@ export default function DashboardPage() {
                 <label className="block text-sm font-medium text-gray-300 mb-2">Notebook Name</label>
                 <input type="text" value={importProjectName} onChange={(e) => setImportProjectName(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Notebook name" required />
               </div>
+              {importError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                  <p className="text-sm text-red-400">{importError}</p>
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setShowImportModal(false); setImportFile(null); setImportProjectName('') }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
+                <button type="button" onClick={() => { setShowImportModal(false); setImportFile(null); setImportProjectName(''); setImportError(null) }} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-gray-300 hover:bg-white/5">Cancel</button>
                 <button type="submit" disabled={importing || !importFile} className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2">
                   {importing && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                   Import

@@ -196,21 +196,18 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     try {
       // Save in Jupyter .ipynb standard format
       const cellsToSave = cells.map((cell) => {
-        const cellToSave: Record<string, unknown> = {
+        const cellToSave = {
           cell_type: cell.type,  // Jupyter standard field name
           source: cell.source,
           outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
           execution_count: cell.execution_count,
-          metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
-        }
-        // Include ai_data for AI cells
-        if (cell.type === 'ai' && cell.ai_data) {
-          cellToSave.ai_data = cell.ai_data
+          metadata: { ...cell.metadata, cell_id: cell.id } as Record<string, unknown>,  // cell_id in metadata only
+          ai_data: cell.type === 'ai' && cell.ai_data ? cell.ai_data : undefined,
         }
         return cellToSave
       })
 
-      await notebooks.save(projectId, cellsToSave)
+      await notebooks.save(projectId, cellsToSave as Parameters<typeof notebooks.save>[1])
       setDirty(false)
       console.log('Notebook auto-saved before chat')
       return true
@@ -684,21 +681,18 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     try {
       // Save notebook to S3 via API (Jupyter .ipynb standard format)
       const cellsToSave = cells.map((cell) => {
-        const cellToSave: Record<string, unknown> = {
+        const cellToSave = {
           cell_type: cell.type,  // Jupyter standard field name
           source: cell.source,
           outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
           execution_count: cell.execution_count,
-          metadata: { ...cell.metadata, cell_id: cell.id },  // cell_id in metadata only
-        }
-        // Include ai_data for AI cells
-        if (cell.type === 'ai' && cell.ai_data) {
-          cellToSave.ai_data = cell.ai_data
+          metadata: { ...cell.metadata, cell_id: cell.id } as Record<string, unknown>,  // cell_id in metadata only
+          ai_data: cell.type === 'ai' && cell.ai_data ? cell.ai_data : undefined,
         }
         return cellToSave
       })
 
-      const result = await notebooks.save(projectId, cellsToSave)
+      const result = await notebooks.save(projectId, cellsToSave as Parameters<typeof notebooks.save>[1])
       console.log('Notebook saved:', result)
       setDirty(false)
       // Note: No sync needed - LLM tools fetch from Master API directly

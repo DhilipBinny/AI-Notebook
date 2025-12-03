@@ -65,12 +65,12 @@ ssh ${VM_USER}@${VM_HOST} "mkdir -p ${REMOTE_DIR}/{nginx,dist}"
 # Copy image tarballs
 scp ./dist/*.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
 
-# Copy configuration files
-scp docker-compose.prod.yml ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/
-scp nginx/nginx.prod.conf ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/nginx/
+# # Copy configuration files
+# scp docker-compose.prod.yml ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/
+# scp nginx/nginx.prod.conf ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/nginx/
 
-# Copy env template if not exists
-scp -n .env.prod.example ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/.env 2>/dev/null || true
+# # Copy env template if not exists
+# scp -n .env.prod.example ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/.env 2>/dev/null || true
 
 echo ""
 echo "[4/5] Loading Docker images on VM..."
