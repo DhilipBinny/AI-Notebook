@@ -3,6 +3,7 @@ Gemini LLM Client - Google's Generative AI implementation
 
 Implements the BaseLLMClient interface for Gemini models.
 Supports both automatic and manual (approval-based) function calling.
+Includes Google Search grounding for real-time web information.
 """
 
 import json
@@ -21,9 +22,9 @@ TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
 
 
 class GeminiClient(BaseLLMClient):
-    """Gemini LLM client with tool calling support"""
+    """Gemini LLM client with tool calling and Google Search support"""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash", auto_function_calling: Optional[bool] = None):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
         Initialize Gemini client.
 
@@ -31,21 +32,34 @@ class GeminiClient(BaseLLMClient):
             api_key: Gemini API key
             model_name: Model to use (default: gemini-2.5-flash)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
+            enable_web_search: Enable Google Search grounding for real-time web info (default: True)
         """
         genai.configure(api_key=api_key)
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
+        self.enable_web_search = enable_web_search
 
-        # Convert tool functions to Gemini format using types.Tool
-        self.gemini_tools = [types.Tool(function_declarations=[
+        # Build tools list
+        tools_list = []
+
+        # Add function declarations for custom tools
+        tools_list.append(types.Tool(function_declarations=[
             types.FunctionDeclaration.from_function(func) for func in TOOL_FUNCTIONS
-        ])]
+        ]))
+
+        # Add Google Search grounding tool
+        if self.enable_web_search:
+            tools_list.append(types.Tool(google_search=types.GoogleSearch()))
+            log_debug_message("Google Search grounding enabled")
+
+        self.gemini_tools = tools_list
 
         # Debug: Print tool names
         tool_names = [func.__name__ for func in TOOL_FUNCTIONS]
         log_debug_message(f"Gemini client initialized with tools: {tool_names}")
         log_debug_message(f"Auto function calling: {self.auto_function_calling}")
+        log_debug_message(f"Web search enabled: {self.enable_web_search}")
 
         self.model = genai.GenerativeModel(
             model_name=model_name,

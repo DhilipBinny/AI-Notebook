@@ -42,6 +42,11 @@ AUTO_FUNCTION_CALLING = os.environ.get("AUTO_FUNCTION_CALLING", "false").lower()
 if AUTO_FUNCTION_CALLING:
     TOOL_EXECUTION_MODE = "auto"
 
+# === Web Search ===
+# Enable native web search for LLM providers (Gemini, OpenAI, Anthropic)
+# Each provider uses its own search: Google Search, Bing, Brave respectively
+ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true"
+
 # === Provider Selection ===
 # Auto-detect default based on availability
 # User can switch via UI dropdown at runtime

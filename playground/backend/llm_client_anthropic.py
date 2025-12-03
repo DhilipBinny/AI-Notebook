@@ -3,6 +3,7 @@ Anthropic LLM Client - Claude implementation
 
 Implements the BaseLLMClient interface for Anthropic models (Claude 3, etc.).
 Supports both automatic and manual (approval-based) function calling.
+Includes web search tool for real-time web information.
 """
 
 import json
@@ -14,6 +15,14 @@ from backend.llm_client_base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS
 import backend.config as cfg
+
+
+# Web search tool definition for Anthropic
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 5  # Limit searches per request
+}
 
 
 # Build Anthropic tool schemas from our function definitions
@@ -110,9 +119,9 @@ TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
 
 
 class AnthropicClient(BaseLLMClient):
-    """Anthropic LLM client with tool calling support"""
+    """Anthropic LLM client with tool calling and web search support"""
 
-    def __init__(self, api_key: str, model_name: str = "claude-3-haiku-20240307", auto_function_calling: Optional[bool] = None):
+    def __init__(self, api_key: str, model_name: str = "claude-3-haiku-20240307", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
         Initialize Anthropic client.
 
@@ -120,15 +129,26 @@ class AnthropicClient(BaseLLMClient):
             api_key: Anthropic API key
             model_name: Model to use (default: claude-3-haiku-20240307)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
+            enable_web_search: Enable web search tool for real-time web info (default: True)
         """
         self.client = Anthropic(api_key=api_key)
         self.model_name = model_name
+        self.enable_web_search = enable_web_search
+
+        # Build tools list - custom tools first
         self.tools = _build_anthropic_tools()
+
+        # Add web search tool if enabled
+        if self.enable_web_search:
+            self.tools.append(WEB_SEARCH_TOOL)
+            log_debug_message("Anthropic web search tool enabled")
+
         self.history: List[Dict[str, Any]] = []
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
         log_debug_message(f"Anthropic client initialized. Auto function calling: {self.auto_function_calling}")
+        log_debug_message(f"Web search enabled: {self.enable_web_search}")
 
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []

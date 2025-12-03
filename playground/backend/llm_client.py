@@ -50,7 +50,8 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
         from backend.llm_client_gemini import GeminiClient
         return GeminiClient(
             api_key=cfg.GEMINI_API_KEY,
-            model_name=cfg.GEMINI_MODEL
+            model_name=cfg.GEMINI_MODEL,
+            enable_web_search=cfg.ENABLE_WEB_SEARCH
         )
 
     elif provider == "openai":
@@ -60,7 +61,8 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
         from backend.llm_client_openai import OpenAIClient
         return OpenAIClient(
             api_key=cfg.OPENAI_API_KEY,
-            model_name=cfg.OPENAI_MODEL
+            model_name=cfg.OPENAI_MODEL,
+            enable_web_search=cfg.ENABLE_WEB_SEARCH
         )
 
     elif provider == "anthropic":
@@ -70,7 +72,8 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
         from backend.llm_client_anthropic import AnthropicClient
         return AnthropicClient(
             api_key=cfg.ANTHROPIC_API_KEY,
-            model_name=cfg.ANTHROPIC_MODEL
+            model_name=cfg.ANTHROPIC_MODEL,
+            enable_web_search=cfg.ENABLE_WEB_SEARCH
         )
 
     else:

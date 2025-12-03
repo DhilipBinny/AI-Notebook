@@ -3,6 +3,7 @@ OpenAI LLM Client - OpenAI API implementation
 
 Implements the BaseLLMClient interface for OpenAI models (GPT-4, etc.).
 Supports both automatic and manual (approval-based) function calling.
+Includes web search tool for real-time web information.
 """
 
 import json
@@ -13,6 +14,13 @@ from backend.llm_client_base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS
 import backend.config as cfg
+
+
+# Web search tool for OpenAI
+WEB_SEARCH_TOOL = {
+    "type": "web_search_preview",
+    "search_context_size": "medium"  # Options: "low", "medium", "high"
+}
 
 
 # Build OpenAI tool schemas from our function definitions
@@ -112,9 +120,9 @@ TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
 
 
 class OpenAIClient(BaseLLMClient):
-    """OpenAI LLM client with tool calling support"""
+    """OpenAI LLM client with tool calling and web search support"""
 
-    def __init__(self, api_key: str, model_name: str = "gpt-4o", auto_function_calling: Optional[bool] = None):
+    def __init__(self, api_key: str, model_name: str = "gpt-4o", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
         Initialize OpenAI client.
 
@@ -122,15 +130,26 @@ class OpenAIClient(BaseLLMClient):
             api_key: OpenAI API key
             model_name: Model to use (default: gpt-4o)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
+            enable_web_search: Enable web search tool for real-time web info (default: True)
         """
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
+        self.enable_web_search = enable_web_search
+
+        # Build tools list
         self.tools = _build_openai_tools()
+
+        # Add web search tool if enabled
+        if self.enable_web_search:
+            self.tools.append(WEB_SEARCH_TOOL)
+            log_debug_message("OpenAI web search tool enabled")
+
         self.history: List[Dict[str, Any]] = []
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
         log_debug_message(f"OpenAI client initialized. Auto function calling: {self.auto_function_calling}")
+        log_debug_message(f"Web search enabled: {self.enable_web_search}")
 
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
