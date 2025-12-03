@@ -1,0 +1,107 @@
+# AI Notebook Platform - Production Docker Compose
+#
+# For deployment to production VM (10.0.2.21)
+# Infrastructure (mysql, redis, minio) should already be running
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  # ===========================================
+  # Nginx Reverse Proxy
+  # ===========================================
+  nginx:
+    image: nginx:alpine
+    container_name: ainotebook-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - ainotebook-network
+    depends_on:
+      - web
+      - master-api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ===========================================
+  # Master API (FastAPI Backend)
+  # ===========================================
+  master-api:
+    image: ainotebook-master-api:latest
+    container_name: ainotebook-master-api
+    restart: unless-stopped
+    # Run as root to access Docker socket (required for spawning playground containers)
+    user: root
+    environment:
+      # Application
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      # Redis
+      REDIS_URL: ${REDIS_URL}
+      # S3/MinIO
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_NOTEBOOKS: notebooks
+      # JWT - CHANGE THIS IN PRODUCTION!
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      # LLM API Keys
+      LLM_ENV_FILE: /app/llm.env
+      # Playground
+      PLAYGROUND_IMAGE: ainotebook-playground:latest
+      # Note: Network name may have prefix from docker-compose project name
+      # Use: docker network ls | grep ainotebook to find correct name
+      PLAYGROUND_NETWORK: ${PLAYGROUND_NETWORK:-ainotebook-network}
+      PLAYGROUND_MEMORY_LIMIT: 2g
+      PLAYGROUND_CPU_LIMIT: "1.0"
+      PLAYGROUND_IDLE_TIMEOUT: "3600"
+    volumes:
+      # Mount Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount LLM env file
+      - ./llm.env:/app/llm.env:ro
+    networks:
+      - ainotebook-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ===========================================
+  # Web Frontend (Next.js Production)
+  # ===========================================
+  web:
+    image: ainotebook-web:latest
+    container_name: ainotebook-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks:
+      - ainotebook-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  ainotebook-network:
+    external: true
