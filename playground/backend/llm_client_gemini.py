@@ -629,30 +629,17 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
             log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
 
-            # Extract user question from the full prompt (after "USER QUESTION:")
-            # Only check the user's actual question for web search, not the system prompt
-            user_question = prompt
-            if "USER QUESTION:" in prompt:
-                user_question = prompt.split("USER QUESTION:")[-1].strip()
-                log_debug_message(f"🔍 Extracted user question: {user_question[:100]}...")
-
-            # Check if web search might help (only check user's question, not system prompt)
-            search_context = ""
-            if self._needs_web_search(user_question):
-                search_context = self._do_google_search(user_question)
-
-            # Build the final prompt with search context
-            if search_context:
-                enhanced_prompt = f"{search_context}\n\n{prompt}"
-                log_debug_message(f"🤖 AI Cell: Using web search context")
-            else:
-                enhanced_prompt = prompt
-
-            # Create a new chat session with AI Cell tools (auto function calling)
+            # Create a new chat session with AI Cell tools + Google Search
+            # Let the LLM decide when to use web search based on system prompt guidance
             ai_cell_config = types.GenerateContentConfig(
-                system_instruction="You are an AI assistant in a notebook cell. Use the provided tools to inspect variables and test code before answering.",
-                tools=AI_CELL_TOOLS,  # Pass Python functions directly for auto execution
+                system_instruction="You are an AI assistant in a notebook cell. Follow the TOOL PRIORITY in the prompt - use kernel inspection tools FIRST, web search only as LAST RESORT.",
+                tools=[
+                    *AI_CELL_TOOLS,  # Kernel inspection + sandbox tools
+                    types.Tool(google_search=types.GoogleSearch()) if self.enable_web_search else None
+                ],
             )
+            # Filter out None if web search is disabled
+            ai_cell_config.tools = [t for t in ai_cell_config.tools if t is not None]
 
             chat = self.client.chats.create(
                 model=self.model_name,

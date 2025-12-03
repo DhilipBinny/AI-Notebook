@@ -510,20 +510,9 @@ class AnthropicClient(BaseLLMClient):
             ai_cell_tools = self._build_ai_cell_tools()
             ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
 
-            # Extract user question to check if web search is needed
-            user_question = prompt
-            if "USER QUESTION:" in prompt:
-                user_question = prompt.split("USER QUESTION:")[-1].strip()
-
-            # Add web search only if the user's question suggests it's needed
-            needs_search = self.enable_web_search and any(
-                kw in user_question.lower() for kw in [
-                    'search', 'look up', 'google', 'web', 'latest', 'recent',
-                    'news', 'weather', 'stock', 'price', '2024', '2025'
-                ]
-            )
-            if needs_search:
-                log_debug_message(f"🔍 AI Cell: Adding web search tool")
+            # Add web search as a tool - let the LLM decide when to use it
+            # System prompt guides it to use kernel inspection tools FIRST
+            if self.enable_web_search:
                 ai_cell_tools.append({
                     "type": "web_search_20250305",
                     "name": "web_search",
