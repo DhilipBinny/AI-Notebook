@@ -159,6 +159,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   // Ref for Run All to resolve promises when cells complete
   const runAllResolveRef = useRef<(() => void) | null>(null)
 
+  // Clipboard and undo state for cell operations
+  const [clipboardCell, setClipboardCell] = useState<CellType | null>(null)
+  const [deletedCells, setDeletedCells] = useState<{ cell: CellType; index: number }[]>([])
+  const lastKeyRef = useRef<{ key: string; time: number } | null>(null) // For double-key detection (DD)
+
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatLoading, setChatLoading] = useState(false)
@@ -181,7 +186,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const playgroundUrl = playground?.status === 'running' && playground?.container_name
     ? `${window.location.origin}/playground/${playground.container_name}`
     : null
-  const kernel = useKernel(playgroundUrl)
+  // Pass projectId as sessionId so frontend kernel and AI Cell tools use the same kernel
+  const kernel = useKernel(playgroundUrl, projectId)
 
   // Helper to save notebook (for auto-save before chat)
   const saveNotebook = useCallback(async () => {
@@ -567,16 +573,47 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [cells, playground, projectId, llmProvider, updateCell, saveNotebook])
 
-  // Insert code cell from AI cell suggestion
-  const handleInsertCodeFromAICell = useCallback((afterCellId: string, code: string) => {
+  // Insert code cells from AI cell suggestion (supports multiple code blocks)
+  const handleInsertCodeFromAICell = useCallback((afterCellId: string, codeBlocks: string[]) => {
     const cellIndex = cells.findIndex(c => c.id === afterCellId)
-    if (cellIndex === -1) return
+    if (cellIndex === -1 || codeBlocks.length === 0) return
 
-    const newCell = createCell('code')
-    newCell.source = code
-    addCell(newCell, cellIndex + 1)
-    setSelectedCellId(newCell.id)
+    // Insert all code blocks as separate cells
+    let lastNewCellId = ''
+    codeBlocks.forEach((code, idx) => {
+      const newCell = createCell('code')
+      newCell.source = code
+      addCell(newCell, cellIndex + 1 + idx)
+      lastNewCellId = newCell.id
+    })
+
+    // Select the last inserted cell
+    if (lastNewCellId) {
+      setSelectedCellId(lastNewCellId)
+    }
   }, [cells, addCell])
+
+  // Scroll to a specific cell by ID (used for @cell-xxx references in AI responses)
+  const handleScrollToCell = useCallback((cellId: string) => {
+    console.log('[Page] handleScrollToCell called with cellId:', cellId)
+    const elementId = `cell-${cellId}`
+    console.log('[Page] Looking for element with ID:', elementId)
+    const cellElement = document.getElementById(elementId)
+    console.log('[Page] Found element:', !!cellElement)
+    if (cellElement) {
+      cellElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // Select the cell and briefly highlight it
+      setSelectedCellId(cellId)
+      // Add a brief highlight effect
+      cellElement.style.transition = 'box-shadow 0.3s ease'
+      cellElement.style.boxShadow = '0 0 20px rgba(168, 85, 247, 0.6)'
+      setTimeout(() => {
+        cellElement.style.boxShadow = ''
+      }, 1500)
+    } else {
+      console.log('[Page] Element not found! Available cells:', cells.map(c => c.id))
+    }
+  }, [cells])
 
   const handleRunCell = useCallback((cellId: string) => {
     const cell = cells.find((c) => c.id === cellId)
@@ -962,12 +999,161 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           }
           return
         }
+
+        // A - Insert cell above
+        if (e.key === 'a' || e.key === 'A') {
+          e.preventDefault()
+          const currentIndex = getSelectedCellIndex()
+          const newCell = createCell('code')
+          if (currentIndex >= 0) {
+            addCell(newCell, currentIndex)
+          } else {
+            addCell(newCell, 0)
+          }
+          setSelectedCellId(newCell.id)
+          return
+        }
+
+        // B - Insert cell below
+        if (e.key === 'b' || e.key === 'B') {
+          e.preventDefault()
+          const currentIndex = getSelectedCellIndex()
+          const newCell = createCell('code')
+          if (currentIndex >= 0) {
+            addCell(newCell, currentIndex + 1)
+          } else {
+            addCell(newCell, cells.length)
+          }
+          setSelectedCellId(newCell.id)
+          return
+        }
+
+        // D twice - Delete selected cell
+        if (e.key === 'd' || e.key === 'D') {
+          const now = Date.now()
+          if (lastKeyRef.current?.key === 'd' && now - lastKeyRef.current.time < 500) {
+            // Double D pressed within 500ms
+            e.preventDefault()
+            if (selectedCellId) {
+              const currentIndex = getSelectedCellIndex()
+              const cellToDelete = cells.find(c => c.id === selectedCellId)
+              if (cellToDelete) {
+                // Save for undo
+                setDeletedCells(prev => [...prev, { cell: cellToDelete, index: currentIndex }])
+                deleteCell(selectedCellId)
+                // Select next cell or previous if at end
+                if (currentIndex < cells.length - 1) {
+                  setSelectedCellId(cells[currentIndex + 1]?.id || null)
+                } else if (currentIndex > 0) {
+                  setSelectedCellId(cells[currentIndex - 1]?.id || null)
+                }
+              }
+            }
+            lastKeyRef.current = null
+          } else {
+            lastKeyRef.current = { key: 'd', time: now }
+          }
+          return
+        }
+
+        // X - Cut selected cell
+        if (e.key === 'x' || e.key === 'X') {
+          e.preventDefault()
+          if (selectedCellId) {
+            const currentIndex = getSelectedCellIndex()
+            const cellToCut = cells.find(c => c.id === selectedCellId)
+            if (cellToCut) {
+              setClipboardCell({ ...cellToCut })
+              setDeletedCells(prev => [...prev, { cell: cellToCut, index: currentIndex }])
+              deleteCell(selectedCellId)
+              // Select next cell or previous if at end
+              if (currentIndex < cells.length - 1) {
+                setSelectedCellId(cells[currentIndex + 1]?.id || null)
+              } else if (currentIndex > 0) {
+                setSelectedCellId(cells[currentIndex - 1]?.id || null)
+              }
+            }
+          }
+          return
+        }
+
+        // C - Copy selected cell
+        if (e.key === 'c' || e.key === 'C') {
+          e.preventDefault()
+          if (selectedCellId) {
+            const cellToCopy = cells.find(c => c.id === selectedCellId)
+            if (cellToCopy) {
+              setClipboardCell({ ...cellToCopy })
+            }
+          }
+          return
+        }
+
+        // V - Paste cell below
+        if (e.key === 'v' || e.key === 'V') {
+          e.preventDefault()
+          if (clipboardCell) {
+            const currentIndex = getSelectedCellIndex()
+            // Create new cell with new ID but same content
+            const newCell: CellType = {
+              ...clipboardCell,
+              id: `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              metadata: { ...clipboardCell.metadata, cell_id: `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` },
+              outputs: [], // Clear outputs for pasted cell
+              execution_count: undefined,
+            }
+            if (currentIndex >= 0) {
+              addCell(newCell, currentIndex + 1)
+            } else {
+              addCell(newCell, cells.length)
+            }
+            setSelectedCellId(newCell.id)
+          }
+          return
+        }
+
+        // Z - Undo cell deletion
+        if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault()
+          if (deletedCells.length > 0) {
+            const lastDeleted = deletedCells[deletedCells.length - 1]
+            // Restore with original ID
+            addCell(lastDeleted.cell, lastDeleted.index)
+            setDeletedCells(prev => prev.slice(0, -1))
+            setSelectedCellId(lastDeleted.cell.id)
+          }
+          return
+        }
+
+        // Y - Change cell to code (not allowed for raw/ai cells)
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault()
+          if (selectedCellId) {
+            const cell = cells.find(c => c.id === selectedCellId)
+            if (cell && cell.type !== 'raw' && cell.type !== 'ai' && cell.type !== 'code') {
+              updateCell(selectedCellId, { type: 'code' })
+            }
+          }
+          return
+        }
+
+        // M - Change cell to markdown (not allowed for raw/ai cells)
+        if (e.key === 'm' || e.key === 'M') {
+          e.preventDefault()
+          if (selectedCellId) {
+            const cell = cells.find(c => c.id === selectedCellId)
+            if (cell && cell.type !== 'raw' && cell.type !== 'ai' && cell.type !== 'markdown') {
+              updateCell(selectedCellId, { type: 'markdown' })
+            }
+          }
+          return
+        }
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells.length, selectedCellId, enterEditMode, exitEditMode, handleRunCell, lastNavDirection])
+  }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells, selectedCellId, enterEditMode, exitEditMode, handleRunCell, lastNavDirection, clipboardCell, deletedCells, addCell, deleteCell, updateCell])
 
   const handleRestartKernel = useCallback(() => {
     setConfirmPopup({
@@ -1476,7 +1662,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                         onMoveDown={() => moveCell(cell.id, 'down')}
                         onUpdate={(updates) => updateCell(cell.id, updates)}
                         onRunAICell={handleRunAICell}
-                        onInsertCodeCell={handleInsertCodeFromAICell}
+                        onInsertCodeCells={handleInsertCodeFromAICell}
+                        onScrollToCell={handleScrollToCell}
                       />
                     ) : (
                       <Cell
@@ -1562,6 +1749,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               onClearHistory={handleClearHistory}
               onSummarize={handleSummarize}
               isSummarizing={isSummarizing}
+              onScrollToCell={handleScrollToCell}
             />
           </div>
         )}

@@ -21,7 +21,8 @@ interface AICellProps {
   onMoveDown: () => void
   onUpdate: (updates: Partial<CellType>) => void
   onRunAICell: (cellId: string, prompt: string) => Promise<void>
-  onInsertCodeCell: (afterCellId: string, code: string) => void
+  onInsertCodeCells: (afterCellId: string, codeBlocks: string[]) => void
+  onScrollToCell?: (cellId: string) => void
 }
 
 export default function AICell({
@@ -34,9 +35,11 @@ export default function AICell({
   onMoveDown,
   onUpdate,
   onRunAICell,
-  onInsertCodeCell,
+  onInsertCodeCells,
+  onScrollToCell,
 }: AICellProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const responseRef = useRef<HTMLDivElement>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [localPrompt, setLocalPrompt] = useState(cell.ai_data?.user_prompt || '')
 
@@ -112,42 +115,77 @@ export default function AICell({
     return blocks
   }
 
+  // Process cell-xxx references into clickable links
+  const processeCellReferences = (html: string): string => {
+    // Match cell ID patterns: @cell-xxx, `cell-xxx`, or plain cell-xxx
+    // Cell ID formats: cell-14d6c2b447d1 or cell-1764863866351-wq1kuzp8k
+    const cellRefRegex = /(?:@|`)(cell-[a-zA-Z0-9-]+)`?/g
+    return html.replace(cellRefRegex, (match, cellId) => {
+      return `<button class="cell-reference" data-cell-id="${cellId}" style="color: #a855f7; text-decoration: underline; cursor: pointer; background: none; border: none; font: inherit; padding: 0;">${match}</button>`
+    })
+  }
+
+  // Handle click on cell references
+  const handleResponseClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    console.log('[AICell] Click detected on:', target.tagName, target.classList.toString())
+    if (target.classList.contains('cell-reference')) {
+      const cellId = target.getAttribute('data-cell-id')
+      console.log('[AICell] Cell reference clicked, cellId:', cellId, 'onScrollToCell:', !!onScrollToCell)
+      if (cellId && onScrollToCell) {
+        e.stopPropagation()
+        e.preventDefault()
+        onScrollToCell(cellId)
+      }
+    }
+  }, [onScrollToCell])
+
   // Render response with code block actions
   const renderResponse = () => {
     if (!aiData.llm_response) return null
 
     const html = marked.parse(aiData.llm_response) as string
-    const sanitizedHtml = DOMPurify.sanitize(html)
+    // Process cell references before sanitizing
+    const processedHtml = processeCellReferences(html)
+    // Allow button elements and data attributes in sanitized HTML
+    const sanitizedHtml = DOMPurify.sanitize(processedHtml, {
+      ADD_TAGS: ['button'],
+      ADD_ATTR: ['data-cell-id', 'class', 'style']
+    })
     const codeBlocks = extractCodeBlocks(aiData.llm_response)
 
     return (
       <div className="space-y-2">
         <div
+          ref={responseRef}
           className="prose prose-sm max-w-none prose-invert"
           style={{ color: 'var(--nb-text-primary)' }}
           dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+          onClick={handleResponseClick}
         />
 
         {/* Code block actions */}
         {codeBlocks.length > 0 && (
-          <div className="flex flex-wrap gap-2 pt-2 border-t" style={{ borderColor: 'var(--nb-border-default)' }}>
-            {codeBlocks.map((block, idx) => (
-              <button
-                key={idx}
-                onClick={() => onInsertCodeCell(cell.id, block.code)}
-                className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:opacity-80 transition-opacity"
-                style={{
-                  backgroundColor: 'var(--nb-accent-code)',
-                  color: '#11111b',
-                }}
-                title={`Insert code block ${idx + 1} as new cell`}
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Insert Code {codeBlocks.length > 1 ? `#${idx + 1}` : ''}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t" style={{ borderColor: 'var(--nb-border-default)' }}>
+            <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+              {codeBlocks.length} code block{codeBlocks.length > 1 ? 's' : ''}
+            </span>
+            <button
+              onClick={() => onInsertCodeCells(cell.id, codeBlocks.map(b => b.code))}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded hover:opacity-80 transition-opacity font-medium"
+              style={{
+                backgroundColor: 'var(--nb-accent-code)',
+                color: '#11111b',
+              }}
+              title={codeBlocks.length > 1
+                ? `Insert all ${codeBlocks.length} code blocks as new cells`
+                : 'Insert code as new cell'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Insert {codeBlocks.length > 1 ? `All ${codeBlocks.length} Cells` : 'Code'}
+            </button>
           </div>
         )}
 

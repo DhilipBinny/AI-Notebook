@@ -222,10 +222,10 @@ if user_site and user_site not in sys.path:
     def _is_pip_install(self, code: str) -> bool:
         """Check if code contains a pip install command"""
         import re
-        # Match !pip install, %pip install, or pip.main(['install'...])
+        # Match !pip install, ! pip install, %pip install, or pip.main(['install'...])
         pip_patterns = [
-            r'^\s*!pip\s+install',
-            r'^\s*%pip\s+install',
+            r'^\s*!\s*pip\s+install',      # !pip install or ! pip install
+            r'^\s*%\s*pip\s+install',      # %pip install or % pip install
             r'pip\.main\s*\(\s*\[.*install',
             r'subprocess.*pip.*install',
         ]
@@ -239,27 +239,49 @@ if user_site and user_site not in sys.path:
         refresh_code = '''
 import importlib
 import sys
+import site
 
-# Invalidate all module caches
+# Invalidate all module caches - this is critical for newly installed packages
 importlib.invalidate_caches()
 
-# Refresh site-packages path
-import site
+# Clear any cached failed imports
+_failed_modules = [name for name in sys.modules if sys.modules[name] is None]
+for name in _failed_modules:
+    del sys.modules[name]
+
+# Refresh user site-packages path
 try:
-    # Re-add user site-packages if not present
     user_site = site.getusersitepackages()
-    if user_site and user_site not in sys.path:
+    if user_site:
+        # Remove and re-add to ensure it's at the front
+        if user_site in sys.path:
+            sys.path.remove(user_site)
         sys.path.insert(0, user_site)
 except Exception:
     pass
 
 # Also refresh the standard site-packages
-for path in site.getsitepackages():
-    if path not in sys.path:
-        sys.path.insert(0, path)
+try:
+    for path in site.getsitepackages():
+        if path not in sys.path:
+            sys.path.insert(0, path)
+except Exception:
+    pass
+
+print("[Kernel] Module cache refreshed - new packages should now be importable")
 '''
         try:
-            self.kc.execute(refresh_code, silent=True)
+            # Execute and wait for completion (not silent, so we see the confirmation)
+            msg_id = self.kc.execute(refresh_code)
+            # Wait for execution to complete
+            while True:
+                try:
+                    msg = self.kc.get_iopub_msg(timeout=5)
+                    if msg['header']['msg_type'] == 'status':
+                        if msg['content'].get('execution_state') == 'idle':
+                            break
+                except Exception:
+                    break
             print("[Kernel] Module cache refreshed after pip install")
         except Exception as e:
             print(f"[Kernel] Failed to refresh module cache: {e}")

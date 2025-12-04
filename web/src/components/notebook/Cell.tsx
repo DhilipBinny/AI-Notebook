@@ -309,10 +309,10 @@ export default function Cell({
     }
   }, [])
 
-  // Resize on content change
+  // Resize on content change or cell type change
   useEffect(() => {
     adjustTextareaHeight()
-  }, [cell.source, adjustTextareaHeight])
+  }, [cell.source, cell.type, adjustTextareaHeight])
 
   // Focus textarea and resize when entering edit mode
   useEffect(() => {

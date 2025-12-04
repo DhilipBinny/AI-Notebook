@@ -21,12 +21,13 @@ interface ExecutionMessage {
   status?: 'complete' | 'error'
 }
 
-export function useKernel(playgroundUrl: string | null) {
+export function useKernel(playgroundUrl: string | null, sessionId: string | null = null) {
   const [kernelState, setKernelState] = useState<KernelState>({
     status: 'disconnected',
     executionCount: 0,
   })
   const [runningCellId, setRunningCellId] = useState<string | null>(null)
+  const sessionIdRef = useRef<string | null>(sessionId)
 
   const wsRef = useRef<WebSocket | null>(null)
   const outputCallbackRef = useRef<((cellId: string, output: CellOutput) => void) | null>(null)
@@ -153,6 +154,7 @@ export function useKernel(playgroundUrl: string | null) {
     wsRef.current.send(JSON.stringify({
       code,
       cell_id: cellId,
+      session_id: sessionIdRef.current,
     }))
 
     return true
@@ -197,6 +199,7 @@ export function useKernel(playgroundUrl: string | null) {
       wsRef.current.send(JSON.stringify({
         code,
         cell_id: cellId,
+        session_id: sessionIdRef.current,
       }))
     })
   }, [])
@@ -250,6 +253,11 @@ export function useKernel(playgroundUrl: string | null) {
   const setCompletionCallback = useCallback((cb: (cellId: string, success: boolean) => void) => {
     completionCallbackRef.current = cb
   }, [])
+
+  // Update sessionId ref when prop changes
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
 
   // Connect when playground URL changes
   useEffect(() => {

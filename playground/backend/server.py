@@ -237,39 +237,52 @@ AI_CELL_SYSTEM_PROMPT = """You are an AI assistant embedded in a notebook cell. 
 
 POSITION: {position_info}
 
+CRITICAL - RUNTIME vs STATIC DATA:
+- The NOTEBOOK CONTEXT below shows STATIC cell previews (code text, not executed results)
+- For RUNTIME data (actual variable values, types, errors), you MUST use kernel inspection tools
+- ALWAYS use inspect_variables() for "what variables?" questions - don't just read cell text!
+
 CELL REFERENCES:
-- Cells shown as @cell_id (e.g., @cell-abc123)
+- Cells shown as @cell-xxx or `cell-xxx` (e.g., @cell-abc123 or `cell-abc123`)
 - "above" = cells BEFORE your position, "below" = cells AFTER
+- Use these formats in your responses so users can click to navigate
 
-TOOL PRIORITY (IMPORTANT - follow this order):
+TOOL PRIORITY (MUST follow this order):
 
-1. **FIRST - Kernel Inspection** (always start here):
-   - inspect_variables() - List all variables with types, shapes, previews
-   - inspect_variable(name) - Detailed info about specific variable (columns, dtypes, sample)
+1. **FIRST - Kernel Inspection** (ALWAYS start here for runtime questions):
+   - inspect_variables() - List all RUNTIME variables with actual types, shapes, values
+   - inspect_variable(name) - Detailed info: DataFrame columns, dtypes, sample rows
    - list_functions() - User-defined functions with signatures
-   - list_imports() - Imported modules and aliases
+   - list_imports() - Actually imported modules (not just written in cells)
    - kernel_info() - Memory usage, execution count
+   - get_last_error() - Get most recent error with traceback
+   - get_dataframe_info(name) - Detailed DataFrame inspection
+   - get_cell_outputs(cell_id) - Get execution outputs from a cell
+   - search_notebook(query) - Search for text in cells
+
+   USE FOR: "what variables?", "show my data", "what type is x?", "why error?"
 
 2. **SECOND - Sandbox Testing** (verify code before suggesting):
    - sandbox_execute(code) - Run code in ISOLATED kernel (safe testing)
    - sandbox_sync_from_main(["var1", "var2"]) - Copy variables to sandbox
    - sandbox_reset() - Clear sandbox state
 
-3. **LAST RESORT - Web Search** (only for external info):
-   - USE FOR: library documentation, API references, error explanations
-   - DO NOT USE FOR: variable values, DataFrame contents, cell code, user's data
-   - If it's in the notebook, use inspect tools instead!
+EXAMPLES - Correct Tool Usage:
+- "What variables do I have?" → inspect_variables() (NOT reading cell previews)
+- "What's in my DataFrame?" → inspect_variable("df") or get_dataframe_info("df")
+- "Why did this error?" → get_last_error() then inspect relevant variables
+- "Where is X defined?" → search_notebook("X =") to find the cell
 
 WORKFLOW:
-1. User asks about data → inspect_variables() first
+1. User asks about data → inspect_variables() first (RUNTIME values)
 2. Need details → inspect_variable("df") to see columns, types, sample
 3. Suggesting code → sandbox_execute() to verify it works
-4. Need docs/API help → then use web_search
+4. Reference the cell where code should go using @cell-xxx or `cell-xxx`
 
 OUTPUT FORMAT:
 - Wrap code in ```python blocks
 - Show sandbox output when helpful
-- Reference cells as @cell_id
+- Reference cells as @cell-xxx or `cell-xxx` (clickable in UI)
 - Be concise
 
 {notebook_context}
@@ -733,6 +746,23 @@ async def execute_approved_tools(
     except Exception as e:
         clear_current_session()
         return ChatResponse(success=False, response="", error=str(e))
+
+
+# === Logging Filter ===
+
+import logging
+
+class HealthCheckFilter(logging.Filter):
+    """Filter out health check request logs to reduce noise"""
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        # Skip health check logs
+        if 'GET /health' in message:
+            return False
+        return True
+
+# Apply filter at module load time (works with uvicorn)
+logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 
 # === Run Server ===

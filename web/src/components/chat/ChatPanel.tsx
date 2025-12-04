@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
 import type { ChatMessage, LLMStep } from '@/types'
 
@@ -27,6 +27,7 @@ interface ChatPanelProps {
   onClearHistory: () => void
   onSummarize: () => void
   isSummarizing: boolean
+  onScrollToCell?: (cellId: string) => void
 }
 
 // Theme-aware colors for chat panel
@@ -74,6 +75,7 @@ export default function ChatPanel({
   onClearHistory,
   onSummarize,
   isSummarizing,
+  onScrollToCell,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
@@ -221,6 +223,58 @@ export default function ChatPanel({
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
   }
+
+  // Process cell-xxx references into clickable spans
+  const processCellReferences = (text: string): React.ReactNode[] => {
+    // Match cell ID patterns: @cell-xxx, `cell-xxx`, or plain cell-xxx in backticks
+    // Cell ID formats: cell-14d6c2b447d1 or cell-1764863866351-wq1kuzp8k
+    const cellRefRegex = /(?:@|`)(cell-[a-zA-Z0-9-]+)`?/g
+    const parts: React.ReactNode[] = []
+    let lastIndex = 0
+    let match
+
+    while ((match = cellRefRegex.exec(text)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index))
+      }
+      // Add clickable cell reference
+      const cellId = match[1]
+      parts.push(
+        <button
+          key={`${cellId}-${match.index}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (onScrollToCell) {
+              onScrollToCell(cellId)
+            }
+          }}
+          className="text-purple-400 underline cursor-pointer hover:text-purple-300 transition-colors bg-transparent border-none p-0 font-inherit"
+          style={{ font: 'inherit' }}
+        >
+          @{cellId}
+        </button>
+      )
+      lastIndex = match.index + match[0].length
+    }
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex))
+    }
+    return parts.length > 0 ? parts : [text]
+  }
+
+  // Render message content with clickable cell references
+  const renderMessageContent = useCallback((content: string) => {
+    // Split by newlines to preserve whitespace formatting
+    const lines = content.split('\n')
+    return lines.map((line, lineIdx) => (
+      <span key={lineIdx}>
+        {processCellReferences(line)}
+        {lineIdx < lines.length - 1 && '\n'}
+      </span>
+    ))
+  }, [onScrollToCell])
 
   // Text colors based on theme
   const textPrimary = theme === 'light' ? '#1e293b' : '#ffffff'
@@ -405,7 +459,9 @@ export default function ChatPanel({
                     </div>
                   ) : (
                     <>
-                      <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                      <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                        {msg.role === 'assistant' ? renderMessageContent(msg.content) : msg.content}
+                      </div>
                       {msg.role === 'assistant' && msg.steps && renderSteps(msg.steps)}
                     </>
                   )}

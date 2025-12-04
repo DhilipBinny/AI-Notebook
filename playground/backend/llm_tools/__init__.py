@@ -47,6 +47,12 @@ from backend.llm_tools.tool_sandbox import (
     sandbox_sync_from_main,
     sandbox_status
 )
+from backend.llm_tools.tool_kernel_utils import (
+    get_last_error,
+    get_dataframe_info,
+    get_cell_outputs,
+    search_notebook
+)
 
 # List of all tool functions to pass to LLM (Chat Panel - full access)
 TOOL_FUNCTIONS = [
@@ -91,6 +97,12 @@ TOOL_FUNCTIONS = [
     list_imports,
     kernel_info,
 
+    # Kernel utilities (debugging & data inspection)
+    get_last_error,
+    get_dataframe_info,
+    get_cell_outputs,
+    search_notebook,
+
     # Sandbox execution (isolated testing)
     sandbox_execute,
     sandbox_reset,
@@ -106,6 +118,12 @@ AI_CELL_TOOLS = [
     list_functions,
     list_imports,
     kernel_info,
+
+    # Kernel utilities (debugging & data inspection)
+    get_last_error,
+    get_dataframe_info,
+    get_cell_outputs,
+    search_notebook,
 
     # Sandbox execution (isolated testing environment)
     sandbox_execute,

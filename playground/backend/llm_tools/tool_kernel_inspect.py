@@ -15,14 +15,30 @@ from backend.session_manager import get_current_session
 from backend.utils.util_func import log_debug_message
 
 
-def _get_session_kernel():
-    """Get kernel from current session, or fallback to global kernel"""
+def _get_session_kernel(auto_start: bool = True):
+    """Get kernel from current session, or fallback to global kernel.
+
+    Args:
+        auto_start: If True, automatically start the kernel if not running
+
+    Returns:
+        The kernel instance
+    """
     session = get_current_session()
     if session:
-        return session.kernel
+        kernel = session.kernel
+        # Auto-start kernel if not running
+        if auto_start and not kernel.is_alive():
+            log_debug_message("[Kernel Inspect] Auto-starting kernel for session")
+            kernel.start()
+        return kernel
     # Fallback to global kernel
     from backend.kernel_manager import get_kernel
-    return get_kernel()
+    kernel = get_kernel()
+    if auto_start and not kernel.is_alive():
+        log_debug_message("[Kernel Inspect] Auto-starting global kernel")
+        kernel.start()
+    return kernel
 
 
 def inspect_variables() -> dict:

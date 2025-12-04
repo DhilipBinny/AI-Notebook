@@ -507,18 +507,11 @@ class AnthropicClient(BaseLLMClient):
         try:
             log_debug_message(f"🤖 Anthropic AI Cell with tools starting...")
 
-            # Build AI Cell tool schemas
+            # Build AI Cell tool schemas (kernel inspection + sandbox only, no web search)
+            # AI Cell focuses on notebook context - web search disabled to encourage
+            # better use of kernel inspection and sandbox tools
             ai_cell_tools = self._build_ai_cell_tools()
             ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
-
-            # Add web search as a tool - let the LLM decide when to use it
-            # System prompt guides it to use kernel inspection tools FIRST
-            if self.enable_web_search:
-                ai_cell_tools.append({
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": 3
-                })
 
             messages = [{"role": "user", "content": prompt}]
 

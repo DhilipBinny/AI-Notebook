@@ -15,12 +15,12 @@ from backend.session_manager import get_session_manager
 
 
 def get_kernel_for_session(session_id: Optional[str] = None):
-    """Get kernel for session, or global kernel if no session"""
+    """Get kernel for session, creating session if needed, or global kernel if no session_id"""
     if session_id:
-        session = get_session_manager().get_session(session_id)
-        if session:
-            return session.kernel
-    # Fallback to global kernel
+        # Get or create session with the given session_id
+        session = get_session_manager().get_or_create_session(session_id, f"notebook-{session_id}")
+        return session.kernel
+    # Fallback to global kernel (backward compatibility)
     return get_kernel()
 
 # Create API Router

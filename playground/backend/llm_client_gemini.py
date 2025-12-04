@@ -616,12 +616,7 @@ class GeminiClient(BaseLLMClient):
     def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
-        Uses a two-phase approach:
-          - Phase 1: Check if web search is needed, perform Google Search separately
-          - Phase 2: Execute AI cell tools (kernel inspection + sandbox) with search context
-
-        Note: Gemini API doesn't allow mixing Google Search with custom function tools,
-        so we use the same two-phase approach as the chat panel.
+        Focuses on kernel inspection and sandbox tools only (no web search).
 
         Args:
             prompt: The full prompt including notebook context and user question
@@ -634,28 +629,13 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
             log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
 
-            # Extract the user question from the prompt for search detection
-            # The prompt format includes "USER QUESTION:\n{question}" at the end
-            user_question = prompt
-            if "USER QUESTION:" in prompt:
-                user_question = prompt.split("USER QUESTION:")[-1].strip()
+            # AI Cell focuses on notebook context and tools - no web search
+            # This ensures the LLM uses kernel inspection and sandbox tools effectively
+            final_prompt = prompt
 
-            # Phase 1: Check if web search is needed and perform it
-            search_context = ""
-            if self._needs_web_search(user_question):
-                log_debug_message(f"🌐 AI Cell: Web search triggered for question")
-                search_context = self._do_google_search(user_question)
-
-            # Build the final prompt with search context if available
-            if search_context:
-                final_prompt = f"{search_context}\n\n{prompt}"
-                log_debug_message(f"🤖 AI Cell: Using web search context")
-            else:
-                final_prompt = prompt
-
-            # Phase 2: Create chat session with AI Cell tools (inspection + sandbox)
+            # Create chat session with AI Cell tools (inspection + sandbox only)
             ai_cell_config = types.GenerateContentConfig(
-                system_instruction="You are an AI assistant in a notebook cell. Use kernel inspection tools to understand the notebook state and sandbox tools to test code safely. If web search results are provided, incorporate them in your response.",
+                system_instruction="You are an AI assistant in a notebook cell. Use kernel inspection tools to understand the notebook state and sandbox tools to test code safely. Focus on the notebook context provided.",
                 tools=AI_CELL_TOOLS,  # Kernel inspection + sandbox tools only
             )
 
