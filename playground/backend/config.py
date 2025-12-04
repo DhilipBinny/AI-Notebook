@@ -35,7 +35,8 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-1-20250805")
 #   "auto" - LLM automatically executes tools without user approval
 #   "manual" - LLM returns pending tool calls for user to approve/reject
 #   "ai_decide" - AI validator decides which tools need approval
-TOOL_EXECUTION_MODE = os.environ.get("TOOL_EXECUTION_MODE", "auto")
+# Note: Container default is "ai_decide", but UI sends actual selection on each call
+TOOL_EXECUTION_MODE = os.environ.get("TOOL_EXECUTION_MODE", "ai_decide")
 
 # Legacy support - AUTO_FUNCTION_CALLING maps to mode
 AUTO_FUNCTION_CALLING = os.environ.get("AUTO_FUNCTION_CALLING", "false").lower() == "true"
@@ -51,8 +52,9 @@ ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true
 # Auto-detect default based on availability
 # User can switch via UI dropdown at runtime
 def _get_default_provider():
-    """Auto-detect default provider - Gemini as default"""
-    return "gemini"
+    """Auto-detect default provider - Ollama as container default"""
+    # Note: Container defaults to Ollama, but UI sends actual selection on each call
+    return "ollama"
 
 # Read from environment or use default
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", _get_default_provider())

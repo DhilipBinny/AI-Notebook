@@ -42,10 +42,6 @@ export default function DashboardPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [downloadingProject, setDownloadingProject] = useState<string | null>(null)
-  const [logsProject, setLogsProject] = useState<Project | null>(null)
-  const [logs, setLogs] = useState<string[]>([])
-  const [logsConnected, setLogsConnected] = useState(false)
-  const logsWsRef = useRef<WebSocket | null>(null)
 
   // Workspace state
   const [workspaceList, setWorkspaceList] = useState<Workspace[]>([])
@@ -453,55 +449,9 @@ export default function DashboardPage() {
     }
   }
 
-  const handleViewLogs = async (project: Project) => {
-    setLogsProject(project)
-    setLogs([])
-    setLogsConnected(false)
-
-    try {
-      const { logs: initialLogs } = await playgrounds.getLogs(project.id, 100)
-      if (initialLogs) {
-        setLogs(initialLogs.split('\n'))
-      }
-    } catch (err) {
-      console.error('Failed to fetch initial logs:', err)
-    }
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const token = localStorage.getItem('access_token')
-    const wsUrl = `${wsProtocol}//${window.location.host}/api/projects/${project.id}/playground/logs/stream?token=${token}`
-
-    const ws = new WebSocket(wsUrl)
-    logsWsRef.current = ws
-
-    ws.onopen = () => {
-      setLogsConnected(true)
-    }
-
-    ws.onmessage = (event) => {
-      const data = event.data
-      if (data) {
-        setLogs(prev => [...prev, data].slice(-500))
-      }
-    }
-
-    ws.onerror = () => {
-      setLogsConnected(false)
-    }
-
-    ws.onclose = () => {
-      setLogsConnected(false)
-    }
-  }
-
-  const handleCloseLogs = () => {
-    if (logsWsRef.current) {
-      logsWsRef.current.close()
-      logsWsRef.current = null
-    }
-    setLogsProject(null)
-    setLogs([])
-    setLogsConnected(false)
+  const handleViewLogs = (project: Project) => {
+    // Open logs in new tab with xterm.js support
+    window.open(`/logs/${project.id}`, '_blank')
   }
 
   const handleDownloadProject = async (project: Project) => {
@@ -1460,35 +1410,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Logs Modal */}
-      {logsProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleCloseLogs} />
-          <div className="relative w-[90vw] h-[80vh] rounded-2xl bg-slate-900 border border-white/10 shadow-2xl flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <h3 className="text-white font-semibold">Logs: {logsProject.name}</h3>
-                <div className={`flex items-center gap-1.5 text-xs ${logsConnected ? 'text-emerald-400' : 'text-gray-400'}`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${logsConnected ? 'bg-emerald-400' : 'bg-gray-500'}`} />
-                  {logsConnected ? 'Live' : 'Connecting...'}
-                </div>
-              </div>
-              <button onClick={handleCloseLogs} className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-4 font-mono text-xs bg-black/50">
-              {logs.length === 0 ? (
-                <div className="text-gray-500 text-center py-8">Waiting for logs...</div>
-              ) : (
-                logs.map((line, i) => (
-                  <div key={i} className={`${line.includes('ERROR') ? 'text-red-400' : line.includes('WARNING') ? 'text-amber-400' : 'text-gray-300'}`}>{line || '\u00A0'}</div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

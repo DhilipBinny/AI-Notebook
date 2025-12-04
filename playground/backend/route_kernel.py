@@ -33,25 +33,32 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self._last_status: Optional[bool] = None
+        self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self.active_connections.add(websocket)
+        async with self._lock:
+            self.active_connections.add(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.discard(websocket)
+    async def disconnect(self, websocket: WebSocket):
+        async with self._lock:
+            self.active_connections.discard(websocket)
 
     async def broadcast_status(self, running: bool, execution_count: int):
         """Broadcast kernel status to all connected clients"""
         message = {"type": "kernel_status", "running": running, "execution_count": execution_count}
         disconnected = set()
-        for connection in self.active_connections:
+        async with self._lock:
+            connections = self.active_connections.copy()
+        for connection in connections:
             try:
                 await connection.send_json(message)
-            except:
+            except Exception:
                 disconnected.add(connection)
         # Clean up disconnected
-        self.active_connections -= disconnected
+        if disconnected:
+            async with self._lock:
+                self.active_connections -= disconnected
 
 ws_manager = ConnectionManager()
 
@@ -166,9 +173,9 @@ async def websocket_kernel_status(websocket: WebSocket):
                 last_status = current_status
 
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        await ws_manager.disconnect(websocket)
     except Exception:
-        ws_manager.disconnect(websocket)
+        await ws_manager.disconnect(websocket)
 
 
 # === Code Execution Endpoints ===

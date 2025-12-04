@@ -235,9 +235,11 @@ export const chat = {
 
   executeTools: async (
     projectId: string,
-    approvedTools: PendingToolCall[]
+    approvedTools: PendingToolCall[],
+    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
+    llmProvider: string = 'gemini'
   ): Promise<ChatResponse> => {
-    const { data } = await api.post(`/projects/${projectId}/chat/execute-tools`, {
+    const { data } = await api.post(`/projects/${projectId}/chat/execute-tools?tool_mode=${toolMode}&llm_provider=${llmProvider}`, {
       approved_tools: approvedTools,
     })
     return data

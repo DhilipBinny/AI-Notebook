@@ -175,12 +175,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     confirmColor?: string
   } | null>(null)
 
-  // Logs state
-  const [showLogs, setShowLogs] = useState(false)
-  const [logs, setLogs] = useState<string[]>([])
-  const [logsConnected, setLogsConnected] = useState(false)
-  const logsWsRef = useRef<WebSocket | null>(null)
-  const logsEndRef = useRef<HTMLDivElement>(null)
 
   // Kernel hook - connect to playground when running
   // Construct URL through nginx proxy: /playground/{container_name}
@@ -780,77 +774,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [currentProject, projectId, cells.length, isDirty, handleSave, playground, llmProvider, addCell])
 
-  // Handle logs toggle
-  const handleToggleLogs = useCallback(async () => {
-    if (showLogs) {
-      // Close logs
-      if (logsWsRef.current) {
-        logsWsRef.current.close()
-        logsWsRef.current = null
-      }
-      setShowLogs(false)
-      setLogs([])
-      setLogsConnected(false)
-    } else {
-      // Open logs
-      setShowLogs(true)
-      setLogs([])
-      setLogsConnected(false)
-
-      // Fetch initial logs
-      try {
-        const { logs: initialLogs } = await playgrounds.getLogs(projectId, 100)
-        if (initialLogs) {
-          setLogs(initialLogs.split('\n'))
-        }
-      } catch (err) {
-        console.error('Failed to fetch initial logs:', err)
-      }
-
-      // Connect WebSocket for streaming logs
-      const token = localStorage.getItem('access_token')
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${wsProtocol}//${window.location.host}/api/projects/${projectId}/playground/logs/stream?token=${token}`
-
-      const ws = new WebSocket(wsUrl)
-      logsWsRef.current = ws
-
-      ws.onopen = () => {
-        setLogsConnected(true)
-      }
-
-      ws.onmessage = (event) => {
-        const data = event.data
-        if (data) {
-          setLogs(prev => [...prev, data].slice(-500))
-        }
-      }
-
-      ws.onclose = () => {
-        setLogsConnected(false)
-      }
-
-      ws.onerror = () => {
-        setLogsConnected(false)
-      }
-    }
-  }, [showLogs, projectId])
-
-  // Auto-scroll logs to bottom
-  useEffect(() => {
-    if (logsEndRef.current && showLogs) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [logs, showLogs])
-
-  // Cleanup logs WebSocket on unmount
-  useEffect(() => {
-    return () => {
-      if (logsWsRef.current) {
-        logsWsRef.current.close()
-      }
-    }
-  }, [])
+  // Handle logs - open in new tab
+  const handleOpenLogs = useCallback(() => {
+    window.open(`/logs/${projectId}`, '_blank')
+  }, [projectId])
 
   // Get selected cell index helper
   const getSelectedCellIndex = useCallback(() => {
@@ -1158,7 +1085,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const handleApproveTools = useCallback(async (tools: PendingToolCall[]) => {
     setChatLoading(true)
     try {
-      const response = await chat.executeTools(projectId, tools)
+      const response = await chat.executeTools(projectId, tools, toolMode, llmProvider)
 
       if (response.success) {
         // Check for more pending tools
@@ -1244,7 +1171,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, reloadNotebook])
+  }, [projectId, toolMode, llmProvider, reloadNotebook])
 
   const handleRejectTools = useCallback(() => {
     setPendingTools([])
@@ -1442,96 +1369,14 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onRestartKernel={handleRestartKernel}
         showChat={showChat}
         onToggleChat={() => setShowChat(!showChat)}
-        showLogs={showLogs}
-        onToggleLogs={handleToggleLogs}
-        logsConnected={logsConnected}
+        onOpenLogs={handleOpenLogs}
         onOpenTerminal={() => window.open(`/terminal/${projectId}`, '_blank')}
       />
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Notebook panel wrapper - contains both notebook and logs overlay */}
+        {/* Notebook panel wrapper */}
         <div className="flex-1 relative" style={{ backgroundColor: 'var(--nb-bg-primary)' }}>
-          {/* Logs overlay panel - positioned inside notebook wrapper so it doesn't overlap chat */}
-          {showLogs && (
-            <div className="absolute inset-0 z-40 flex flex-col bg-black/95 backdrop-blur-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-white font-semibold flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Playground Logs
-                  </h3>
-                  <div className={`flex items-center gap-1.5 text-xs ${logsConnected ? 'text-emerald-400' : 'text-gray-400'}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${logsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
-                    {logsConnected ? 'Live' : 'Connecting...'}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setLogs([])}
-                    className="px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                    title="Clear logs"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    onClick={handleToggleLogs}
-                    className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                    title="Close logs"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 font-mono text-xs min-h-0">
-                {logs.length === 0 ? (
-                  <div className="text-gray-500 text-center py-8">Waiting for logs...</div>
-                ) : (
-                  logs.map((line, i) => {
-                    const segments = parseAnsi(line)
-                    const plainText = segments.map(s => s.text).join('')
-                    // Determine line-level color based on log level keywords
-                    const lineColor = plainText.includes('ERROR') || plainText.includes('error')
-                      ? 'text-red-400'
-                      : plainText.includes('WARNING') || plainText.includes('warning')
-                      ? 'text-amber-400'
-                      : plainText.includes('INFO')
-                      ? 'text-blue-400'
-                      : 'text-gray-300'
-
-                    // Check if any segment has ANSI colors
-                    const hasAnsiColors = segments.some(s => s.color)
-
-                    return (
-                      <div key={i} className={hasAnsiColors ? '' : lineColor}>
-                        {segments.length === 0 || (segments.length === 1 && !segments[0].text) ? (
-                          '\u00A0'
-                        ) : (
-                          segments.map((seg, j) => (
-                            <span
-                              key={j}
-                              style={{
-                                color: seg.color,
-                                fontWeight: seg.bold ? 'bold' : undefined,
-                              }}
-                            >
-                              {seg.text}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    )
-                  })
-                )}
-                <div ref={logsEndRef} />
-              </div>
-            </div>
-          )}
-
           {/* Notebook scroll area */}
           <div className="absolute inset-0 overflow-y-auto p-4">
           <div

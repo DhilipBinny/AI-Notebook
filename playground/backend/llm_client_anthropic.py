@@ -7,6 +7,7 @@ Includes web search tool for real-time web information.
 """
 
 import json
+import copy
 from typing import List, Dict, Any, Optional, Union
 import anthropic
 from anthropic import Anthropic
@@ -299,7 +300,7 @@ class AnthropicClient(BaseLLMClient):
 
         if response.stop_reason == "tool_use":
             # Store state for later execution
-            self._pending_messages = messages.copy()
+            self._pending_messages = copy.deepcopy(messages)
             self._pending_tool_calls = []
 
             # Add assistant message to pending messages
@@ -359,7 +360,7 @@ class AnthropicClient(BaseLLMClient):
             if not self._pending_messages:
                 return "Error: No pending tool calls to execute"
 
-            messages = self._pending_messages.copy()
+            messages = copy.deepcopy(self._pending_messages)
 
             # Execute approved tools and add results
             for tool_call in approved_tool_calls:

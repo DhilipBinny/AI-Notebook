@@ -44,7 +44,13 @@ def execute_python_code(code: str) -> dict:
 
     # Auto-start kernel if not running
     if not kernel.is_alive():
-        kernel.start()
+        if not kernel.start():
+            return {
+                "success": False,
+                "output": "",
+                "error": "Failed to start kernel. Please try again.",
+                "execution_count": None
+            }
 
     result = kernel.execute(code)
 

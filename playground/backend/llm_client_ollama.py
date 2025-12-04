@@ -9,10 +9,11 @@ Models like llama3.1, mistral, and qwen2.5 support tools.
 """
 
 import json
+import copy
 from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 
-from backend.llm_client_openai import OpenAIClient, _build_openai_tools, TOOL_MAP
+from backend.llm_client_openai import OpenAIClient, _build_openai_tools, TOOL_MAP, _safe_json_loads
 from backend.llm_client_base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import AI_CELL_TOOLS
@@ -150,7 +151,7 @@ class OllamaClient(BaseLLMClient):
                 # Execute each tool call
                 for tool_call in response_message.tool_calls:
                     func_name = tool_call.function.name
-                    func_args = json.loads(tool_call.function.arguments)
+                    func_args = _safe_json_loads(tool_call.function.arguments)
                     log_debug_message(f"🔧 Ollama calling tool: {func_name}")
 
                     result = self._execute_tool(func_name, func_args)
@@ -193,7 +194,7 @@ class OllamaClient(BaseLLMClient):
 
         if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
             # Store state for later execution
-            self._pending_messages = messages.copy()
+            self._pending_messages = copy.deepcopy(messages)
             self._pending_tool_calls = []
 
             pending_tools = []
@@ -201,7 +202,7 @@ class OllamaClient(BaseLLMClient):
                 tool_info = {
                     "id": tc.id,
                     "name": tc.function.name,
-                    "arguments": json.loads(tc.function.arguments)
+                    "arguments": _safe_json_loads(tc.function.arguments)
                 }
                 pending_tools.append(tool_info)
                 self._pending_tool_calls.append({
@@ -250,7 +251,7 @@ class OllamaClient(BaseLLMClient):
             if not self._pending_messages:
                 return "Error: No pending tool calls to execute"
 
-            messages = self._pending_messages.copy()
+            messages = copy.deepcopy(self._pending_messages)
 
             # Execute approved tools and add results
             for tool_call in approved_tool_calls:
@@ -408,7 +409,7 @@ class OllamaClient(BaseLLMClient):
 
                 for tool_call in message.tool_calls:
                     tool_name = tool_call.function.name
-                    tool_args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+                    tool_args = _safe_json_loads(tool_call.function.arguments)
 
                     log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
 

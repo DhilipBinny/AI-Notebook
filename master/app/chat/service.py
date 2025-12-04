@@ -269,6 +269,8 @@ class ChatService:
         project: Project,
         playground: Playground,
         approved_tools: List[PendingToolCall],
+        tool_mode: str,
+        llm_provider: str,
         chat_id: str = DEFAULT_CHAT_ID,
     ) -> ChatResponse:
         """
@@ -278,6 +280,8 @@ class ChatService:
             project: Project instance
             playground: Running playground
             approved_tools: Tools approved by user
+            tool_mode: "auto", "manual", or "ai_decide"
+            llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
             chat_id: Chat ID (default: "default")
 
         Returns:
@@ -292,6 +296,23 @@ class ChatService:
 
         try:
             async with httpx.AsyncClient() as client:
+                # Set the LLM provider before executing tools (important after container restart)
+                await client.post(
+                    f"{playground.internal_url}/llm/provider",
+                    headers={"X-Internal-Secret": playground.internal_secret},
+                    json={"provider": llm_provider},
+                    timeout=10,
+                )
+
+                # Set tool execution mode
+                await client.post(
+                    f"{playground.internal_url}/llm/tool-mode",
+                    headers={"X-Internal-Secret": playground.internal_secret},
+                    json={"mode": tool_mode},
+                    timeout=10,
+                )
+
+                # Execute the approved tools
                 response = await client.post(
                     f"{playground.internal_url}/chat/execute-tools",
                     headers={"X-Internal-Secret": playground.internal_secret},

@@ -7,6 +7,7 @@ Includes web search tool for real-time web information.
 """
 
 import json
+import copy
 from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 
@@ -21,6 +22,17 @@ WEB_SEARCH_TOOL = {
     "type": "web_search_preview",
     "search_context_size": "medium"  # Options: "low", "medium", "high"
 }
+
+
+def _safe_json_loads(json_str: str, default: Dict = None) -> Dict[str, Any]:
+    """Safely parse JSON string, returning default on error."""
+    if default is None:
+        default = {}
+    try:
+        return json.loads(json_str) if json_str else default
+    except json.JSONDecodeError as e:
+        log_debug_message(f"⚠️ JSON parse error: {e} - Input: {json_str[:100]}...")
+        return default
 
 
 # Build OpenAI tool schemas from our function definitions
@@ -254,7 +266,7 @@ class OpenAIClient(BaseLLMClient):
                 # Execute each tool call
                 for tool_call in response_message.tool_calls:
                     func_name = tool_call.function.name
-                    func_args = json.loads(tool_call.function.arguments)
+                    func_args = _safe_json_loads(tool_call.function.arguments)
                     log_debug_message(f"🔧 OpenAI calling tool: {func_name}")
                     result = self._execute_tool(func_name, func_args)
 
@@ -289,7 +301,7 @@ class OpenAIClient(BaseLLMClient):
 
         if response_message.tool_calls:
             # Store state for later execution
-            self._pending_messages = messages.copy()
+            self._pending_messages = copy.deepcopy(messages)
             self._pending_tool_calls = []
 
             pending_tools = []
@@ -297,7 +309,7 @@ class OpenAIClient(BaseLLMClient):
                 tool_info = {
                     "id": tc.id,
                     "name": tc.function.name,
-                    "arguments": json.loads(tc.function.arguments)
+                    "arguments": _safe_json_loads(tc.function.arguments)
                 }
                 pending_tools.append(tool_info)
                 self._pending_tool_calls.append({
@@ -355,7 +367,7 @@ class OpenAIClient(BaseLLMClient):
             if not self._pending_messages:
                 return "Error: No pending tool calls to execute"
 
-            messages = self._pending_messages.copy()
+            messages = copy.deepcopy(self._pending_messages)
 
             # Execute approved tools and add results
             for tool_call in approved_tool_calls:
@@ -514,7 +526,7 @@ class OpenAIClient(BaseLLMClient):
 
                 for tool_call in message.tool_calls:
                     tool_name = tool_call.function.name
-                    tool_args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+                    tool_args = _safe_json_loads(tool_call.function.arguments)
 
                     log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
 

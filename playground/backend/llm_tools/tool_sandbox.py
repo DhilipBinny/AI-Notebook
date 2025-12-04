@@ -281,8 +281,8 @@ for _name in dir():
         _type_name = type(_obj).__name__
         if _type_name not in _skip_types:
             _vars.append(_name)
-    except:
-        pass
+    except Exception:
+        pass  # Skip variables that can't be evaluated
 print(json.dumps(_vars))
 '''
         result = main_kernel.execute(get_vars_code)
@@ -294,7 +294,8 @@ print(json.dumps(_vars))
                         output_text += output.get("text", "")
                 import json
                 vars_to_copy = json.loads(output_text.strip())
-            except:
+            except (json.JSONDecodeError, ValueError) as e:
+                log_debug_message(f"[Sandbox] Failed to parse variable list: {e}")
                 vars_to_copy = []
         else:
             vars_to_copy = []

@@ -358,6 +358,8 @@ async def send_message(
 async def execute_tools(
     project_id: str,
     request: ExecuteToolsRequest,
+    tool_mode: str = "manual",
+    llm_provider: str = "gemini",
     chat_id: str = "default",
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -367,6 +369,13 @@ async def execute_tools(
 
     After the AI returns pending tool calls, the user can approve them
     and call this endpoint to execute the approved tools.
+
+    Args:
+        project_id: Project ID
+        request: Approved tools to execute
+        tool_mode: "auto", "manual", or "ai_decide"
+        llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+        chat_id: Chat ID (default: "default")
     """
     # Verify project ownership
     project_service = ProjectService(db)
@@ -397,6 +406,8 @@ async def execute_tools(
         project=project,
         playground=playground,
         approved_tools=request.approved_tools,
+        tool_mode=tool_mode,
+        llm_provider=llm_provider,
         chat_id=chat_id,
     )
 

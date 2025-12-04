@@ -98,6 +98,9 @@ class Session:
         """Cleanup session resources"""
         if self.kernel.is_alive():
             self.kernel.stop()
+        # Cleanup sandbox kernel for this session
+        from backend.llm_tools.tool_sandbox import cleanup_sandbox
+        cleanup_sandbox(self.session_id)
         self.notebook_state = {"cells": [], "updates": []}
         print(f"[Session] Cleaned up session {self.session_id}")
 
@@ -162,8 +165,24 @@ class SessionManager:
                 session.update_activity()
                 return session
 
-        # Create new session with the specified ID (release lock first)
-        return self.create_session(notebook_name, session_id=session_id)
+            # Create new session inside the lock to prevent race condition
+            # Check if we've reached max sessions
+            if len(self._sessions) >= self.max_sessions:
+                # Try to cleanup inactive sessions first
+                self._cleanup_inactive_sessions()
+
+                # If still at max, raise error
+                if len(self._sessions) >= self.max_sessions:
+                    raise RuntimeError(f"Maximum sessions ({self.max_sessions}) reached. Close some notebooks first.")
+
+            # Create new session
+            session = Session(session_id, notebook_name)
+            self._sessions[session_id] = session
+
+            print(f"[SessionManager] Created session {session_id} for {notebook_name}")
+            print(f"[SessionManager] Active sessions: {len(self._sessions)}")
+
+            return session
 
     def get_session(self, session_id: str) -> Optional[Session]:
         """
