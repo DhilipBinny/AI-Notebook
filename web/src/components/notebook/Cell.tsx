@@ -1,6 +1,24 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+
+// Copy icon component for reuse
+function CopyIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+// Check icon for copy feedback
+function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Cell as CellType, CellOutput } from '@/types'
@@ -285,6 +303,42 @@ export default function Cell({
   // isEditMode from parent is the source of truth
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevSourceRef = useRef(cell.source)
+
+  // Copy feedback state
+  const [copiedSource, setCopiedSource] = useState(false)
+  const [copiedOutput, setCopiedOutput] = useState(false)
+
+  // Copy to clipboard with feedback
+  const copyToClipboard = useCallback((text: string, type: 'source' | 'output') => {
+    navigator.clipboard.writeText(text)
+    if (type === 'source') {
+      setCopiedSource(true)
+      setTimeout(() => setCopiedSource(false), 2000)
+    } else {
+      setCopiedOutput(true)
+      setTimeout(() => setCopiedOutput(false), 2000)
+    }
+  }, [])
+
+  // Extract plain text from outputs for copying
+  const getOutputText = useCallback(() => {
+    if (!cell.outputs || cell.outputs.length === 0) return ''
+    return cell.outputs.map(output => {
+      if (output.output_type === 'stream') {
+        return Array.isArray(output.text) ? output.text.join('') : output.text || ''
+      }
+      if (output.output_type === 'execute_result' || output.output_type === 'display_data') {
+        if (output.data?.['text/plain']) {
+          const text = output.data['text/plain']
+          return Array.isArray(text) ? text.join('') : text
+        }
+      }
+      if (output.output_type === 'error') {
+        return `${output.ename}: ${output.evalue}\n${output.traceback?.join('\n') || ''}`
+      }
+      return ''
+    }).filter(Boolean).join('\n')
+  }, [cell.outputs])
 
   // For markdown cells, determine if we should show rendered view
   // Show textarea if: in edit mode, OR no content yet, OR is code/raw cell
@@ -886,6 +940,32 @@ export default function Cell({
               </button>
             )
           )}
+
+          {/* Copy buttons */}
+          {/* Copy source/content */}
+          {cell.source.trim() && (
+            <button
+              onClick={(e) => { e.stopPropagation(); copyToClipboard(cell.source, 'source') }}
+              className="p-1 rounded hover:opacity-80 transition-colors"
+              style={{ color: copiedSource ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
+              title={cell.type === 'code' ? 'Copy code' : 'Copy content'}
+            >
+              {copiedSource ? <CheckIcon /> : <CopyIcon />}
+            </button>
+          )}
+          {/* Copy output (code cells only) */}
+          {cell.type === 'code' && cell.outputs && cell.outputs.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); copyToClipboard(getOutputText(), 'output') }}
+              className="p-1 rounded hover:opacity-80 transition-colors flex items-center gap-0.5"
+              style={{ color: copiedOutput ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
+              title="Copy output"
+            >
+              {copiedOutput ? <CheckIcon /> : <CopyIcon />}
+              <span className="text-[10px]">Out</span>
+            </button>
+          )}
+
           <button
             onClick={(e) => { e.stopPropagation(); onDelete() }}
             className="p-1 rounded hover:opacity-80"

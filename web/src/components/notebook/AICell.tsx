@@ -1,6 +1,24 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+
+// Copy icon component for reuse
+function CopyIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  )
+}
+
+// Check icon for copy feedback
+function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Cell as CellType, AICellData } from '@/types'
@@ -42,6 +60,22 @@ export default function AICell({
   const responseRef = useRef<HTMLDivElement>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [localPrompt, setLocalPrompt] = useState(cell.ai_data?.user_prompt || '')
+
+  // Copy feedback state
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+  const [copiedResponse, setCopiedResponse] = useState(false)
+
+  // Copy to clipboard with feedback
+  const copyToClipboard = useCallback((text: string, type: 'prompt' | 'response') => {
+    navigator.clipboard.writeText(text)
+    if (type === 'prompt') {
+      setCopiedPrompt(true)
+      setTimeout(() => setCopiedPrompt(false), 2000)
+    } else {
+      setCopiedResponse(true)
+      setTimeout(() => setCopiedResponse(false), 2000)
+    }
+  }, [])
 
   const aiData = cell.ai_data || {
     user_prompt: '',
@@ -332,8 +366,20 @@ export default function AICell({
 
       {/* Prompt Input */}
       <div className="px-3 py-2">
-        <div className="text-xs mb-1" style={{ color: 'var(--nb-text-muted)' }}>
-          Ask AI:
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+            Ask AI:
+          </span>
+          {aiData.user_prompt && (
+            <button
+              onClick={(e) => { e.stopPropagation(); copyToClipboard(aiData.user_prompt, 'prompt') }}
+              className="p-1 rounded hover:opacity-80 transition-colors"
+              style={{ color: copiedPrompt ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
+              title="Copy prompt"
+            >
+              {copiedPrompt ? <CheckIcon className="w-3.5 h-3.5" /> : <CopyIcon className="w-3.5 h-3.5" />}
+            </button>
+          )}
         </div>
         {isEditing || !aiData.user_prompt ? (
           <textarea
@@ -386,8 +432,20 @@ export default function AICell({
             backgroundColor: 'var(--nb-bg-output)',
           }}
         >
-          <div className="text-xs mb-2" style={{ color: 'var(--nb-text-muted)' }}>
-            AI Response:
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+              AI Response:
+            </span>
+            {aiData.llm_response && (
+              <button
+                onClick={(e) => { e.stopPropagation(); copyToClipboard(aiData.llm_response, 'response') }}
+                className="p-1 rounded hover:opacity-80 transition-colors"
+                style={{ color: copiedResponse ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
+                title="Copy response"
+              >
+                {copiedResponse ? <CheckIcon className="w-3.5 h-3.5" /> : <CopyIcon className="w-3.5 h-3.5" />}
+              </button>
+            )}
           </div>
 
           {aiData.status === 'running' && (

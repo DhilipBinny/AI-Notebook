@@ -5,7 +5,7 @@ import { useTheme, type NotebookTheme } from '@/contexts/ThemeContext'
 interface NotebookToolbarProps {
   onAddCode: () => void
   onAddMarkdown: () => void
-  onAddNotes: () => void
+  onAddAI: () => void
   onRunAll: () => void
   onClearOutputs: () => void
   onDeleteAllCells: () => void
@@ -32,7 +32,7 @@ const themeOptions: { value: NotebookTheme; label: string; icon: string }[] = [
 export default function NotebookToolbar({
   onAddCode,
   onAddMarkdown,
-  onAddNotes,
+  onAddAI,
   onRunAll,
   onClearOutputs,
   onDeleteAllCells,
@@ -80,15 +80,14 @@ export default function NotebookToolbar({
           Markdown
         </button>
         <button
-          onClick={onAddNotes}
-          className="px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white shadow-md shadow-amber-500/20 hover:shadow-amber-500/30"
+          onClick={onAddAI}
+          className="px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white shadow-md shadow-violet-500/20 hover:shadow-violet-500/30"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
           </svg>
-          Notes
+          AI
         </button>
-
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
         {/* Run controls - gradient icon buttons */}
@@ -166,133 +165,128 @@ export default function NotebookToolbar({
             <span className="text-xs text-gray-400">Shortcuts</span>
           </button>
 
-          {/* Dropdown on hover */}
-          <div className="absolute top-full left-0 mt-1 w-72 py-2 rounded-lg bg-gray-800 border border-gray-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 max-h-[70vh] overflow-y-auto">
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b border-gray-700 mb-1">Navigation & Execution</div>
+          {/* Dropdown on hover - Two column layout */}
+          <div className="absolute top-full left-0 mt-1 w-[520px] p-3 rounded-lg bg-gray-800 border border-gray-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+            <div className="grid grid-cols-2 gap-4">
+              {/* Left Column */}
+              <div>
+                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2">Navigation & Execution</div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Run cell & advance</span>
+                    <div className="flex items-center gap-0.5">
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">⇧</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↵</kbd>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Save notebook</span>
+                    <div className="flex items-center gap-0.5">
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">S</kbd>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Enter edit mode</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↵</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Exit edit mode</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Esc</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Navigate cells</span>
+                    <div className="flex items-center gap-0.5">
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↑</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↓</kbd>
+                    </div>
+                  </div>
+                </div>
 
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Run cell & advance</span>
-              <div className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Shift</kbd>
-                <span className="text-[10px] text-gray-500">+</span>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Enter</kbd>
+                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2 mt-3">Cell Type</div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">To code</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Y</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">To markdown</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">M</kbd>
+                  </div>
+                </div>
+
+                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2 mt-3">Code Editing</div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Toggle comment</span>
+                    <div className="flex items-center gap-0.5">
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">/</kbd>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Indent</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Tab</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Outdent</span>
+                    <div className="flex items-center gap-0.5">
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">⇧</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Tab</kbd>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Save notebook</span>
-              <div className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
-                <span className="text-[10px] text-gray-500">+</span>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">S</kbd>
+              {/* Right Column */}
+              <div>
+                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2">Cell Manipulation</div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Insert above</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">A</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Insert below</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">B</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Delete cell</span>
+                    <div className="flex items-center gap-0.5">
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">D</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">D</kbd>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Cut cell</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">X</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Copy cell</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">C</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Paste below</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">V</kbd>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Undo delete</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Z</kbd>
+                  </div>
+                </div>
+
+                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2 mt-3">Mouse Actions</div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Resize width</span>
+                    <span className="text-[9px] text-gray-500">Drag edges</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
+                    <span className="text-gray-300">Insert cell</span>
+                    <span className="text-[9px] text-gray-500">Hover between</span>
+                  </div>
+                </div>
               </div>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Enter edit mode</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Enter</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Exit edit mode</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Esc</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Navigate cells</span>
-              <div className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↑</kbd>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↓</kbd>
-              </div>
-            </div>
-
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b border-gray-700 border-t mt-2 pt-2 mb-1">Cell Manipulation (Command Mode)</div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Insert cell above</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">A</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Insert cell below</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">B</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Delete cell</span>
-              <div className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">D</kbd>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">D</kbd>
-              </div>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Cut cell</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">X</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Copy cell</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">C</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Paste cell below</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">V</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Undo cell deletion</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Z</kbd>
-            </div>
-
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b border-gray-700 border-t mt-2 pt-2 mb-1">Cell Type (Command Mode)</div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Change to code</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Y</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Change to markdown</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">M</kbd>
-            </div>
-
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b border-gray-700 border-t mt-2 pt-2 mb-1">Code Editing (Edit Mode)</div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Toggle comment</span>
-              <div className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
-                <span className="text-[10px] text-gray-500">+</span>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">/</kbd>
-              </div>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Indent</span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Tab</kbd>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Outdent</span>
-              <div className="flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Shift</kbd>
-                <span className="text-[10px] text-gray-500">+</span>
-                <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Tab</kbd>
-              </div>
-            </div>
-
-            <div className="px-3 py-1.5 text-xs font-medium text-gray-400 border-b border-gray-700 border-t mt-2 pt-2 mb-1">Mouse Actions</div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Resize notebook width</span>
-              <span className="text-[10px] text-gray-400">Drag edges</span>
-            </div>
-
-            <div className="px-3 py-2 flex items-center justify-between hover:bg-white/5">
-              <span className="text-sm text-gray-300">Insert cell</span>
-              <span className="text-[10px] text-gray-400">Hover between cells</span>
             </div>
           </div>
         </div>

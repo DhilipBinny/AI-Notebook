@@ -501,7 +501,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }
 
   // Cell handlers
-  const handleAddCell = useCallback((type: 'code' | 'markdown' | 'raw') => {
+  const handleAddCell = useCallback((type: 'code' | 'markdown' | 'ai') => {
     const newCell = createCell(type)
     const selectedIndex = cells.findIndex((c) => c.id === selectedCellId)
     addCell(newCell, selectedIndex >= 0 ? selectedIndex + 1 : undefined)
@@ -509,7 +509,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [cells, selectedCellId, addCell])
 
   // Insert cell at specific position (used by insert buttons between cells)
-  const handleInsertCellAt = useCallback((type: 'code' | 'markdown' | 'raw' | 'ai', index: number) => {
+  const handleInsertCellAt = useCallback((type: 'code' | 'markdown' | 'ai', index: number) => {
     const newCell = createCell(type)
     addCell(newCell, index)
     setSelectedCellId(newCell.id)
@@ -1541,7 +1541,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       <NotebookToolbar
         onAddCode={() => handleAddCell('code')}
         onAddMarkdown={() => handleAddCell('markdown')}
-        onAddNotes={() => handleAddCell('raw')}
+        onAddAI={() => handleAddCell('ai')}
         onRunAll={handleRunAll}
         onClearOutputs={handleClearOutputs}
         onDeleteAllCells={handleDeleteAllCells}
@@ -1564,7 +1564,19 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         {/* Notebook panel wrapper */}
         <div className="flex-1 relative" style={{ backgroundColor: 'var(--nb-bg-primary)' }}>
           {/* Notebook scroll area */}
-          <div className="absolute inset-0 overflow-y-auto p-4">
+          <div
+            className="absolute inset-0 overflow-y-auto p-4"
+            onClick={(e) => {
+              // Exit edit mode when clicking on empty space (not on a cell)
+              const target = e.target as HTMLElement
+              // Check if click is on a cell or inside a cell
+              const isInsideCell = target.closest('.cell-wrapper') !== null
+              const isInsideToolbar = target.closest('[class*="NotebookToolbar"]') !== null
+              if (!isInsideCell && !isInsideToolbar && isEditMode) {
+                setIsEditMode(false)
+              }
+            }}
+          >
           <div
             ref={notebookContainerRef}
             className={`mx-auto space-y-4 relative ${isResizing ? 'select-none' : ''}`}
@@ -1640,7 +1652,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 <CellInsertButtons
                   onInsertCode={() => handleInsertCellAt('code', 0)}
                   onInsertMarkdown={() => handleInsertCellAt('markdown', 0)}
-                  onInsertNotes={() => handleInsertCellAt('raw', 0)}
                   onInsertAI={() => handleInsertCellAt('ai', 0)}
                 />
 
@@ -1708,7 +1719,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                     <CellInsertButtons
                       onInsertCode={() => handleInsertCellAt('code', index + 1)}
                       onInsertMarkdown={() => handleInsertCellAt('markdown', index + 1)}
-                      onInsertNotes={() => handleInsertCellAt('raw', index + 1)}
                       onInsertAI={() => handleInsertCellAt('ai', index + 1)}
                     />
                   </div>
@@ -1750,6 +1760,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               onSummarize={handleSummarize}
               isSummarizing={isSummarizing}
               onScrollToCell={handleScrollToCell}
+              onPanelClick={() => {
+                if (isEditMode) {
+                  setIsEditMode(false)
+                }
+              }}
             />
           </div>
         )}

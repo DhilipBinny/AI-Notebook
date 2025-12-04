@@ -5,14 +5,12 @@ import { useState } from 'react'
 interface CellInsertButtonsProps {
   onInsertCode: () => void
   onInsertMarkdown: () => void
-  onInsertNotes: () => void
   onInsertAI?: () => void
 }
 
 export default function CellInsertButtons({
   onInsertCode,
   onInsertMarkdown,
-  onInsertNotes,
   onInsertAI,
 }: CellInsertButtonsProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -74,23 +72,6 @@ export default function CellInsertButtons({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Markdown
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onInsertNotes()
-          }}
-          className="flex items-center gap-1 px-2 py-0.5 text-xs rounded hover:opacity-80 transition-colors"
-          style={{
-            backgroundColor: 'var(--nb-accent-notes)',
-            color: '#11111b',
-          }}
-          title="Insert Notes cell"
-        >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Notes
         </button>
         {onInsertAI && (
           <button

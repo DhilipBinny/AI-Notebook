@@ -28,6 +28,7 @@ interface ChatPanelProps {
   onSummarize: () => void
   isSummarizing: boolean
   onScrollToCell?: (cellId: string) => void
+  onPanelClick?: () => void
 }
 
 // Theme-aware colors for chat panel
@@ -76,6 +77,7 @@ export default function ChatPanel({
   onSummarize,
   isSummarizing,
   onScrollToCell,
+  onPanelClick,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
@@ -83,6 +85,7 @@ export default function ChatPanel({
   const [editContent, setEditContent] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null)
   const { theme } = useTheme()
   const colors = themeColors[theme]
 
@@ -96,9 +99,26 @@ export default function ChatPanel({
     }
   }
 
+  // Auto-resize edit textarea based on content
+  const adjustEditTextareaHeight = () => {
+    const textarea = editTextareaRef.current
+    if (textarea) {
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }
+
   useEffect(() => {
     adjustTextareaHeight()
   }, [input])
+
+  // Auto-resize edit textarea when content changes or editing starts
+  useEffect(() => {
+    if (editingIndex !== null) {
+      // Small delay to ensure textarea is mounted
+      setTimeout(adjustEditTextareaHeight, 0)
+    }
+  }, [editingIndex, editContent])
 
   // Initialize selected tools when pending tools change
   useEffect(() => {
@@ -288,6 +308,7 @@ export default function ChatPanel({
         backgroundColor: colors.panelBg,
         borderLeft: `1px solid ${colors.border}`,
       }}
+      onClick={onPanelClick}
     >
       {/* Header */}
       <div className="p-4 backdrop-blur-sm" style={{ background: colors.headerBg, borderBottom: `1px solid ${colors.border}` }}>
@@ -400,7 +421,7 @@ export default function ChatPanel({
             key={idx}
             className={`group flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fadeIn`}
           >
-            <div className={`flex items-start gap-2.5 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+            <div className={`flex items-start gap-2.5 ${editingIndex === idx ? 'w-[85%]' : 'max-w-[85%]'} ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
               {/* Avatar */}
               <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${
                 msg.role === 'user'
@@ -419,13 +440,13 @@ export default function ChatPanel({
               </div>
 
               {/* Message content */}
-              <div className="flex flex-col gap-1">
+              <div className={`flex flex-col gap-1 ${editingIndex === idx ? 'flex-1' : ''}`}>
                 <div
                   className={`rounded-2xl px-4 py-2.5 shadow-lg ${
                     msg.role === 'user'
                       ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-tr-md'
                       : 'rounded-tl-md'
-                  }`}
+                  } ${editingIndex === idx ? 'w-full' : ''}`}
                   style={msg.role === 'assistant' ? {
                     backgroundColor: colors.assistantBubble,
                     border: `1px solid ${colors.border}`,
@@ -433,16 +454,19 @@ export default function ChatPanel({
                   } : undefined}
                 >
                   {editingIndex === idx ? (
-                    <div className="min-w-[200px]">
+                    <>
                       <textarea
+                        ref={editTextareaRef}
                         value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
+                        onChange={(e) => {
+                          setEditContent(e.target.value)
+                        }}
                         onKeyDown={handleEditKeyDown}
-                        className="w-full text-sm rounded-lg p-2 resize-none focus:outline-none bg-black/30 text-white border border-white/10"
-                        rows={3}
+                        className="text-sm resize-none focus:outline-none bg-transparent overflow-hidden whitespace-pre-wrap leading-relaxed"
+                        style={{ color: 'inherit', width: '100%' }}
                         autoFocus
                       />
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2 mt-2 pt-2 border-t border-white/10">
                         <button
                           onClick={saveEdit}
                           className="text-xs px-3 py-1.5 bg-green-500 hover:bg-green-400 text-white rounded-lg transition-colors"
@@ -456,7 +480,7 @@ export default function ChatPanel({
                           Cancel
                         </button>
                       </div>
-                    </div>
+                    </>
                   ) : (
                     <>
                       <div className="text-sm whitespace-pre-wrap leading-relaxed">
