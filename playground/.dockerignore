@@ -1,0 +1,33 @@
+# Environment files (API keys passed via docker-compose)
+backend/.env
+.env
+*.env
+
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+backend/_tmp_backups/
+_tmp_backups/
+*.log
+
+# Documentation
+*.md
