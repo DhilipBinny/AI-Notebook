@@ -99,6 +99,12 @@ class ContextManager:
             output = cell.get("output", "") or ""
             cell_id = cell.get("id", "")
 
+            # For AI cells, use ai_prompt as content if available
+            ai_prompt = cell.get("ai_prompt", "")
+            ai_response = cell.get("ai_response", "")
+            if cell_type == "ai" and ai_prompt:
+                content = ai_prompt
+
             # Extract imports from code cells
             if cell_type == "code":
                 imports = self._extract_imports(content)
@@ -117,19 +123,25 @@ class ContextManager:
                 })
 
             # Create cell overview (compact)
+            # For AI cells, show the prompt as preview
             first_line = self._get_first_line(content)
             has_output = bool(output and output.strip())
             has_error = self._is_error_output(output) if output else False
             output_type = self._detect_output_type(output) if has_output else None
 
-            structured.cells.append({
+            cell_data = {
                 "cell_id": cell_id,
                 "type": cell_type,
                 "preview": first_line,
                 "has_output": has_output,
                 "has_error": has_error,
                 "output_type": output_type
-            })
+            }
+            # Include AI cell data if present
+            if cell_type == "ai":
+                cell_data["ai_prompt"] = ai_prompt
+                cell_data["ai_response"] = ai_response[:100] + "..." if ai_response and len(ai_response) > 100 else ai_response
+            structured.cells.append(cell_data)
 
         # Add kernel variables if provided
         if kernel_variables:
@@ -174,7 +186,13 @@ class ContextManager:
 
         for cell in structured.cells:
             cell_id = cell["cell_id"]
-            cell_type = "md" if cell["type"] == "markdown" else "py"
+            # Map cell types: markdown -> md, ai -> ai, code/other -> py
+            if cell["type"] == "markdown":
+                cell_type = "md"
+            elif cell["type"] == "ai":
+                cell_type = "ai"
+            else:
+                cell_type = "py"
             preview = cell["preview"][:45]
 
             # Output indicator
@@ -235,13 +253,22 @@ class ContextManager:
         # Cells section
         parts.append('  <cells>')
         for cell in structured.cells:
-            cell_type = "markdown" if cell["type"] == "markdown" else "code"
+            # Preserve actual cell type (code, markdown, ai)
+            cell_type = cell["type"]
             has_output = "true" if cell["has_output"] else "false"
             has_error = "true" if cell["has_error"] else "false"
             output_type = cell["output_type"] or ""
 
             parts.append(f'    <cell id="{self._escape_xml(cell["cell_id"])}" type="{cell_type}" has_output="{has_output}" has_error="{has_error}" output_type="{output_type}">')
             parts.append(f'      <preview>{self._escape_xml(cell["preview"][:50])}</preview>')
+            # Include AI cell specific data
+            if cell_type == "ai":
+                ai_prompt = cell.get("ai_prompt", "")
+                ai_response = cell.get("ai_response", "")
+                if ai_prompt:
+                    parts.append(f'      <ai_prompt>{self._escape_xml(ai_prompt[:100])}</ai_prompt>')
+                if ai_response:
+                    parts.append(f'      <ai_response_preview>{self._escape_xml(ai_response[:100])}</ai_response_preview>')
             parts.append('    </cell>')
         parts.append('  </cells>')
 

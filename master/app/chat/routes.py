@@ -329,12 +329,27 @@ async def send_message(
             for idx, cell in enumerate(notebook_data["cells"]):
                 cell_id = cell.get("metadata", {}).get("cell_id", "")
                 if cell_id in cell_id_set:
+                    cell_type = cell.get("cell_type", "code")
+                    ai_data = cell.get("ai_data", {})
+
+                    # For AI cells, use ai_data content; for others, use source
+                    if cell_type == "ai" and ai_data:
+                        content = ai_data.get("user_prompt", "") or cell.get("source", "")
+                        ai_prompt = ai_data.get("user_prompt", "")
+                        ai_response = ai_data.get("llm_response", "")
+                    else:
+                        content = cell.get("source", "")
+                        ai_prompt = None
+                        ai_response = None
+
                     context.append(CellContext(
                         cell_id=cell_id,
-                        type=cell.get("cell_type", "code"),
-                        content=cell.get("source", ""),
+                        type=cell_type,
+                        content=content,
                         output=None,  # Don't include outputs
                         cell_number=idx + 1,
+                        ai_prompt=ai_prompt,
+                        ai_response=ai_response,
                     ))
 
     # Update playground activity (user is actively using it)
@@ -529,12 +544,27 @@ async def run_ai_cell(
                                 output_text = f"Error: {output.get('ename', '')}: {output.get('evalue', '')}"
                                 break
 
+                    cell_type = cell.get("cell_type", "code")
+                    ai_data = cell.get("ai_data", {})
+
+                    # For AI cells, include ai_data content
+                    if cell_type == "ai" and ai_data:
+                        content = ai_data.get("user_prompt", "") or cell.get("source", "")
+                        ai_prompt = ai_data.get("user_prompt", "")
+                        ai_response = ai_data.get("llm_response", "")
+                    else:
+                        content = cell.get("source", "")
+                        ai_prompt = None
+                        ai_response = None
+
                     context_list.append({
                         "id": cell_id,
-                        "type": cell.get("cell_type", "code"),
-                        "content": cell.get("source", ""),
+                        "type": cell_type,
+                        "content": content,
                         "output": output_text,
                         "cellNumber": idx + 1,
+                        "ai_prompt": ai_prompt,
+                        "ai_response": ai_response,
                     })
 
     try:

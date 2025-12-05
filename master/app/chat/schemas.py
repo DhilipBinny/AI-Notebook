@@ -11,10 +11,13 @@ from typing import Optional, List, Dict, Any
 class CellContext(BaseModel):
     """A notebook cell provided as context to the LLM (built by backend from S3)."""
     cell_id: str  # From metadata.cell_id (Jupyter standard)
-    type: str  # "code" or "markdown"
+    type: str  # "code", "markdown", or "ai"
     content: str
     output: Optional[str] = None
     cell_number: Optional[int] = None
+    # AI Cell specific fields
+    ai_prompt: Optional[str] = None  # User's question in AI cell
+    ai_response: Optional[str] = None  # LLM's response in AI cell
 
 
 class ChatMessageCreate(BaseModel):

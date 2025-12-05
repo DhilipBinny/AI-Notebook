@@ -1065,8 +1065,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           return
         }
 
-        // X - Cut selected cell
-        if (e.key === 'x' || e.key === 'X') {
+        // X - Cut selected cell (but not Ctrl+X which is system cut)
+        if ((e.key === 'x' || e.key === 'X') && !e.ctrlKey && !e.metaKey) {
           e.preventDefault()
           if (selectedCellId) {
             const currentIndex = getSelectedCellIndex()
@@ -1086,8 +1086,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           return
         }
 
-        // C - Copy selected cell
-        if (e.key === 'c' || e.key === 'C') {
+        // C - Copy selected cell (but not Ctrl+C which is system copy)
+        if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey) {
           e.preventDefault()
           if (selectedCellId) {
             const cellToCopy = cells.find(c => c.id === selectedCellId)
@@ -1098,8 +1098,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           return
         }
 
-        // V - Paste cell below
-        if (e.key === 'v' || e.key === 'V') {
+        // V - Paste cell below (but not Ctrl+V which is system paste)
+        if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey) {
           e.preventDefault()
           if (clipboardCell) {
             const currentIndex = getSelectedCellIndex()
@@ -1121,8 +1121,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           return
         }
 
-        // Z - Undo cell deletion
-        if (e.key === 'z' || e.key === 'Z') {
+        // Z - Undo cell deletion (but not Ctrl+Z which is system undo)
+        if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey) {
           e.preventDefault()
           if (deletedCells.length > 0) {
             const lastDeleted = deletedCells[deletedCells.length - 1]
