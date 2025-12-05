@@ -108,46 +108,87 @@ export default function AICell({
     }
   }, [isEditing])
 
-  // Handle paste event for images
+  // Process a file and add it as an image
+  const addImageFile = useCallback((file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      // Extract base64 data (remove "data:image/png;base64," prefix)
+      const base64 = dataUrl.split(',')[1]
+      const mimeType = dataUrl.split(';')[0].split(':')[1]
+
+      const filename = file.name || `image-${Date.now()}.${mimeType.split('/')[1]}`
+
+      const newImage: ImageInput = {
+        data: base64,
+        mime_type: mimeType,
+        filename: filename
+      }
+
+      setImages(prev => [...prev, newImage])
+
+      // Add placeholder text in prompt
+      setLocalPrompt(prev => {
+        const placeholder = `[📷 image: ${filename}]`
+        return prev ? `${prev}\n${placeholder}` : placeholder
+      })
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  // Handle paste event for images (supports multiple images)
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
     if (!items) return
 
+    let hasImage = false
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       if (item.type.startsWith('image/')) {
-        e.preventDefault()
+        hasImage = true
         const file = item.getAsFile()
-        if (!file) continue
-
-        const reader = new FileReader()
-        reader.onload = () => {
-          const dataUrl = reader.result as string
-          // Extract base64 data (remove "data:image/png;base64," prefix)
-          const base64 = dataUrl.split(',')[1]
-          const mimeType = dataUrl.split(';')[0].split(':')[1]
-
-          const filename = file.name || `pasted-image-${Date.now()}.${mimeType.split('/')[1]}`
-
-          const newImage: ImageInput = {
-            data: base64,
-            mime_type: mimeType,
-            filename: filename
-          }
-
-          setImages(prev => [...prev, newImage])
-
-          // Add placeholder text in prompt
-          setLocalPrompt(prev => {
-            const placeholder = `[📷 image: ${filename}]`
-            return prev ? `${prev}\n${placeholder}` : placeholder
-          })
+        if (file) {
+          addImageFile(file)
         }
-        reader.readAsDataURL(file)
-        break // Only handle first image
       }
     }
+
+    // Only prevent default if we handled images
+    if (hasImage) {
+      e.preventDefault()
+    }
+  }, [addImageFile])
+
+  // Handle drag and drop for images
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
   }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const files = e.dataTransfer?.files
+    if (!files) return
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (file.type.startsWith('image/')) {
+        addImageFile(file)
+      }
+    }
+  }, [addImageFile])
 
   // Remove image
   const removeImage = useCallback((index: number) => {
@@ -436,7 +477,27 @@ export default function AICell({
           )}
         </div>
         {isEditing || !aiData.user_prompt ? (
-          <div>
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className="relative"
+          >
+            {/* Drag overlay */}
+            {isDragging && (
+              <div
+                className="absolute inset-0 z-10 flex items-center justify-center rounded"
+                style={{
+                  backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                  border: '2px dashed #a855f7',
+                }}
+              >
+                <div className="text-sm font-medium" style={{ color: '#a855f7' }}>
+                  Drop images here
+                </div>
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               value={localPrompt}
@@ -454,63 +515,123 @@ export default function AICell({
                   })
                 }
               }}
-              placeholder="Ask a question about your notebook... (Shift+Enter to run, paste images)"
+              placeholder="Ask a question... (Shift+Enter to run, paste or drag images)"
               className="w-full bg-transparent text-sm resize-none outline-none min-h-[48px] p-2 rounded"
+              style={{
+                color: 'var(--nb-text-primary)',
+                backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                border: isDragging ? '2px dashed #a855f7' : '1px solid rgba(168, 85, 247, 0.2)',
+              }}
+            />
+
+            {/* Image previews - improved layout */}
+            {images.length > 0 && (
+              <div className="mt-2 p-2 rounded" style={{ backgroundColor: 'rgba(168, 85, 247, 0.05)' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+                    {images.length} image{images.length > 1 ? 's' : ''} attached
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setImages([])
+                      // Remove all image placeholders from prompt
+                      setLocalPrompt(p => p.replace(/\[📷 image: [^\]]+\]\n?/g, '').trim())
+                    }}
+                    className="text-xs px-2 py-0.5 rounded hover:opacity-80"
+                    style={{ color: 'var(--nb-accent-error)' }}
+                    title="Remove all images"
+                  >
+                    Clear all
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {images.map((img, idx) => (
+                    <div
+                      key={idx}
+                      className="relative group/img rounded-lg overflow-hidden shadow-sm"
+                      style={{ border: '1px solid rgba(168, 85, 247, 0.3)' }}
+                    >
+                      <img
+                        src={`data:${img.mime_type};base64,${img.data}`}
+                        alt={img.filename || 'Attached image'}
+                        className="h-20 w-auto max-w-[120px] object-cover"
+                      />
+                      {/* Remove button - always visible */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeImage(idx) }}
+                        className="absolute top-1 right-1 p-1 rounded-full transition-colors"
+                        style={{
+                          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                          color: '#fff',
+                        }}
+                        title="Remove image"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                      {/* Filename label */}
+                      <div
+                        className="absolute bottom-0 left-0 right-0 text-[10px] px-1.5 py-0.5 truncate"
+                        style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff' }}
+                        title={img.filename}
+                      >
+                        {img.filename}
+                      </div>
+                      {/* Image number badge */}
+                      <div
+                        className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                        style={{ backgroundColor: '#a855f7', color: '#fff' }}
+                      >
+                        {idx + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div
+              className="text-sm cursor-pointer p-2 rounded hover:opacity-80"
               style={{
                 color: 'var(--nb-text-primary)',
                 backgroundColor: 'rgba(168, 85, 247, 0.05)',
                 border: '1px solid rgba(168, 85, 247, 0.2)',
               }}
-            />
-            {/* Image previews */}
-            {images.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {images.map((img, idx) => (
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsEditing(true)
+              }}
+            >
+              {aiData.user_prompt}
+            </div>
+            {/* Show attached images in view mode */}
+            {aiData.images && aiData.images.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {aiData.images.map((img, idx) => (
                   <div
                     key={idx}
-                    className="relative group/img rounded overflow-hidden"
+                    className="relative rounded-lg overflow-hidden shadow-sm"
                     style={{ border: '1px solid rgba(168, 85, 247, 0.3)' }}
                   >
                     <img
                       src={`data:${img.mime_type};base64,${img.data}`}
-                      alt={img.filename || 'Pasted image'}
-                      className="h-16 w-auto object-cover"
+                      alt={img.filename || 'Attached image'}
+                      className="h-16 w-auto max-w-[100px] object-cover"
                     />
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeImage(idx) }}
-                      className="absolute top-0 right-0 p-0.5 rounded-bl opacity-0 group-hover/img:opacity-100 transition-opacity"
-                      style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)' }}
-                      title="Remove image"
-                    >
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
                     <div
-                      className="absolute bottom-0 left-0 right-0 text-[9px] px-1 truncate"
-                      style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff' }}
+                      className="absolute top-1 left-1 text-[9px] px-1 py-0.5 rounded-full font-medium"
+                      style={{ backgroundColor: '#a855f7', color: '#fff' }}
                     >
-                      {img.filename}
+                      {idx + 1}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        ) : (
-          <div
-            className="text-sm cursor-pointer p-2 rounded hover:opacity-80"
-            style={{
-              color: 'var(--nb-text-primary)',
-              backgroundColor: 'rgba(168, 85, 247, 0.05)',
-              border: '1px solid rgba(168, 85, 247, 0.2)',
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsEditing(true)
-            }}
-          >
-            {aiData.user_prompt}
           </div>
         )}
       </div>
