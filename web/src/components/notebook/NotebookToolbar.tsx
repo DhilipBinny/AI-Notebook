@@ -1,6 +1,6 @@
 'use client'
 
-import { useTheme, type NotebookTheme } from '@/contexts/ThemeContext'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface NotebookToolbarProps {
   onAddCode: () => void
@@ -23,11 +23,6 @@ interface NotebookToolbarProps {
   onOpenTerminal: () => void
 }
 
-const themeOptions: { value: NotebookTheme; label: string; icon: string }[] = [
-  { value: 'dark', label: 'Dark', icon: '🌙' },
-  { value: 'light', label: 'Light', icon: '☀️' },
-  { value: 'monokai', label: 'Monokai', icon: '🎨' },
-]
 
 export default function NotebookToolbar({
   onAddCode,
@@ -123,7 +118,7 @@ export default function NotebookToolbar({
 
         {/* Cell count indicator */}
         <div className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
-          <span className="text-emerald-400 font-medium">{totalCells}</span> cells
+          <span className="font-medium" style={{ color: 'var(--nb-accent-success)' }}>{totalCells}</span> cells
         </div>
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
@@ -156,83 +151,93 @@ export default function NotebookToolbar({
         {/* Keyboard shortcuts button with hover tooltip */}
         <div className="relative group ml-2">
           <button
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded transition-colors"
+            style={{
+              backgroundColor: 'var(--app-bg-card)',
+              border: '1px solid var(--nb-border-default)',
+            }}
             title="Keyboard shortcuts"
           >
-            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4" style={{ color: 'var(--nb-text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            <span className="text-xs text-gray-400">Shortcuts</span>
+            <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>Shortcuts</span>
           </button>
 
           {/* Dropdown on hover - Two column layout */}
-          <div className="absolute top-full left-0 mt-1 w-[520px] p-3 rounded-lg bg-gray-800 border border-gray-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+          <div
+            className="absolute top-full left-0 mt-1 w-[520px] p-3 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50"
+            style={{
+              backgroundColor: 'var(--nb-bg-secondary)',
+              border: '1px solid var(--nb-border-default)',
+            }}
+          >
             <div className="grid grid-cols-2 gap-4">
               {/* Left Column */}
               <div>
-                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2">Navigation & Execution</div>
+                <div className="text-xs font-medium pb-1 mb-2" style={{ color: 'var(--nb-text-muted)', borderBottom: '1px solid var(--nb-border-default)' }}>Navigation & Execution</div>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Run cell & advance</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Run cell & advance</span>
                     <div className="flex items-center gap-0.5">
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">⇧</kbd>
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↵</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>⇧</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>↵</kbd>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Save notebook</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Save notebook</span>
                     <div className="flex items-center gap-0.5">
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">S</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Ctrl</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>S</kbd>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Enter edit mode</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↵</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Enter edit mode</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>↵</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Exit edit mode</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Esc</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Exit edit mode</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Esc</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Navigate cells</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Navigate cells</span>
                     <div className="flex items-center gap-0.5">
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↑</kbd>
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">↓</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>↑</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>↓</kbd>
                     </div>
                   </div>
                 </div>
 
-                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2 mt-3">Cell Type</div>
+                <div className="text-xs font-medium pb-1 mb-2 mt-3" style={{ color: 'var(--nb-text-muted)', borderBottom: '1px solid var(--nb-border-default)' }}>Cell Type</div>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">To code</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Y</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>To code</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Y</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">To markdown</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">M</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>To markdown</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>M</kbd>
                   </div>
                 </div>
 
-                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2 mt-3">Code Editing</div>
+                <div className="text-xs font-medium pb-1 mb-2 mt-3" style={{ color: 'var(--nb-text-muted)', borderBottom: '1px solid var(--nb-border-default)' }}>Code Editing</div>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Toggle comment</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Toggle comment</span>
                     <div className="flex items-center gap-0.5">
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Ctrl</kbd>
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">/</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Ctrl</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>/</kbd>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Indent</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Tab</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Indent</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Tab</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Outdent</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Outdent</span>
                     <div className="flex items-center gap-0.5">
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">⇧</kbd>
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Tab</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>⇧</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Tab</kbd>
                     </div>
                   </div>
                 </div>
@@ -240,50 +245,50 @@ export default function NotebookToolbar({
 
               {/* Right Column */}
               <div>
-                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2">Cell Manipulation</div>
+                <div className="text-xs font-medium pb-1 mb-2" style={{ color: 'var(--nb-text-muted)', borderBottom: '1px solid var(--nb-border-default)' }}>Cell Manipulation</div>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Insert above</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">A</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Insert above</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>A</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Insert below</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">B</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Insert below</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>B</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Delete cell</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Delete cell</span>
                     <div className="flex items-center gap-0.5">
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">D</kbd>
-                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">D</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>D</kbd>
+                      <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>D</kbd>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Cut cell</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">X</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Cut cell</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>X</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Copy cell</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">C</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Copy cell</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>C</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Paste below</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">V</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Paste below</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>V</kbd>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Undo delete</span>
-                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded bg-gray-700 text-gray-300 border border-gray-600">Z</kbd>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Undo delete</span>
+                    <kbd className="px-1 py-0.5 text-[9px] font-mono rounded" style={{ backgroundColor: 'var(--nb-bg-primary)', border: '1px solid var(--nb-border-default)', color: 'var(--nb-text-secondary)' }}>Z</kbd>
                   </div>
                 </div>
 
-                <div className="text-xs font-medium text-gray-400 border-b border-gray-700 pb-1 mb-2 mt-3">Mouse Actions</div>
+                <div className="text-xs font-medium pb-1 mb-2 mt-3" style={{ color: 'var(--nb-text-muted)', borderBottom: '1px solid var(--nb-border-default)' }}>Mouse Actions</div>
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Resize width</span>
-                    <span className="text-[9px] text-gray-500">Drag edges</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Resize width</span>
+                    <span className="text-[9px]" style={{ color: 'var(--nb-text-muted)' }}>Drag edges</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs py-1 hover:bg-white/5 px-1 rounded">
-                    <span className="text-gray-300">Insert cell</span>
-                    <span className="text-[9px] text-gray-500">Hover between</span>
+                  <div className="flex items-center justify-between text-xs py-1 px-1 rounded" style={{ color: 'var(--nb-text-secondary)' }}>
+                    <span>Insert cell</span>
+                    <span className="text-[9px]" style={{ color: 'var(--nb-text-muted)' }}>Hover between</span>
                   </div>
                 </div>
               </div>
@@ -322,26 +327,56 @@ export default function NotebookToolbar({
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Theme selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>Theme:</span>
-          <div className="flex rounded-md overflow-hidden border border-gray-600">
-            {themeOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setTheme(option.value)}
-                className={`px-2 py-1 text-xs transition-colors ${
-                  theme === option.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-                title={option.label}
-              >
-                {option.icon} {option.label}
-              </button>
-            ))}
+        {/* Theme toggle - Sun/Moon button */}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="relative p-2 rounded-xl transition-all duration-300 ease-in-out group"
+          style={{
+            backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.8)' : 'rgba(251, 191, 36, 0.15)',
+            border: `1px solid ${theme === 'dark' ? 'rgba(71, 85, 105, 0.5)' : 'rgba(251, 191, 36, 0.4)'}`,
+            boxShadow: theme === 'dark'
+              ? '0 0 10px rgba(99, 102, 241, 0.1)'
+              : '0 0 15px rgba(251, 191, 36, 0.3)',
+          }}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <div className="relative w-5 h-5">
+            {/* Sun icon */}
+            <svg
+              className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${
+                theme === 'dark'
+                  ? 'opacity-0 rotate-90 scale-50'
+                  : 'opacity-100 rotate-0 scale-100'
+              }`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              style={{ color: '#f59e0b' }}
+            >
+              <circle cx="12" cy="12" r="4" fill="currentColor" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+              />
+            </svg>
+            {/* Moon icon */}
+            <svg
+              className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${
+                theme === 'dark'
+                  ? 'opacity-100 rotate-0 scale-100'
+                  : 'opacity-0 -rotate-90 scale-50'
+              }`}
+              fill="currentColor"
+              viewBox="0 0 24 24"
+              style={{ color: '#a5b4fc' }}
+            >
+              <path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+            </svg>
           </div>
-        </div>
+        </button>
 
         {/* Export button - gradient style */}
         <button
@@ -362,7 +397,12 @@ export default function NotebookToolbar({
         {/* Logs button - opens in new tab */}
         <button
           onClick={onOpenLogs}
-          className="p-2 rounded-lg transition-all flex items-center justify-center shadow-md bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 hover:text-white"
+          className="p-2 rounded-lg transition-all flex items-center justify-center shadow-md hover:opacity-80"
+          style={{
+            backgroundColor: 'var(--app-bg-card)',
+            border: '1px solid var(--nb-border-default)',
+            color: 'var(--nb-text-muted)',
+          }}
           title="Open Logs (new tab)"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -373,7 +413,12 @@ export default function NotebookToolbar({
         {/* Terminal button - opens in new tab */}
         <button
           onClick={onOpenTerminal}
-          className="p-2 rounded-lg transition-all flex items-center justify-center shadow-md bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 hover:text-white"
+          className="p-2 rounded-lg transition-all flex items-center justify-center shadow-md hover:opacity-80"
+          style={{
+            backgroundColor: 'var(--app-bg-card)',
+            border: '1px solid var(--nb-border-default)',
+            color: 'var(--nb-text-muted)',
+          }}
           title="Open Terminal (new tab)"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -384,11 +429,15 @@ export default function NotebookToolbar({
         {/* Chat toggle button - gradient when active */}
         <button
           onClick={onToggleChat}
-          className={`p-2 rounded-lg transition-all flex items-center justify-center shadow-md ${
-            showChat
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 hover:shadow-blue-500/30'
-              : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10 shadow-none'
-          }`}
+          className="p-2 rounded-lg transition-all flex items-center justify-center shadow-md"
+          style={showChat ? {
+            background: 'var(--app-gradient-primary)',
+            color: '#ffffff',
+          } : {
+            backgroundColor: 'var(--app-bg-card)',
+            border: '1px solid var(--nb-border-default)',
+            color: 'var(--nb-text-muted)',
+          }}
           title={showChat ? 'Hide AI Chat' : 'Show AI Chat'}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

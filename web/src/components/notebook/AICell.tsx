@@ -260,11 +260,7 @@ export default function AICell({
     >
       {/* Cell Header */}
       <div
-        className="flex items-center justify-between px-3 py-2"
-        style={{
-          borderBottom: '1px solid var(--nb-border-default)',
-          backgroundColor: 'rgba(168, 85, 247, 0.1)',
-        }}
+        className="flex items-center justify-between px-3 py-2 cell-ai-header"
       >
         <div className="flex items-center gap-3">
           {/* Running indicator */}

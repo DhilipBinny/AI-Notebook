@@ -211,12 +211,7 @@ function OutputArea({
   }, [outputs, isExpanded])
 
   return (
-    <div
-      style={{
-        borderTop: '1px solid var(--nb-border-default)',
-        backgroundColor: 'var(--nb-bg-output)',
-      }}
-    >
+    <div className="cell-output-wrapper">
       <div
         ref={outputRef}
         className="cell-output p-3 space-y-2 overflow-auto"
@@ -781,25 +776,28 @@ export default function Cell({
     return 'var(--nb-bg-markdown-cell)'
   }
 
-  // Get selection indicator style - left border with subtle shadow
+  // Get selection indicator style - uniform border glow
   // Blue = command mode (selected, ready to navigate)
   // Green = edit mode (typing inside cell)
   const getSelectionStyle = () => {
     if (!isSelected) {
-      return {
-        borderLeft: '3px solid transparent',
-        boxShadow: 'none',
-      }
+      return {}
     }
+
+    // Edit mode - green glow
     if (isEditMode) {
       return {
-        borderLeft: '3px solid #10b981', // emerald-500
-        boxShadow: '0 0 12px rgba(16, 185, 129, 0.3), inset 0 0 0 1px rgba(16, 185, 129, 0.1)',
+        outline: '2px solid #10b981',
+        outlineOffset: '-2px',
+        boxShadow: '0 0 12px rgba(16, 185, 129, 0.25)',
       }
     }
+
+    // Command mode - blue glow
     return {
-      borderLeft: '3px solid #3b82f6', // blue-500
-      boxShadow: '0 0 8px rgba(59, 130, 246, 0.25)',
+      outline: '2px solid #3b82f6',
+      outlineOffset: '-2px',
+      boxShadow: '0 0 8px rgba(59, 130, 246, 0.2)',
     }
   }
 
@@ -818,12 +816,14 @@ export default function Cell({
       <div>
         {/* Cell Header */}
         <div
-          className="flex items-center justify-between px-3 py-2"
+          className={`flex items-center justify-between px-3 py-2 ${
+            cell.type === 'code' ? 'cell-code-header' : 'cell-markdown-header'
+          }`}
           style={{
             borderBottom: '1px solid var(--nb-border-default)',
             backgroundColor: cell.type === 'code'
-              ? 'var(--nb-bg-code-cell)'
-              : 'var(--nb-bg-markdown-cell)',
+              ? 'var(--nb-bg-code-header)'
+              : 'transparent',
           }}
         >
         <div className="flex items-center gap-3">

@@ -31,31 +31,23 @@ interface ChatPanelProps {
   onPanelClick?: () => void
 }
 
-// Theme-aware colors for chat panel
+// Theme-aware colors for chat panel - uses CSS variables
 const themeColors = {
   dark: {
-    panelBg: '#1a1a2e',
-    headerBg: 'linear-gradient(to right, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.5))',
-    messagesBg: '#1a1a2e',
-    inputBg: 'rgba(30, 41, 59, 0.5)',
-    assistantBubble: 'rgba(31, 41, 55, 0.8)',
-    border: 'rgba(75, 85, 99, 0.5)',
+    panelBg: 'var(--nb-bg-primary)',
+    headerBg: 'var(--nb-bg-secondary)',
+    messagesBg: 'var(--nb-bg-primary)',
+    inputBg: 'var(--nb-bg-secondary)',
+    assistantBubble: 'var(--nb-bg-secondary)',
+    border: 'var(--nb-border-default)',
   },
   light: {
-    panelBg: '#f8fafc',
-    headerBg: 'linear-gradient(to right, rgba(241, 245, 249, 0.9), rgba(226, 232, 240, 0.9))',
-    messagesBg: '#f1f5f9',
-    inputBg: 'rgba(241, 245, 249, 0.8)',
-    assistantBubble: '#ffffff',
-    border: 'rgba(203, 213, 225, 0.8)',
-  },
-  monokai: {
-    panelBg: '#272822',
-    headerBg: 'linear-gradient(to right, rgba(39, 40, 34, 0.9), rgba(30, 31, 28, 0.9))',
-    messagesBg: '#272822',
-    inputBg: 'rgba(39, 40, 34, 0.8)',
-    assistantBubble: 'rgba(39, 40, 34, 0.9)',
-    border: 'rgba(117, 113, 94, 0.5)',
+    panelBg: 'var(--nb-bg-primary)',
+    headerBg: 'var(--nb-bg-secondary)',
+    messagesBg: 'var(--nb-bg-primary)',
+    inputBg: 'var(--nb-bg-secondary)',
+    assistantBubble: 'var(--nb-bg-code-cell)',
+    border: 'var(--nb-border-default)',
   },
 }
 
@@ -206,29 +198,29 @@ export default function ChatPanel({
 
     return (
       <details className="mt-3 text-xs">
-        <summary className="cursor-pointer flex items-center gap-1.5 text-gray-400 hover:text-gray-300 transition-colors">
+        <summary className="cursor-pointer flex items-center gap-1.5 transition-colors" style={{ color: 'var(--nb-text-muted)' }}>
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
           {summaryText}
         </summary>
-        <div className="mt-2 space-y-2 ml-2 pl-3 border-l-2 border-gray-600/50">
+        <div className="mt-2 space-y-2 ml-2 pl-3" style={{ borderLeft: '2px solid var(--nb-border-default)' }}>
           {steps.map((step, idx) => (
-            <div key={idx} className="text-gray-400">
-              <span className="font-medium text-gray-300 flex items-center gap-1.5">
+            <div key={idx} style={{ color: 'var(--nb-text-muted)' }}>
+              <span className="font-medium flex items-center gap-1.5" style={{ color: 'var(--nb-text-secondary)' }}>
                 {step.type === 'tool_call' && (
-                  <span className="w-5 h-5 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">⚡</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(137, 180, 250, 0.2)', color: 'var(--nb-accent-code)' }}>⚡</span>
                 )}
                 {step.type === 'tool_result' && (
-                  <span className="w-5 h-5 rounded bg-green-500/20 text-green-400 flex items-center justify-center text-[10px]">✓</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(166, 227, 161, 0.2)', color: 'var(--nb-accent-success)' }}>✓</span>
                 )}
                 {step.type === 'text' && (
-                  <span className="w-5 h-5 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center text-[10px]">💭</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(203, 166, 247, 0.2)', color: 'var(--nb-accent-markdown)' }}>💭</span>
                 )}
                 {step.name || step.type}
               </span>
-              <pre className="mt-1.5 text-[11px] rounded-md p-2 whitespace-pre-wrap break-words overflow-hidden bg-black/20 text-gray-300 font-mono">
+              <pre className="mt-1.5 text-[11px] rounded-md p-2 whitespace-pre-wrap break-words overflow-hidden font-mono" style={{ backgroundColor: 'var(--nb-bg-output)', color: 'var(--nb-text-secondary)' }}>
                 {step.content.slice(0, 500)}
                 {step.content.length > 500 && '...'}
               </pre>
@@ -296,10 +288,10 @@ export default function ChatPanel({
     ))
   }, [onScrollToCell])
 
-  // Text colors based on theme
-  const textPrimary = theme === 'light' ? '#1e293b' : '#ffffff'
-  const textSecondary = theme === 'light' ? '#475569' : '#9ca3af'
-  const textMuted = theme === 'light' ? '#64748b' : '#6b7280'
+  // Text colors based on theme - use CSS variables
+  const textPrimary = 'var(--nb-text-primary)'
+  const textSecondary = 'var(--nb-text-secondary)'
+  const textMuted = 'var(--nb-text-muted)'
 
   return (
     <div
@@ -349,6 +341,17 @@ export default function ChatPanel({
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
             </select>
+            <select
+              value={toolMode}
+              onChange={(e) => onToolModeChange(e.target.value as 'auto' | 'manual' | 'ai_decide')}
+              className="text-xs rounded-md px-2.5 py-1.5 border focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+              style={{ backgroundColor: theme === 'light' ? '#fff' : 'rgba(255,255,255,0.05)', borderColor: colors.border, color: textSecondary }}
+              title="Tool execution mode"
+            >
+              <option value="auto">Tools: Auto</option>
+              <option value="manual">Tools: Approval</option>
+              <option value="ai_decide">Tools: AI Decides</option>
+            </select>
             <button
               onClick={onClearHistory}
               className="text-xs px-2.5 py-1.5 rounded-md hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
@@ -360,25 +363,6 @@ export default function ChatPanel({
           </div>
         </div>
 
-        {/* Tool mode */}
-        <div className="flex items-center gap-3 text-xs">
-          <span className="text-gray-500">Tools:</span>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {(['auto', 'manual', 'ai_decide'] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => onToolModeChange(mode)}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  toolMode === mode
-                    ? 'bg-blue-500/20 text-blue-400 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                {mode === 'auto' ? 'Auto' : mode === 'manual' ? 'Approval' : 'AI Decides'}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Messages */}
@@ -497,7 +481,8 @@ export default function ChatPanel({
                     {/* Copy button */}
                     <button
                       onClick={() => copyToClipboard(msg.content)}
-                      className="text-[10px] p-1.5 rounded-md text-gray-500 hover:text-gray-300 hover:bg-white/10 transition-all"
+                      className="text-[10px] p-1.5 rounded-md transition-all hover:opacity-80"
+                      style={{ color: 'var(--nb-text-muted)' }}
                       title="Copy message"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -508,7 +493,8 @@ export default function ChatPanel({
                     {msg.role === 'user' && idx === lastUserMessageIndex && (
                       <button
                         onClick={() => onRerunMessage(idx)}
-                        className="text-[10px] p-1.5 rounded-md text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                        className="text-[10px] p-1.5 rounded-md transition-all hover:opacity-80"
+                        style={{ color: 'var(--nb-accent-code)' }}
                         title="Re-run this message"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -519,7 +505,8 @@ export default function ChatPanel({
                     {/* Edit button */}
                     <button
                       onClick={() => startEditing(idx, msg.content)}
-                      className="text-[10px] p-1.5 rounded-md text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 transition-all"
+                      className="text-[10px] p-1.5 rounded-md transition-all hover:opacity-80"
+                      style={{ color: 'var(--nb-accent-warning)' }}
                       title="Edit message"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -530,7 +517,8 @@ export default function ChatPanel({
                     {msg.role === 'user' && (
                       <button
                         onClick={() => onDeleteMessage(idx)}
-                        className="text-[10px] p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        className="text-[10px] p-1.5 rounded-md transition-all hover:opacity-80"
+                        style={{ color: 'var(--nb-accent-error)' }}
                         title="Delete message and responses"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -604,17 +592,17 @@ export default function ChatPanel({
         {isLoading && (
           <div className="flex justify-start animate-fadeIn">
             <div className="flex items-start gap-2.5">
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg" style={{ background: 'linear-gradient(135deg, var(--nb-accent-success), var(--nb-accent-context))' }}>
                 <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </div>
-              <div className="rounded-2xl rounded-tl-md px-4 py-3 bg-gray-800/80 border border-gray-700/50 shadow-lg">
-                <div className="flex items-center gap-2 text-gray-400">
+              <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-lg" style={{ backgroundColor: 'var(--nb-bg-secondary)', border: '1px solid var(--nb-border-default)' }}>
+                <div className="flex items-center gap-2" style={{ color: 'var(--nb-text-muted)' }}>
                   <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--nb-accent-code)', animationDelay: '0ms' }}></span>
+                    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--nb-accent-code)', animationDelay: '150ms' }}></span>
+                    <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--nb-accent-code)', animationDelay: '300ms' }}></span>
                   </div>
                   <span className="text-sm">Thinking...</span>
                 </div>
