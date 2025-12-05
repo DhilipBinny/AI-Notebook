@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
 
+    # LLM Models (passed to playground containers)
+    gemini_model: Optional[str] = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    openai_model: Optional[str] = Field(default="gpt-4o", alias="OPENAI_MODEL")
+    anthropic_model: Optional[str] = Field(default="claude-sonnet-4-20250514", alias="ANTHROPIC_MODEL")
+
     # Ollama Configuration (passed to playground containers)
     ollama_url: Optional[str] = Field(default="http://host.docker.internal:11434/v1", alias="OLLAMA_URL")
     ollama_model: Optional[str] = Field(default="qwen3-coder:30b", alias="OLLAMA_MODEL")

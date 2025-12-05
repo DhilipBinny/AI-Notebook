@@ -85,6 +85,14 @@ class DockerClient:
             if settings.anthropic_api_key:
                 env["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
+            # Add LLM model configurations
+            if settings.gemini_model:
+                env["GEMINI_MODEL"] = settings.gemini_model
+            if settings.openai_model:
+                env["OPENAI_MODEL"] = settings.openai_model
+            if settings.anthropic_model:
+                env["ANTHROPIC_MODEL"] = settings.anthropic_model
+
             # Add Ollama configuration
             if settings.ollama_url:
                 env["OLLAMA_URL"] = settings.ollama_url
