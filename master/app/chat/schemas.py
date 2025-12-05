@@ -57,12 +57,21 @@ class ExecuteToolsRequest(BaseModel):
     approved_tools: List[PendingToolCall]
 
 
+class ImageInput(BaseModel):
+    """Image input for AI Cell (pasted or uploaded images)."""
+    data: Optional[str] = None  # Base64 encoded image data
+    mime_type: Optional[str] = "image/png"  # MIME type
+    url: Optional[str] = None  # URL-based image
+    filename: Optional[str] = None  # Original filename for display
+
+
 class AICellRunRequest(BaseModel):
     """Request to run an AI Cell."""
     prompt: str
     context_cell_ids: List[str] = []  # Cell IDs for context - backend loads content from S3
     ai_cell_id: Optional[str] = None  # The AI cell's own ID for positional awareness
     ai_cell_index: Optional[int] = None  # The AI cell's position (0-based index)
+    images: Optional[List[ImageInput]] = None  # Pasted/uploaded images for visual analysis
 
 
 class AICellResponse(BaseModel):

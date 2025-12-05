@@ -577,6 +577,22 @@ async def run_ai_cell(
                 timeout=10,
             )
 
+            # Prepare images for forwarding (convert Pydantic models to dicts)
+            images_data = None
+            if request.images:
+                images_data = [
+                    {
+                        "data": img.data,
+                        "mime_type": img.mime_type,
+                        "url": img.url,
+                        "filename": img.filename,
+                    }
+                    for img in request.images
+                    if img.data or img.url  # Only include images with actual content
+                ]
+                if not images_data:
+                    images_data = None
+
             # Call AI Cell endpoint
             response = await client.post(
                 f"{playground.internal_url}/ai-cell/run",
@@ -588,6 +604,7 @@ async def run_ai_cell(
                     "ai_cell_index": request.ai_cell_index,
                     "session_id": project_id,
                     "context_format": context_format,
+                    "images": images_data,
                 },
                 timeout=120,  # LLM can take a while
             )
