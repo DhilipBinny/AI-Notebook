@@ -51,27 +51,27 @@ services:
     #   - "8001:8001"
     environment:
       # Application
-      APP_ENV: development
-      APP_DEBUG: "true"
+      APP_ENV: ${APP_ENV:-development}
+      APP_DEBUG: ${APP_DEBUG:-true}
       # Database (use container name for Docker networking)
-      DATABASE_URL: mysql+aiomysql://root:ainotebook_dev_password@ainotebook-mysql:3306/ainotebook
+      DATABASE_URL: ${DATABASE_URL:-mysql+aiomysql://root:ainotebook_dev_password@ainotebook-mysql:3306/ainotebook}
       # S3/MinIO
-      S3_ENDPOINT: http://ainotebook-minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin123
-      S3_BUCKET_NOTEBOOKS: notebooks
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://ainotebook-minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin123}
+      S3_BUCKET_NOTEBOOKS: ${S3_BUCKET_NOTEBOOKS:-notebooks}
       # JWT
-      JWT_SECRET: dev_secret_key_change_in_production_32chars_min
-      JWT_ALGORITHM: HS256
-      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
-      JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_key_change_in_production_32chars_min}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-7}
       # CORS
-      CORS_ORIGINS: http://localhost,http://localhost:3000,http://localhost:8001
-      # LLM API Keys (passed to playground containers as env vars)
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:3000,http://localhost:8001}
+      # LLM API Keys (passed to playground containers)
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # LLM Models (defaults can be overridden)
+      # LLM Models
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
@@ -79,11 +79,13 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3-coder:30b}
       # Playground
-      PLAYGROUND_IMAGE: ainotebook-playground:latest
-      PLAYGROUND_NETWORK: ainotebook-network
-      PLAYGROUND_MEMORY_LIMIT: 2g
-      PLAYGROUND_CPU_LIMIT: "1.0"
-      PLAYGROUND_IDLE_TIMEOUT: "3600"
+      PLAYGROUND_IMAGE: ${PLAYGROUND_IMAGE:-ainotebook-playground:latest}
+      PLAYGROUND_NETWORK: ${PLAYGROUND_NETWORK:-ainotebook-network}
+      PLAYGROUND_MEMORY_LIMIT: ${PLAYGROUND_MEMORY_LIMIT:-2g}
+      PLAYGROUND_CPU_LIMIT: ${PLAYGROUND_CPU_LIMIT:-1.0}
+      PLAYGROUND_IDLE_TIMEOUT: ${PLAYGROUND_IDLE_TIMEOUT:-3600}
+      # User Limits
+      DEFAULT_MAX_PROJECTS: ${DEFAULT_MAX_PROJECTS:-5}
     volumes:
       # Mount Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock
