@@ -13,7 +13,10 @@ openai>=1.0.0          # OpenAI + Ollama (compatible API)
 anthropic>=0.18.0       # Anthropic Claude
 google-genai>=1.0.0         # Google Gemini (new SDK with Google Search)
 
-# Config (env vars passed from master-api, no .env file needed)
+# Config
+# In Docker: env vars passed from master-api
+# Locally: python-dotenv loads from .env file
+python-dotenv==1.0.1
 pydantic==2.10.1
 pydantic-settings>=2.0.0
 
