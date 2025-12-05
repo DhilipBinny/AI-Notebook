@@ -4,10 +4,21 @@
 # This script builds Docker images and deploys to the production VM
 #
 # Usage:
-#   ./scripts/deploy-prod.sh [VM_HOST] [VM_USER]
+#   ./scripts/deploy-prod.sh [OPTIONS] [VM_HOST] [VM_USER]
 #
-# Example:
-#   ./scripts/deploy-prod.sh 10.0.2.21 binny
+# Options:
+#   --all           Build all services (default if no option specified)
+#   --web           Build web (Next.js) only
+#   --master        Build master-api only
+#   --playground    Build playground only
+#   --skip-upload   Build only, don't upload to VM
+#
+# Examples:
+#   ./scripts/deploy-prod.sh                          # Build all, deploy to default VM
+#   ./scripts/deploy-prod.sh --web --master           # Build web and master only
+#   ./scripts/deploy-prod.sh --playground             # Build playground only
+#   ./scripts/deploy-prod.sh --all 10.0.2.21 binny    # Build all, deploy to specific VM
+#   ./scripts/deploy-prod.sh --web --skip-upload      # Build web only, no upload
 
 set -e
 
@@ -17,44 +28,133 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Change to project root
 cd "${PROJECT_ROOT}"
-echo "Working directory: ${PROJECT_ROOT}"
 
-# Configuration
-VM_HOST="${1:-10.0.2.21}"
-VM_USER="${2:-sysadmin}"
+# Default values
+BUILD_WEB=false
+BUILD_MASTER=false
+BUILD_PLAYGROUND=false
+SKIP_UPLOAD=false
+VM_HOST="10.0.2.21"
+VM_USER="sysadmin"
+
+# Parse arguments
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --all)
+      BUILD_WEB=true
+      BUILD_MASTER=true
+      BUILD_PLAYGROUND=true
+      shift
+      ;;
+    --web)
+      BUILD_WEB=true
+      shift
+      ;;
+    --master)
+      BUILD_MASTER=true
+      shift
+      ;;
+    --playground)
+      BUILD_PLAYGROUND=true
+      shift
+      ;;
+    --skip-upload)
+      SKIP_UPLOAD=true
+      shift
+      ;;
+    -*)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Handle positional args (VM_HOST, VM_USER)
+if [[ ${#POSITIONAL_ARGS[@]} -ge 1 ]]; then
+  VM_HOST="${POSITIONAL_ARGS[0]}"
+fi
+if [[ ${#POSITIONAL_ARGS[@]} -ge 2 ]]; then
+  VM_USER="${POSITIONAL_ARGS[1]}"
+fi
+
+# If no service specified, build all
+if [[ "$BUILD_WEB" == "false" && "$BUILD_MASTER" == "false" && "$BUILD_PLAYGROUND" == "false" ]]; then
+  BUILD_WEB=true
+  BUILD_MASTER=true
+  BUILD_PLAYGROUND=true
+fi
+
 REMOTE_DIR="/home/${VM_USER}/ai-jupyter"
-
 REGISTRY_PREFIX="ainotebook"
 
 echo "=============================================="
 echo "  AI Notebook - Production Deployment"
 echo "=============================================="
+echo "Working directory: ${PROJECT_ROOT}"
 echo "Target VM: ${VM_USER}@${VM_HOST}"
 echo "Remote Dir: ${REMOTE_DIR}"
+echo ""
+echo "Services to build:"
+[[ "$BUILD_WEB" == "true" ]] && echo "  ✓ web"
+[[ "$BUILD_MASTER" == "true" ]] && echo "  ✓ master-api"
+[[ "$BUILD_PLAYGROUND" == "true" ]] && echo "  ✓ playground"
+[[ "$SKIP_UPLOAD" == "true" ]] && echo ""  && echo "  (skip upload enabled)"
 echo ""
 
 # Step 1: Build production images locally
 echo "[1/5] Building production Docker images..."
 
-echo "  Building web (Next.js production)..."
-docker build -t ${REGISTRY_PREFIX}-web:latest -f web/Dockerfile.prod ./web
+if [[ "$BUILD_WEB" == "true" ]]; then
+  echo "  Building web (Next.js production)..."
+  docker build -t ${REGISTRY_PREFIX}-web:latest -f web/Dockerfile.prod ./web
+fi
 
-echo "  Building master-api (FastAPI production)..."
-docker build -t ${REGISTRY_PREFIX}-master-api:latest -f master/Dockerfile.prod ./master
+if [[ "$BUILD_MASTER" == "true" ]]; then
+  echo "  Building master-api (FastAPI production)..."
+  docker build -t ${REGISTRY_PREFIX}-master-api:latest -f master/Dockerfile.prod ./master
+fi
 
-echo "  Building playground..."
-docker build -t ${REGISTRY_PREFIX}-playground:latest ./playground
+if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
+  echo "  Building playground (stealth/compiled)..."
+  docker build -t ${REGISTRY_PREFIX}-playground:latest -f ./playground/Dockerfile.stealth ./playground
+fi
 
 echo ""
 echo "[2/5] Saving Docker images to tar files..."
 mkdir -p ./dist
 
-docker save ${REGISTRY_PREFIX}-web:latest | gzip > ./dist/ainotebook-web.tar.gz
-docker save ${REGISTRY_PREFIX}-master-api:latest | gzip > ./dist/ainotebook-master-api.tar.gz
-docker save ${REGISTRY_PREFIX}-playground:latest | gzip > ./dist/ainotebook-playground.tar.gz
+if [[ "$BUILD_WEB" == "true" ]]; then
+  echo "  Saving web..."
+  docker save ${REGISTRY_PREFIX}-web:latest | gzip > ./dist/ainotebook-web.tar.gz
+fi
+
+if [[ "$BUILD_MASTER" == "true" ]]; then
+  echo "  Saving master-api..."
+  docker save ${REGISTRY_PREFIX}-master-api:latest | gzip > ./dist/ainotebook-master-api.tar.gz
+fi
+
+if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
+  echo "  Saving playground..."
+  docker save ${REGISTRY_PREFIX}-playground:latest | gzip > ./dist/ainotebook-playground.tar.gz
+fi
 
 echo "  Images saved to ./dist/"
-ls -lh ./dist/*.tar.gz
+ls -lh ./dist/*.tar.gz 2>/dev/null || echo "  (no tar files found)"
+
+# Skip upload if requested
+if [[ "$SKIP_UPLOAD" == "true" ]]; then
+  echo ""
+  echo "[SKIP] Upload skipped. Images are in ./dist/"
+  echo ""
+  echo "To manually upload later:"
+  echo "  scp ./dist/*.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/"
+  exit 0
+fi
 
 echo ""
 echo "[3/5] Copying files to VM..."
@@ -62,15 +162,16 @@ echo "[3/5] Copying files to VM..."
 # Create remote directory structure
 ssh ${VM_USER}@${VM_HOST} "mkdir -p ${REMOTE_DIR}/{nginx,dist}"
 
-# Copy image tarballs
-scp ./dist/*.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
-
-# # Copy configuration files
-# scp docker-compose.prod.yml ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/
-# scp nginx/nginx.prod.conf ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/nginx/
-
-# # Copy env template if not exists
-# scp -n .env.prod.example ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/.env 2>/dev/null || true
+# Copy only the images that were built
+if [[ "$BUILD_WEB" == "true" ]]; then
+  scp ./dist/ainotebook-web.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
+fi
+if [[ "$BUILD_MASTER" == "true" ]]; then
+  scp ./dist/ainotebook-master-api.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
+fi
+if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
+  scp ./dist/ainotebook-playground.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
+fi
 
 echo ""
 echo "[4/5] Loading Docker images on VM..."
@@ -78,14 +179,20 @@ echo "[4/5] Loading Docker images on VM..."
 ssh ${VM_USER}@${VM_HOST} << REMOTE_SCRIPT
 cd ${REMOTE_DIR}
 
-echo "  Loading ainotebook-web..."
-gunzip -c dist/ainotebook-web.tar.gz | docker load
+if [[ -f dist/ainotebook-web.tar.gz && "$BUILD_WEB" == "true" ]]; then
+  echo "  Loading ainotebook-web..."
+  gunzip -c dist/ainotebook-web.tar.gz | docker load
+fi
 
-echo "  Loading ainotebook-master-api..."
-gunzip -c dist/ainotebook-master-api.tar.gz | docker load
+if [[ -f dist/ainotebook-master-api.tar.gz && "$BUILD_MASTER" == "true" ]]; then
+  echo "  Loading ainotebook-master-api..."
+  gunzip -c dist/ainotebook-master-api.tar.gz | docker load
+fi
 
-echo "  Loading ainotebook-playground..."
-gunzip -c dist/ainotebook-playground.tar.gz | docker load
+if [[ -f dist/ainotebook-playground.tar.gz && "$BUILD_PLAYGROUND" == "true" ]]; then
+  echo "  Loading ainotebook-playground..."
+  gunzip -c dist/ainotebook-playground.tar.gz | docker load
+fi
 
 echo ""
 echo "  Loaded images:"
@@ -104,19 +211,15 @@ echo "     ssh ${VM_USER}@${VM_HOST}"
 echo ""
 echo "  2. Configure environment:"
 echo "     cd ${REMOTE_DIR}"
-echo "     cp .env.example .env"
 echo "     nano .env  # Edit with your production values"
 echo ""
-echo "  3. Create LLM env file:"
-echo "     nano llm.env  # Add GEMINI_API_KEY, OPENAI_API_KEY, etc."
-echo ""
-echo "  4. Ensure network exists:"
+echo "  3. Ensure network exists:"
 echo "     docker network create ainotebook-network 2>/dev/null || true"
 echo ""
-echo "  5. Start services:"
+echo "  4. Start/restart services:"
 echo "     docker compose -f docker-compose.prod.yml up -d"
 echo ""
-echo "  6. Check status:"
+echo "  5. Check status:"
 echo "     docker compose -f docker-compose.prod.yml ps"
 echo "     docker compose -f docker-compose.prod.yml logs -f"
 echo ""

@@ -1,0 +1,111 @@
+# AI Notebook Playground Container (Compiled/Stealth Version)
+# Source code is compiled to binary and deleted - for production use
+#
+# Build:
+#   docker build -f Dockerfile.stealth -t ainotebook-playground:stealth ./playground
+#
+# The resulting image has NO readable Python source code.
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies + PyInstaller
+COPY requirements.txt /build/
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt && \
+    pip install pyinstaller
+
+# Copy source code
+COPY backend/ /build/backend/
+COPY main_entry.py /build/
+
+# Compile to single binary with all hidden imports
+RUN pyinstaller --onefile \
+    --name playground_server \
+    --hidden-import="uvicorn" \
+    --hidden-import="uvicorn.logging" \
+    --hidden-import="uvicorn.loops" \
+    --hidden-import="uvicorn.loops.auto" \
+    --hidden-import="uvicorn.protocols" \
+    --hidden-import="uvicorn.protocols.http" \
+    --hidden-import="uvicorn.protocols.http.auto" \
+    --hidden-import="uvicorn.protocols.websockets" \
+    --hidden-import="uvicorn.protocols.websockets.auto" \
+    --hidden-import="uvicorn.lifespan" \
+    --hidden-import="uvicorn.lifespan.on" \
+    --hidden-import="uvicorn.lifespan.off" \
+    --hidden-import="fastapi" \
+    --hidden-import="starlette" \
+    --hidden-import="pydantic" \
+    --hidden-import="pydantic_settings" \
+    --hidden-import="httpx" \
+    --hidden-import="aiohttp" \
+    --hidden-import="openai" \
+    --hidden-import="anthropic" \
+    --hidden-import="google.genai" \
+    --hidden-import="jupyter_client" \
+    --hidden-import="ipykernel" \
+    --hidden-import="zmq" \
+    --hidden-import="websockets" \
+    --collect-all="uvicorn" \
+    --collect-all="starlette" \
+    --collect-all="fastapi" \
+    main_entry.py
+
+# ============================================
+# Final slim image - NO SOURCE CODE
+# ============================================
+FROM python:3.11-slim
+
+ARG PLAYGROUND_PORT=8888
+
+ENV PYTHONUNBUFFERED=1 \
+    PLAYGROUND_PORT=${PLAYGROUND_PORT} \
+    LLM_PROVIDER=ollama \
+    OLLAMA_URL=http://host.docker.internal:11434/v1 \
+    OLLAMA_MODEL=qwen3-coder:30b \
+    TOOL_EXECUTION_MODE=manual
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash playground && \
+    mkdir -p /app /notebooks /workspace && \
+    chown -R playground:playground /app /notebooks /workspace
+
+WORKDIR /app
+
+# Copy ONLY the compiled binary from builder
+COPY --from=builder /build/dist/playground_server /usr/local/bin/playground_server
+RUN chmod +x /usr/local/bin/playground_server
+
+# Create entrypoint
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "Starting AI Notebook Playground (Compiled)..."\n\
+echo "Port: ${PLAYGROUND_PORT}"\n\
+echo "LLM Provider: ${LLM_PROVIDER}"\n\
+exec playground_server\n\
+' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+USER playground
+
+EXPOSE ${PLAYGROUND_PORT}
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -sf http://localhost:${PLAYGROUND_PORT}/health || exit 1
+
+CMD ["/app/entrypoint.sh"]

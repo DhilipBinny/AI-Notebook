@@ -21,7 +21,7 @@ from backend.notebook_state import get_notebook_updates
 from backend.context_manager import ContextManager, ContextFormat
 from backend.session_manager import get_session_manager, set_current_session, clear_current_session
 
-from backend.routes import kernel_router, notebook_router, session_router
+from backend.routes import kernel_router, session_router
 
 # Initialize FastAPI
 app = FastAPI(
@@ -100,7 +100,6 @@ class ChatResponse(BaseModel):
 # === Include Routers ===
 
 app.include_router(kernel_router)
-app.include_router(notebook_router)
 app.include_router(session_router)
 
 
