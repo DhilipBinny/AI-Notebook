@@ -81,10 +81,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash playground && \
+# Create shared group for workspace access (allows both playground service and terminal user)
+# - 'playground' user: runs the server binary (owns the binary exclusively)
+# - 'workspace' group: shared access to /workspace for file uploads and terminal
+# - 'nobody' user: runs terminal sessions (added to workspace group)
+RUN groupadd -r workspace && \
+    useradd --create-home --shell /bin/bash playground && \
+    usermod -a -G workspace playground && \
+    usermod -a -G workspace nobody && \
     mkdir -p /app /notebooks /workspace && \
-    chown -R playground:playground /app /notebooks /workspace
+    chown -R playground:playground /app /notebooks && \
+    chown playground:workspace /workspace && \
+    chmod 2775 /workspace
 
 WORKDIR /app
 
