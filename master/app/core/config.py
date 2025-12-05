@@ -39,12 +39,6 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=30, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
     jwt_refresh_token_expire_days: int = Field(default=7, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS")
 
-    # OAuth (optional)
-    google_client_id: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_ID")
-    google_client_secret: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
-    github_client_id: Optional[str] = Field(default=None, alias="GITHUB_CLIENT_ID")
-    github_client_secret: Optional[str] = Field(default=None, alias="GITHUB_CLIENT_SECRET")
-
     # LLM API Keys (passed to playground containers as environment variables)
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
