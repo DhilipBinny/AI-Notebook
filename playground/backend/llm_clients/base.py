@@ -2,10 +2,98 @@
 Base LLM Client - Abstract interface for LLM providers
 
 All LLM clients (Gemini, OpenAI, etc.) must implement this interface.
+Supports text and image inputs for multimodal AI interactions.
 """
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Union
+import base64
+from pathlib import Path
+
+
+# Type alias for image data
+# Images can be passed as:
+# - {"data": "base64_string", "mime_type": "image/png"}
+# - {"url": "https://..."} (for URL-based images)
+# - {"path": "/workspace/image.png"} (for local files - will be converted to base64)
+ImageData = Dict[str, str]
+
+
+def encode_image_from_path(file_path: str) -> Dict[str, str]:
+    """
+    Read and base64 encode an image file.
+
+    Args:
+        file_path: Path to the image file
+
+    Returns:
+        Dict with "data" (base64 string) and "mime_type"
+    """
+    path = Path(file_path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"Image file not found: {file_path}")
+
+    # Determine MIME type from extension
+    mime_types = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp'
+    }
+
+    mime_type = mime_types.get(path.suffix.lower(), 'image/png')
+
+    with open(path, 'rb') as f:
+        data = base64.b64encode(f.read()).decode('utf-8')
+
+    return {"data": data, "mime_type": mime_type}
+
+
+def encode_image_from_bytes(image_bytes: bytes, mime_type: str = "image/png") -> Dict[str, str]:
+    """
+    Base64 encode image bytes.
+
+    Args:
+        image_bytes: Raw image bytes
+        mime_type: MIME type of the image
+
+    Returns:
+        Dict with "data" (base64 string) and "mime_type"
+    """
+    data = base64.b64encode(image_bytes).decode('utf-8')
+    return {"data": data, "mime_type": mime_type}
+
+
+def prepare_image(image: Dict[str, str]) -> Dict[str, str]:
+    """
+    Prepare an image for sending to LLM.
+    Handles path-based images by converting to base64.
+
+    Args:
+        image: Image dict with one of:
+               - {"data": "base64...", "mime_type": "image/png"}
+               - {"path": "/path/to/image.png"}
+               - {"url": "https://..."}
+
+    Returns:
+        Normalized image dict with "data" and "mime_type" or "url"
+    """
+    if "path" in image:
+        return encode_image_from_path(image["path"])
+    elif "data" in image:
+        # Already base64 encoded
+        return {
+            "data": image["data"],
+            "mime_type": image.get("mime_type", "image/png")
+        }
+    elif "url" in image:
+        # URL-based image
+        return {"url": image["url"]}
+    else:
+        raise ValueError("Image must have 'data', 'path', or 'url' key")
 
 
 class BaseLLMClient(ABC):
@@ -175,13 +263,18 @@ GUIDELINES:
         pass
 
     @abstractmethod
-    def ai_cell_completion(self, prompt: str) -> str:
+    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
         """
         AI Cell completion - with web search but no notebook tools.
         Used for inline Q&A in AI cells.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to include in the prompt.
+                    Each image is a dict with one of:
+                    - {"data": "base64...", "mime_type": "image/png"}
+                    - {"path": "/workspace/image.png"}
+                    - {"url": "https://..."}
 
         Returns:
             The response text from the LLM (may include web search results)
@@ -189,7 +282,7 @@ GUIDELINES:
         pass
 
     @abstractmethod
-    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
         Used for inline Q&A with kernel inspection and sandbox execution.
@@ -202,6 +295,11 @@ GUIDELINES:
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to include in the prompt.
+                    Each image is a dict with one of:
+                    - {"data": "base64...", "mime_type": "image/png"}
+                    - {"path": "/workspace/image.png"}
+                    - {"url": "https://..."}
             max_iterations: Maximum number of tool-calling iterations (default: 10)
 
         Returns:

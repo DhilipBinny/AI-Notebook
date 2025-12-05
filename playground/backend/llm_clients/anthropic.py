@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional, Union
 import anthropic
 from anthropic import Anthropic
 
-from backend.llm_clients.base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
@@ -453,19 +453,69 @@ class AnthropicClient(BaseLLMClient):
             log_debug_message(f"Anthropic chat_completion error: {e}")
             raise
 
-    def ai_cell_completion(self, prompt: str) -> str:
+    def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Dict[str, Any]]]:
+        """
+        Build message content with optional images for Anthropic API.
+
+        Args:
+            text: The text message
+            images: Optional list of images
+
+        Returns:
+            String (text only) or list of content blocks (with images)
+        """
+        if not images:
+            return text
+
+        content = []
+
+        # Add images first
+        for img in images:
+            prepared = prepare_image(img)
+            if "url" in prepared:
+                # Anthropic supports URL-based images
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "url",
+                        "url": prepared["url"]
+                    }
+                })
+            else:
+                # Base64 encoded image
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": prepared["mime_type"],
+                        "data": prepared["data"]
+                    }
+                })
+
+        # Add text last
+        content.append({
+            "type": "text",
+            "text": text
+        })
+
+        return content
+
+    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
         """
         AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells.
+        Used for inline Q&A in AI cells. Supports image inputs.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
 
         Returns:
             The response text from the LLM (may include web search results)
         """
         try:
             log_debug_message(f"🤖 Anthropic AI Cell completion starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s)")
 
             # Anthropic has web search via tool - use it if enabled
             tools = []
@@ -476,10 +526,13 @@ class AnthropicClient(BaseLLMClient):
                     "max_uses": 3
                 })
 
+            # Build content with optional images
+            content = self._build_content_with_images(prompt, images)
+
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": content}],
                 tools=tools if tools else None,
             )
 
@@ -496,13 +549,15 @@ class AnthropicClient(BaseLLMClient):
             log_debug_message(f"Anthropic ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
         Uses automatic function calling for kernel inspection and sandbox tools.
+        Supports image inputs for visual analysis.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
@@ -510,6 +565,8 @@ class AnthropicClient(BaseLLMClient):
         """
         try:
             log_debug_message(f"🤖 Anthropic AI Cell with tools starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s)")
 
             # Build AI Cell tool schemas (kernel inspection + sandbox only, no web search)
             # AI Cell focuses on notebook context - web search disabled to encourage
@@ -517,7 +574,9 @@ class AnthropicClient(BaseLLMClient):
             ai_cell_tools = self._build_ai_cell_tools()
             ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
 
-            messages = [{"role": "user", "content": prompt}]
+            # Build content with optional images
+            content = self._build_content_with_images(prompt, images)
+            messages = [{"role": "user", "content": content}]
 
             for iteration in range(max_iterations):
                 log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")

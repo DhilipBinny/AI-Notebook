@@ -11,7 +11,7 @@ import copy
 from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 
-from backend.llm_clients.base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
@@ -455,25 +455,78 @@ class OpenAIClient(BaseLLMClient):
             log_debug_message(f"OpenAI chat_completion error: {e}")
             raise
 
-    def ai_cell_completion(self, prompt: str) -> str:
+    def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Dict[str, Any]]]:
+        """
+        Build message content with optional images for OpenAI API.
+
+        Args:
+            text: The text message
+            images: Optional list of images
+
+        Returns:
+            String (text only) or list of content blocks (with images)
+        """
+        if not images:
+            return text
+
+        content = []
+
+        # Add images first
+        for img in images:
+            prepared = prepare_image(img)
+            if "url" in prepared:
+                # URL-based image
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": prepared["url"],
+                        "detail": "auto"
+                    }
+                })
+            else:
+                # Base64 encoded image - OpenAI uses data URL format
+                data_url = f"data:{prepared['mime_type']};base64,{prepared['data']}"
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": data_url,
+                        "detail": "auto"
+                    }
+                })
+
+        # Add text last
+        content.append({
+            "type": "text",
+            "text": text
+        })
+
+        return content
+
+    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
         """
         AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells.
+        Used for inline Q&A in AI cells. Supports image inputs.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
 
         Returns:
             The response text from the LLM
         """
         try:
             log_debug_message(f"🤖 OpenAI AI Cell completion starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s)")
+
+            # Build content with optional images
+            content = self._build_content_with_images(prompt, images)
 
             # OpenAI doesn't have native web search, so just do completion
             # Could integrate with a search API in the future
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": content}],
                 max_tokens=4096,
             )
 
@@ -485,13 +538,15 @@ class OpenAIClient(BaseLLMClient):
             log_debug_message(f"OpenAI ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
         Uses automatic function calling for kernel inspection and sandbox tools.
+        Supports image inputs for visual analysis.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
@@ -499,12 +554,16 @@ class OpenAIClient(BaseLLMClient):
         """
         try:
             log_debug_message(f"🤖 OpenAI AI Cell with tools starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s)")
 
             # Build AI Cell tool schemas
             ai_cell_tools = self._build_ai_cell_tools()
             ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
 
-            messages = [{"role": "user", "content": prompt}]
+            # Build content with optional images
+            content = self._build_content_with_images(prompt, images)
+            messages = [{"role": "user", "content": content}]
 
             for iteration in range(max_iterations):
                 log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")

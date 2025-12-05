@@ -13,7 +13,7 @@ Usage:
 
 from typing import Optional, List, Dict, Any, Union
 import backend.config as cfg
-from backend.llm_clients.base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient, ImageData
 
 
 def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
@@ -116,8 +116,8 @@ class LLMClient(BaseLLMClient):
     def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
         return self._client.chat_completion(prompt, max_tokens)
 
-    def ai_cell_completion(self, prompt: str) -> str:
-        return self._client.ai_cell_completion(prompt)
+    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
+        return self._client.ai_cell_completion(prompt, images)
 
-    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
-        return self._client.ai_cell_with_tools(prompt, max_iterations)
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
+        return self._client.ai_cell_with_tools(prompt, images, max_iterations)

@@ -13,7 +13,7 @@ from google import genai
 from google.genai import types
 from typing import List, Dict, Any, Optional, Union
 
-from backend.llm_clients.base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
 from backend.utils.util_func import log_response_details, log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
@@ -582,23 +582,66 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"Gemini chat_completion error: {e}")
             raise
 
-    def ai_cell_completion(self, prompt: str) -> str:
+    def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Any]]:
+        """
+        Build message content with optional images for Gemini API.
+
+        Args:
+            text: The text message
+            images: Optional list of images
+
+        Returns:
+            String (text only) or list of content parts (with images)
+        """
+        import base64
+
+        if not images:
+            return text
+
+        parts = []
+
+        # Add images first
+        for img in images:
+            prepared = prepare_image(img)
+            if "url" in prepared:
+                # Gemini supports URL-based images via from_uri
+                parts.append(types.Part.from_uri(
+                    file_uri=prepared["url"],
+                    mime_type="image/jpeg"  # Default, will be auto-detected
+                ))
+            else:
+                # Base64 encoded image - convert to bytes for Gemini
+                image_bytes = base64.b64decode(prepared["data"])
+                parts.append(types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=prepared["mime_type"]
+                ))
+
+        # Add text last
+        parts.append(types.Part.from_text(text=text))
+
+        return parts
+
+    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
         """
         AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells.
+        Used for inline Q&A in AI cells. Supports image inputs.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
 
         Returns:
             The response text from the LLM (may include web search results)
         """
         try:
             log_debug_message(f"🤖 Gemini AI Cell completion starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s)")
 
-            # Check if web search might help
+            # Check if web search might help (only for text, not image analysis)
             search_context = ""
-            if self._needs_web_search(prompt):
+            if not images and self._needs_web_search(prompt):
                 search_context = self._do_google_search(prompt)
 
             # Build the final prompt with search context if available
@@ -608,10 +651,13 @@ class GeminiClient(BaseLLMClient):
             else:
                 enhanced_prompt = prompt
 
+            # Build content with optional images
+            content = self._build_content_with_images(enhanced_prompt, images)
+
             # Use simple generate_content (no tools, no chat session)
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=enhanced_prompt,
+                contents=content,
                 config=types.GenerateContentConfig(
                     max_output_tokens=4096  # Allow longer responses for AI cells
                 )
@@ -625,13 +671,15 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"Gemini ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
         Focuses on kernel inspection and sandbox tools only (no web search).
+        Supports image inputs for visual analysis.
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
@@ -640,6 +688,8 @@ class GeminiClient(BaseLLMClient):
         try:
             log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
             log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s)")
 
             # AI Cell focuses on notebook context and tools - no web search
             # This ensures the LLM uses kernel inspection and sandbox tools effectively
@@ -656,9 +706,12 @@ class GeminiClient(BaseLLMClient):
                 config=ai_cell_config,
             )
 
+            # Build content with optional images
+            content = self._build_content_with_images(final_prompt, images)
+
             # Send the message - tools will be auto-executed
             log_debug_message(f"🤖 Sending AI Cell message with auto tool execution...")
-            response = chat.send_message(message=final_prompt)
+            response = chat.send_message(message=content)
 
             # In auto mode, tools are already executed - just return text
             result = response.text or ""

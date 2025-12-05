@@ -14,7 +14,7 @@ from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 
 from backend.llm_clients.openai import OpenAIClient, _build_openai_tools, TOOL_MAP, _safe_json_loads
-from backend.llm_clients.base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import AI_CELL_TOOLS
 import backend.config as cfg
@@ -331,24 +331,78 @@ class OllamaClient(BaseLLMClient):
             log_debug_message(f"Ollama chat_completion error: {e}")
             raise
 
-    def ai_cell_completion(self, prompt: str) -> str:
+    def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Dict[str, Any]]]:
+        """
+        Build message content with optional images for Ollama (OpenAI-compatible API).
+        Note: Requires vision-capable model like llava, bakllava.
+
+        Args:
+            text: The text message
+            images: Optional list of images
+
+        Returns:
+            String (text only) or list of content blocks (with images)
+        """
+        if not images:
+            return text
+
+        content = []
+
+        # Add images first
+        for img in images:
+            prepared = prepare_image(img)
+            if "url" in prepared:
+                # URL-based image
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": prepared["url"]
+                    }
+                })
+            else:
+                # Base64 encoded image - Ollama uses data URL format like OpenAI
+                data_url = f"data:{prepared['mime_type']};base64,{prepared['data']}"
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": data_url
+                    }
+                })
+
+        # Add text last
+        content.append({
+            "type": "text",
+            "text": text
+        })
+
+        return content
+
+    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
         """
         AI Cell completion - no web search for Ollama (local model).
-        Used for inline Q&A in AI cells.
+        Used for inline Q&A in AI cells. Supports image inputs.
+
+        Note: Image support requires a vision-capable model (e.g., llava, bakllava).
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
 
         Returns:
             The response text from the LLM
         """
         try:
             log_debug_message(f"🤖 Ollama AI Cell completion starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s) - requires vision model (llava, etc.)")
+
+            # Build content with optional images
+            content = self._build_content_with_images(prompt, images)
 
             # Ollama is local, no web search capability
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": content}],
                 max_tokens=4096,
             )
 
@@ -360,15 +414,18 @@ class OllamaClient(BaseLLMClient):
             log_debug_message(f"Ollama ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
         Uses automatic function calling for kernel inspection and sandbox tools.
+        Supports image inputs for visual analysis.
 
         Note: Tool support depends on the Ollama model (llama3.1, mistral, qwen2.5 support tools).
+              Image support requires a vision model (llava, bakllava).
 
         Args:
             prompt: The full prompt including notebook context and user question
+            images: Optional list of images to analyze
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
@@ -376,12 +433,16 @@ class OllamaClient(BaseLLMClient):
         """
         try:
             log_debug_message(f"🤖 Ollama AI Cell with tools starting...")
+            if images:
+                log_debug_message(f"📷 Including {len(images)} image(s) - requires vision model")
 
             # Build AI Cell tool schemas
             ai_cell_tools = self._build_ai_cell_tools()
             ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
 
-            messages = [{"role": "user", "content": prompt}]
+            # Build content with optional images
+            content = self._build_content_with_images(prompt, images)
+            messages = [{"role": "user", "content": content}]
 
             for iteration in range(max_iterations):
                 log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
