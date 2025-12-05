@@ -213,10 +213,19 @@ class LLMCompleteRequest(BaseModel):
     max_tokens: int = 1000
 
 
+class ImageInput(BaseModel):
+    """Image input for AI Cell - supports base64 data or URL"""
+    data: Optional[str] = None  # Base64 encoded image data
+    mime_type: Optional[str] = "image/png"  # MIME type (image/png, image/jpeg, etc.)
+    url: Optional[str] = None  # URL to image (alternative to base64)
+    filename: Optional[str] = None  # Original filename for display
+
+
 class AICellRequest(BaseModel):
     """Request for AI Cell execution"""
     prompt: str
     context: List[CellContext] = []  # Full notebook context
+    images: Optional[List[ImageInput]] = None  # Pasted/uploaded images
     ai_cell_id: Optional[str] = None  # The AI cell's own ID for positional awareness
     ai_cell_index: Optional[int] = None  # The AI cell's position (0-based)
     session_id: Optional[str] = None
@@ -366,8 +375,24 @@ async def run_ai_cell(
         from backend.llm_clients import LLMClient
         client = LLMClient()
 
+        # Convert images to LLM format if provided
+        llm_images = None
+        if request.images:
+            llm_images = []
+            for img in request.images:
+                if img.data:
+                    llm_images.append({
+                        "data": img.data,
+                        "mime_type": img.mime_type or "image/png"
+                    })
+                elif img.url:
+                    llm_images.append({"url": img.url})
+
+            if llm_images:
+                log_debug_message(f"📷 AI Cell: {len(llm_images)} image(s) attached")
+
         # AI cells now have access to kernel inspection and sandbox tools
-        response_text = client.ai_cell_with_tools(full_prompt)
+        response_text = client.ai_cell_with_tools(full_prompt, images=llm_images)
 
         log_debug_message(f"🤖 AI Cell response: {len(response_text)} chars")
 
