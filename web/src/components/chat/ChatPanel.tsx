@@ -21,6 +21,8 @@ interface ChatPanelProps {
   onProviderChange: (provider: string) => void
   toolMode: 'auto' | 'manual' | 'ai_decide'
   onToolModeChange: (mode: 'auto' | 'manual' | 'ai_decide') => void
+  contextFormat: 'xml' | 'plain'
+  onContextFormatChange: (format: 'xml' | 'plain') => void
   onDeleteMessage: (index: number) => void
   onEditMessage: (index: number, newContent: string) => void
   onRerunMessage: (index: number) => void
@@ -62,6 +64,8 @@ export default function ChatPanel({
   onProviderChange,
   toolMode,
   onToolModeChange,
+  contextFormat,
+  onContextFormatChange,
   onDeleteMessage,
   onEditMessage,
   onRerunMessage,
@@ -295,7 +299,7 @@ export default function ChatPanel({
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="chat-panel flex flex-col h-full"
       style={{
         backgroundColor: colors.panelBg,
         borderLeft: `1px solid ${colors.border}`,
@@ -351,6 +355,16 @@ export default function ChatPanel({
               <option value="auto">Tools: Auto</option>
               <option value="manual">Tools: Approval</option>
               <option value="ai_decide">Tools: AI Decides</option>
+            </select>
+            <select
+              value={contextFormat}
+              onChange={(e) => onContextFormatChange(e.target.value as 'xml' | 'plain')}
+              className="text-xs rounded-md px-2.5 py-1.5 border focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
+              style={{ backgroundColor: theme === 'light' ? '#fff' : 'rgba(255,255,255,0.05)', borderColor: colors.border, color: textSecondary }}
+              title="Context format for LLM (XML recommended for Claude)"
+            >
+              <option value="xml">Context: XML</option>
+              <option value="plain">Context: Plain</option>
             </select>
             <button
               onClick={onClearHistory}

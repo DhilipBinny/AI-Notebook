@@ -86,82 +86,135 @@ def _call_master_api(method: str, endpoint: str, json_data: dict = None) -> dict
         return {"success": False, "error": str(e)}
 
 
-def get_notebook_overview() -> dict:
+def get_notebook_overview(detail: str = "brief") -> dict:
     """
-    Get a high-level overview of all cells in the current notebook.
+    Get an overview of all cells in the current notebook.
 
     IMPORTANT: Always call this first before editing cells to get their cell_id values.
     Cell IDs are stable identifiers that don't change when cells are inserted/deleted.
 
-    Use this tool when you need to:
-    - Understand the notebook structure before making changes
-    - Get the cell_id of cells you want to read or edit
-    - See what cells exist and their types
-    - Get a quick preview of cell contents
+    Args:
+        detail: Level of detail to return:
+            - "brief" (default): Cell IDs, types, and 100-char preview. Fast. Use for finding cells.
+            - "full": Complete cell contents + outputs. Use when you need to understand the entire notebook.
+
+    WHEN TO USE "brief" (default):
+    - Finding cell IDs before editing
+    - Quick look at notebook structure
+    - User says "update cell 3" → find the cell_id
+
+    WHEN TO USE "full":
+    - User asks "analyze my notebook" or "summarize what I've done"
+    - Need to understand full context of notebook
+    - Debugging issues across multiple cells
 
     Returns:
         Dictionary with:
         - total_cells: Number of cells in notebook
-        - cells: List of cell summaries with:
+        - detail: The detail level used
+        - cells: List of cell info:
             - id: Unique cell identifier (use this for editing!)
             - cell_number: Position number (1-based, matches what user sees)
             - type: "code" or "markdown"
-            - preview: First 100 chars of content
+            - preview: First 100 chars (brief mode)
+            - content: Full cell content (full mode)
+            - outputs: Cell outputs if any (full mode, code cells only)
 
     Example:
-        1. Call get_notebook_overview() to see all cells and their IDs
-        2. User says "update cell 3" → find cell with cell_number=3, use its id
-        3. Use the cell_id from the response to read or update specific cells
+        get_notebook_overview()  → quick view with cell IDs
+        get_notebook_overview(detail="full")  → full notebook context
     """
-    log_debug_message("==> get_notebook_overview called from LLM")
+    log_debug_message(f"==> get_notebook_overview(detail={detail}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
         return {
             "total_cells": 0,
             "cells": [],
+            "detail": detail,
             "message": "No active session - cannot determine project"
         }
 
-    result = _call_master_api("GET", f"/internal/notebook/{project_id}/cells")
+    # For brief mode, use the existing endpoint
+    if detail == "brief":
+        result = _call_master_api("GET", f"/internal/notebook/{project_id}/cells")
+
+        if "error" in result and result.get("success") == False:
+            return {
+                "total_cells": 0,
+                "cells": [],
+                "detail": detail,
+                "message": result.get("error", "Failed to fetch notebook")
+            }
+
+        result["detail"] = detail
+        return result
+
+    # For full mode, get complete cell contents
+    result = _call_master_api("GET", f"/internal/notebook/{project_id}/cells/full")
 
     if "error" in result and result.get("success") == False:
+        # Fallback: try to build full view from individual cells
+        brief_result = _call_master_api("GET", f"/internal/notebook/{project_id}/cells")
+        if brief_result.get("success") == False:
+            return {
+                "total_cells": 0,
+                "cells": [],
+                "detail": detail,
+                "message": result.get("error", "Failed to fetch notebook")
+            }
+
+        # Build full context from brief data
+        cells_full = []
+        for cell in brief_result.get("cells", []):
+            cell_detail = _call_master_api("GET", f"/internal/notebook/{project_id}/cell/by-id/{cell['id']}")
+            if cell_detail.get("success", True):
+                cells_full.append({
+                    "id": cell["id"],
+                    "cell_number": cell.get("cell_number"),
+                    "type": cell.get("type"),
+                    "content": cell_detail.get("content", cell.get("preview", "")),
+                    "outputs": cell_detail.get("outputs", []) if cell.get("type") == "code" else None
+                })
+            else:
+                cells_full.append(cell)
+
         return {
-            "total_cells": 0,
-            "cells": [],
-            "message": result.get("error", "Failed to fetch notebook")
+            "total_cells": len(cells_full),
+            "cells": cells_full,
+            "detail": detail
         }
 
+    result["detail"] = detail
     return result
 
 
 def get_cell_content(cell_id: str) -> dict:
     """
-    Read the full content of a specific cell by its unique ID.
+    Read a cell's SOURCE CODE (what the user wrote).
 
-    Use this tool when you need to:
-    - Investigate a cell's code or markdown before editing
-    - Analyze a function or code block
-    - Read documentation or markdown content
-    - Check what a cell contains before making improvements
+    WHEN TO USE THIS TOOL:
+    - To read the code/markdown in a cell before editing it
+    - User says "look at cell 3" → get the source
+    - Before calling update_cell_content() to modify a cell
+
+    WHEN NOT TO USE THIS TOOL:
+    - To see cell execution output → use get_cell_outputs(cell_id)
+
+    KEY DIFFERENCE:
+    - get_cell_content() → returns SOURCE (the code/markdown)
+    - get_cell_outputs() → returns OUTPUT (execution results)
 
     Args:
-        cell_id: The unique cell identifier (e.g., "cell-a1b2c3d4").
-                 Get this from get_notebook_overview().
+        cell_id: The cell's unique ID (get from get_notebook_overview())
 
     Returns:
-        Dictionary with:
-        - success: Whether the cell was found
-        - cell_id: The cell's unique identifier
-        - cell_number: Position number (1-based, matches what user sees)
-        - type: Cell type ("code" or "markdown")
-        - content: Full cell content
-        - output: Cell output if it's a code cell that has been executed
-        - error: Error message if cell not found
+        Dictionary with cell_id, cell_number, type, content, output
 
     Example:
-        1. First call get_notebook_overview() to find the cell_id
-        2. Then: get_cell_content("cell-a1b2c3d4")
+        1. get_notebook_overview() → find cell_id for "cell 3"
+        2. get_cell_content(cell_id) → read the source code
+        3. update_cell_content(cell_id, improved_code) → edit it
     """
     log_debug_message(f"==> get_cell_content({cell_id}) called from LLM")
 
@@ -386,37 +439,32 @@ def multi_insert_cells(cells_json: str) -> dict:
 
 def insert_cell_after(after_cell_id: str, content: str, cell_type: str) -> dict:
     """
-    Insert a new cell after a specific cell (identified by cell_id).
+    Insert a new cell AFTER an existing cell. This is the PREFERRED insertion method.
 
-    This is the recommended way to insert cells as it uses stable cell IDs
-    rather than position indices that can change.
+    WHEN TO USE THIS TOOL:
+    - Adding a new cell anywhere in the notebook (most common case)
+    - Insert helper function after imports
+    - Add markdown explanation after code
 
-    Use this tool when you need to:
-    - Add helper functions after existing code
-    - Insert explanatory markdown after a cell
-    - Add new code cells for additional functionality
-    - Create documentation cells
+    WHEN NOT TO USE THIS TOOL:
+    - To insert at the VERY BEGINNING → use insert_cell_at_position(0, ...)
+    - To insert multiple cells at once → use multi_insert_cells()
+
+    WHY THIS IS PREFERRED over insert_cell_at_position:
+    - Uses stable cell IDs (don't change when cells are added/deleted)
+    - Position indices can shift and cause wrong insertions
 
     Args:
-        after_cell_id: The cell_id of the cell after which to insert.
-                       Get this from get_notebook_overview().
-        content: The content of the new cell
-        cell_type: Type of cell ("code" or "markdown")
+        after_cell_id: Cell ID to insert after (get from get_notebook_overview())
+        content: The new cell's content
+        cell_type: "code" or "markdown"
 
     Returns:
-        Dictionary with:
-        - success: Whether the insertion succeeded
-        - inserted_after: The reference cell_id
-        - new_cell_id: The ID of the newly created cell
-        - inserted_at_index: Current position of new cell
-        - content: The inserted content
-        - type: Cell type
-        - total_cells: New total number of cells
-        - error: Error message if insertion failed
+        Dictionary with success, new_cell_id, inserted_at_index
 
     Example:
-        1. First call get_notebook_overview() to find the cell_id
-        2. Then: insert_cell_after("cell-a1b2c3d4", "def helper():\\n    ...", "code")
+        1. get_notebook_overview() → find cell_id
+        2. insert_cell_after(cell_id, "# New section", "markdown")
     """
     log_debug_message(f"==> insert_cell_after({after_cell_id}, type={cell_type}) called from LLM")
 
@@ -443,33 +491,30 @@ def insert_cell_after(after_cell_id: str, content: str, cell_type: str) -> dict:
 
 def insert_cell_at_position(position: int, content: str, cell_type: str) -> dict:
     """
-    Insert a new cell at a specific position in the notebook.
+    Insert a cell at the BEGINNING (position=0) or END of the notebook.
 
-    NOTE: Prefer insert_cell_after() when possible, as it uses stable cell IDs.
-    Use this only when you need to insert at the beginning (position=0) or
-    at the very end of the notebook.
+    WHEN TO USE THIS TOOL:
+    - Insert at the VERY BEGINNING: insert_cell_at_position(0, content, type)
+    - Insert at the VERY END: insert_cell_at_position(total_cells, content, type)
+
+    WHEN NOT TO USE THIS TOOL:
+    - For any other insertion → use insert_cell_after(cell_id, ...) instead
+      (it's more reliable because cell IDs don't shift)
 
     Args:
-        position: Where to insert the cell (0-based index)
-                 - 0 = insert at beginning (before first cell)
-                 - n = insert at position n
-                 - Use total_cells from get_notebook_overview() to append at end
-        content: The content of the new cell
-        cell_type: Type of cell ("code" or "markdown")
+        position: 0 for beginning, or total_cells for end
+        content: The new cell's content
+        cell_type: "code" or "markdown"
 
     Returns:
-        Dictionary with:
-        - success: Whether the insertion succeeded
-        - inserted_at: The index where cell was inserted
-        - cell_id: The ID of the newly created cell
-        - content: The inserted content
-        - type: Cell type
-        - total_cells: New total number of cells
-        - error: Error message if insertion failed
+        Dictionary with success, cell_id, inserted_at
 
     Example:
-        To insert at the beginning: insert_cell_at_position(0, "# Introduction", "markdown")
-        To append at end: insert_cell_at_position(5, "# Summary", "markdown") where 5 is total_cells
+        # Insert at beginning
+        insert_cell_at_position(0, "# Introduction", "markdown")
+
+        # Insert at end (get total_cells from get_notebook_overview first)
+        insert_cell_at_position(total_cells, "# Summary", "markdown")
     """
     # Convert to int in case LLM sends float
     position = int(position)
@@ -499,32 +544,31 @@ def insert_cell_at_position(position: int, content: str, cell_type: str) -> dict
 
 def execute_cell(cell_id: str) -> dict:
     """
-    Execute a specific code cell in the Jupyter kernel by its unique ID.
+    Run a notebook cell and SAVE its output to the notebook.
 
-    Use this tool when you need to:
-    - Test code changes after editing a cell
-    - Run a cell to see its output
-    - Verify that improvements work correctly
-    - Check if code runs without errors
+    WHEN TO USE THIS TOOL:
+    - After editing a cell with update_cell_content() → run it to verify
+    - User says "run cell 3" → execute_cell(cell_id)
+    - To show the user output in their notebook
 
-    Note: Only works for code cells. Markdown cells cannot be executed.
+    WHEN NOT TO USE THIS TOOL:
+    - For quick calculations → use execute_python_code() instead
+    - To test code before suggesting → use sandbox_execute() instead
+
+    KEY DIFFERENCE from execute_python_code:
+    - execute_cell() saves output to the notebook cell (user sees it)
+    - execute_python_code() runs code but output is NOT saved anywhere
 
     Args:
-        cell_id: The unique cell identifier (e.g., "cell-a1b2c3d4").
-                 Get this from get_notebook_overview().
+        cell_id: The cell's unique ID (get from get_notebook_overview())
 
     Returns:
-        Dictionary with:
-        - success: Whether execution succeeded
-        - cell_id: The cell's unique identifier
-        - cell_number: Position number (1-based, matches what user sees)
-        - output: Text output from execution
-        - error: Error message if execution failed
-        - execution_count: Kernel execution count
+        Dictionary with success, cell_id, cell_number, output, error, execution_count
 
-    Example:
-        1. First call get_notebook_overview() to find the cell_id
-        2. After editing a cell, test it: execute_cell("cell-a1b2c3d4")
+    Example workflow:
+        1. get_notebook_overview() → find cell_id
+        2. update_cell_content(cell_id, new_code) → edit the cell
+        3. execute_cell(cell_id) → run and save output
     """
     log_debug_message(f"==> execute_cell({cell_id}) called from LLM")
 

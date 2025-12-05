@@ -1,7 +1,7 @@
 """
-OpenAI LLM Client - OpenAI API implementation
+Anthropic LLM Client - Claude implementation
 
-Implements the BaseLLMClient interface for OpenAI models (GPT-4, etc.).
+Implements the BaseLLMClient interface for Anthropic models (Claude 3, etc.).
 Supports both automatic and manual (approval-based) function calling.
 Includes web search tool for real-time web information.
 """
@@ -9,35 +9,26 @@ Includes web search tool for real-time web information.
 import json
 import copy
 from typing import List, Dict, Any, Optional, Union
-from openai import OpenAI
+import anthropic
+from anthropic import Anthropic
 
-from backend.llm_client_base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
 
-# Web search tool for OpenAI
+# Web search tool definition for Anthropic
 WEB_SEARCH_TOOL = {
-    "type": "web_search_preview",
-    "search_context_size": "medium"  # Options: "low", "medium", "high"
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 5  # Limit searches per request
 }
 
 
-def _safe_json_loads(json_str: str, default: Dict = None) -> Dict[str, Any]:
-    """Safely parse JSON string, returning default on error."""
-    if default is None:
-        default = {}
-    try:
-        return json.loads(json_str) if json_str else default
-    except json.JSONDecodeError as e:
-        log_debug_message(f"⚠️ JSON parse error: {e} - Input: {json_str[:100]}...")
-        return default
-
-
-# Build OpenAI tool schemas from our function definitions
-def _build_openai_tools() -> List[Dict[str, Any]]:
-    """Convert our tool functions to OpenAI tool format"""
+# Build Anthropic tool schemas from our function definitions
+def _build_anthropic_tools() -> List[Dict[str, Any]]:
+    """Convert our tool functions to Anthropic tool format"""
     tools = []
 
     for func in TOOL_FUNCTIONS:
@@ -109,20 +100,17 @@ def _build_openai_tools() -> List[Dict[str, Any]]:
                     required.append(param_name)
 
         tool = {
-            "type": "function",
-            "function": {
-                "name": func_name,
-                "description": description.strip(),
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required
-                }
+            "name": func_name,
+            "description": description.strip(),
+            "input_schema": {
+                "type": "object",
+                "properties": properties,
+                "required": required
             }
         }
         tools.append(tool)
 
-    log_debug_message(f"OpenAI tools: {tools}")
+    log_debug_message(f"Anthropic tools: {tools}")
 
     return tools
 
@@ -131,36 +119,36 @@ def _build_openai_tools() -> List[Dict[str, Any]]:
 TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
 
 
-class OpenAIClient(BaseLLMClient):
-    """OpenAI LLM client with tool calling and web search support"""
+class AnthropicClient(BaseLLMClient):
+    """Anthropic LLM client with tool calling and web search support"""
 
-    def __init__(self, api_key: str, model_name: str = "gpt-4o", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
+    def __init__(self, api_key: str, model_name: str = "claude-3-haiku-20240307", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
-        Initialize OpenAI client.
+        Initialize Anthropic client.
 
         Args:
-            api_key: OpenAI API key
-            model_name: Model to use (default: gpt-4o)
+            api_key: Anthropic API key
+            model_name: Model to use (default: claude-3-haiku-20240307)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
             enable_web_search: Enable web search tool for real-time web info (default: True)
         """
-        self.client = OpenAI(api_key=api_key)
+        self.client = Anthropic(api_key=api_key)
         self.model_name = model_name
         self.enable_web_search = enable_web_search
 
-        # Build tools list
-        self.tools = _build_openai_tools()
+        # Build tools list - custom tools first
+        self.tools = _build_anthropic_tools()
 
         # Add web search tool if enabled
         if self.enable_web_search:
             self.tools.append(WEB_SEARCH_TOOL)
-            log_debug_message("OpenAI web search tool enabled")
+            log_debug_message("Anthropic web search tool enabled")
 
         self.history: List[Dict[str, Any]] = []
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
-        log_debug_message(f"OpenAI client initialized. Auto function calling: {self.auto_function_calling}")
+        log_debug_message(f"Anthropic client initialized. Auto function calling: {self.auto_function_calling}")
         log_debug_message(f"Web search enabled: {self.enable_web_search}")
 
         # Store pending state for manual mode
@@ -169,7 +157,7 @@ class OpenAIClient(BaseLLMClient):
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool and return the result as a string."""
-        log_debug_message(f"OpenAI executing tool: {tool_name} with args: {arguments}")
+        log_debug_message(f"Anthropic executing tool: {tool_name} with args: {arguments}")
 
         if tool_name not in TOOL_MAP:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -180,9 +168,13 @@ class OpenAIClient(BaseLLMClient):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    def send_message(self, message: str) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
         """
-        Send a message to OpenAI.
+        Send a message to Anthropic.
+
+        Args:
+            message: The full message (may include context)
+            user_message: Optional - just the user's actual question (unused, for API compatibility)
 
         When auto_function_calling=True:
             Executes tools automatically and returns final response text
@@ -200,7 +192,7 @@ class OpenAIClient(BaseLLMClient):
         """
         try:
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log_debug_message(f"📨 OpenAI send_message() - User: {message[:60]}...")
+            log_debug_message(f"📨 Anthropic send_message() - User: {message[:60]}...")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             # Add user message to history
@@ -209,23 +201,21 @@ class OpenAIClient(BaseLLMClient):
                 "content": message
             })
 
-            # Build messages with system prompt
-            messages = [
-                {"role": "system", "content": self.SYSTEM_PROMPT}
-            ] + self.history
+            # Build messages (Anthropic system prompt is separate)
+            messages = self.history
 
             if self.auto_function_calling:
                 # Auto mode: loop until final response
-                log_debug_message(f"🤖 OpenAI AUTO mode - executing tools automatically")
+                log_debug_message(f"🤖 Anthropic AUTO mode - executing tools automatically")
                 return self._auto_execute_tools(messages)
             else:
                 # Manual mode: return pending tools for approval
-                log_debug_message(f"🤖 OpenAI MANUAL mode - returning tools for approval")
+                log_debug_message(f"🤖 Anthropic MANUAL mode - returning tools for approval")
                 return self._get_pending_tools(messages)
 
         except Exception as e:
-            log_debug_message(f"❌ OpenAI error: {e}")
-            return f"OpenAI Error: {e}"
+            log_debug_message(f"❌ Anthropic error: {e}")
+            return f"Anthropic Error: {e}"
 
     def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
         """Execute tools automatically until we get a final response"""
@@ -234,122 +224,129 @@ class OpenAIClient(BaseLLMClient):
 
         while iteration < max_iterations:
             iteration += 1
-            log_debug_message(f"🔄 OpenAI iteration {iteration}/{max_iterations}")
+            log_debug_message(f"🔄 Anthropic iteration {iteration}/{max_iterations}")
 
-            response = self.client.chat.completions.create(
+            response = self.client.messages.create(
                 model=self.model_name,
+                max_tokens=4096,
+                system=self.SYSTEM_PROMPT,
                 messages=messages,
-                tools=self.tools,
-                tool_choice="auto"
+                tools=self.tools
             )
 
-            response_message = response.choices[0].message
+            # Log server tool usage (like web_search)
+            for block in response.content:
+                if block.type == "server_tool_use":
+                    log_debug_message(f"🌐 Anthropic web search: {block.name}")
+                elif block.type == "web_search_tool_result":
+                    result_count = len(block.content) if hasattr(block, 'content') else 0
+                    log_debug_message(f"🌐 Anthropic web search returned {result_count} results")
 
-            if response_message.tool_calls:
+            # Check if stop_reason is tool_use
+            if response.stop_reason == "tool_use":
                 # Add assistant message with tool calls
                 messages.append({
                     "role": "assistant",
-                    "content": response_message.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            }
-                        }
-                        for tc in response_message.tool_calls
-                    ]
+                    "content": response.content
                 })
 
                 # Execute each tool call
-                for tool_call in response_message.tool_calls:
-                    func_name = tool_call.function.name
-                    func_args = _safe_json_loads(tool_call.function.arguments)
-                    log_debug_message(f"🔧 OpenAI calling tool: {func_name}")
-                    result = self._execute_tool(func_name, func_args)
+                for block in response.content:
+                    if block.type == "tool_use":
+                        func_name = block.name
+                        func_args = block.input
+                        log_debug_message(f"🔧 Anthropic calling tool: {func_name}")
+                        result = self._execute_tool(func_name, func_args)
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": result
-                    })
+                        messages.append({
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": result
+                                }
+                            ]
+                        })
             else:
-                # Final response
-                final_response = response_message.content or ""
+                # Final response - extract text from content blocks
+                final_response = ""
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        final_response += block.text
                 self.history.append({
                     "role": "assistant",
                     "content": final_response
                 })
-                log_debug_message(f"✅ OpenAI response received - {len(final_response)} chars")
+                log_debug_message(f"✅ Anthropic response received - {len(final_response)} chars")
                 return final_response
 
-        log_debug_message(f"❌ OpenAI max iterations reached")
+        log_debug_message(f"❌ Anthropic max iterations reached")
         return "Error: Maximum tool calling iterations reached"
 
     def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
         """Get pending tool calls without executing them"""
-        response = self.client.chat.completions.create(
+        response = self.client.messages.create(
             model=self.model_name,
+            max_tokens=4096,
+            system=self.SYSTEM_PROMPT,
             messages=messages,
-            tools=self.tools,
-            tool_choice="auto"
+            tools=self.tools
         )
 
-        response_message = response.choices[0].message
+        # Log server tool usage (like web_search)
+        for block in response.content:
+            if block.type == "server_tool_use":
+                log_debug_message(f"🌐 Anthropic web search: {block.name}")
+            elif block.type == "web_search_tool_result":
+                result_count = len(block.content) if hasattr(block, 'content') else 0
+                log_debug_message(f"🌐 Anthropic web search returned {result_count} results")
 
-        if response_message.tool_calls:
+        if response.stop_reason == "tool_use":
             # Store state for later execution
             self._pending_messages = copy.deepcopy(messages)
             self._pending_tool_calls = []
 
-            pending_tools = []
-            for tc in response_message.tool_calls:
-                tool_info = {
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": _safe_json_loads(tc.function.arguments)
-                }
-                pending_tools.append(tool_info)
-                self._pending_tool_calls.append({
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments  # Keep as string for OpenAI
-                })
-
-            # Store assistant message for later
+            # Add assistant message to pending messages
             self._pending_messages.append({
                 "role": "assistant",
-                "content": response_message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
-                        }
-                    }
-                    for tc in response_message.tool_calls
-                ]
+                "content": response.content
             })
 
+            pending_tools = []
+            response_text = ""
+
+            for block in response.content:
+                if block.type == "text":
+                    response_text += block.text
+                elif block.type == "tool_use":
+                    tool_info = {
+                        "id": block.id,
+                        "name": block.name,
+                        "arguments": block.input
+                    }
+                    pending_tools.append(tool_info)
+                    self._pending_tool_calls.append(tool_info)
+
             tools_names = [t["name"] for t in pending_tools]
-            log_debug_message(f"🔧 OpenAI pending tools: {', '.join(tools_names)}")
+            log_debug_message(f"🔧 Anthropic pending tools: {', '.join(tools_names)}")
 
             return {
                 "pending_tool_calls": pending_tools,
-                "response_text": response_message.content or ""
+                "response_text": response_text
             }
         else:
-            # No tools needed
-            final_response = response_message.content or ""
+            # No custom tools needed - extract text from all content blocks
+            # (response may include web search results interspersed with text)
+            final_response = ""
+            for block in response.content:
+                if hasattr(block, 'text') and block.text:
+                    final_response += block.text
             self.history.append({
                 "role": "assistant",
                 "content": final_response
             })
-            log_debug_message(f"✅ OpenAI response (no tools) - {len(final_response)} chars")
+            log_debug_message(f"✅ Anthropic response (no custom tools) - {len(final_response)} chars")
             return final_response
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
@@ -378,9 +375,14 @@ class OpenAIClient(BaseLLMClient):
                 result = self._execute_tool(tool_name, tool_args)
 
                 messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "content": result
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": result
+                        }
+                    ]
                 })
 
             # Continue with auto execution from here
@@ -426,7 +428,7 @@ class OpenAIClient(BaseLLMClient):
 
     @property
     def provider_name(self) -> str:
-        return "OpenAI"
+        return "Anthropic"
 
     def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
         """
@@ -441,14 +443,14 @@ class OpenAIClient(BaseLLMClient):
             The response text from the LLM
         """
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.messages.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
             )
-            return response.choices[0].message.content or ""
+            return response.content[0].text
         except Exception as e:
-            log_debug_message(f"OpenAI chat_completion error: {e}")
+            log_debug_message(f"Anthropic chat_completion error: {e}")
             raise
 
     def ai_cell_completion(self, prompt: str) -> str:
@@ -460,25 +462,38 @@ class OpenAIClient(BaseLLMClient):
             prompt: The full prompt including notebook context and user question
 
         Returns:
-            The response text from the LLM
+            The response text from the LLM (may include web search results)
         """
         try:
-            log_debug_message(f"🤖 OpenAI AI Cell completion starting...")
+            log_debug_message(f"🤖 Anthropic AI Cell completion starting...")
 
-            # OpenAI doesn't have native web search, so just do completion
-            # Could integrate with a search API in the future
-            response = self.client.chat.completions.create(
+            # Anthropic has web search via tool - use it if enabled
+            tools = []
+            if self.enable_web_search:
+                tools.append({
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 3
+                })
+
+            response = self.client.messages.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
                 max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+                tools=tools if tools else None,
             )
 
-            result = response.choices[0].message.content or ""
-            log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars")
+            # Extract text from response (may have multiple content blocks)
+            result = ""
+            for block in response.content:
+                if hasattr(block, 'text') and block.text:
+                    result += block.text
+
+            log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars")
             return result
 
         except Exception as e:
-            log_debug_message(f"OpenAI ai_cell_completion error: {e}")
+            log_debug_message(f"Anthropic ai_cell_completion error: {e}")
             raise
 
     def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
@@ -494,9 +509,11 @@ class OpenAIClient(BaseLLMClient):
             The final response text from the LLM
         """
         try:
-            log_debug_message(f"🤖 OpenAI AI Cell with tools starting...")
+            log_debug_message(f"🤖 Anthropic AI Cell with tools starting...")
 
-            # Build AI Cell tool schemas
+            # Build AI Cell tool schemas (kernel inspection + sandbox only, no web search)
+            # AI Cell focuses on notebook context - web search disabled to encourage
+            # better use of kernel inspection and sandbox tools
             ai_cell_tools = self._build_ai_cell_tools()
             ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
 
@@ -505,28 +522,44 @@ class OpenAIClient(BaseLLMClient):
             for iteration in range(max_iterations):
                 log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
 
-                response = self.client.chat.completions.create(
+                response = self.client.messages.create(
                     model=self.model_name,
+                    max_tokens=4096,
                     messages=messages,
                     tools=ai_cell_tools,
-                    tool_choice="auto",
-                    max_tokens=4096,
                 )
 
-                message = response.choices[0].message
-
-                # If no tool calls, return the response
-                if not message.tool_calls:
-                    result = message.content or ""
-                    log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars")
+                # Check stop reason
+                if response.stop_reason == "end_turn":
+                    # No more tool calls, extract final text
+                    result = ""
+                    for block in response.content:
+                        if hasattr(block, 'text') and block.text:
+                            result += block.text
+                    log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars")
                     return result
 
-                # Execute tool calls
-                messages.append(message.model_dump())
+                # Process tool calls
+                tool_calls = []
+                text_response = ""
 
-                for tool_call in message.tool_calls:
-                    tool_name = tool_call.function.name
-                    tool_args = _safe_json_loads(tool_call.function.arguments)
+                for block in response.content:
+                    if hasattr(block, 'text') and block.text:
+                        text_response += block.text
+                    elif block.type == "tool_use":
+                        tool_calls.append(block)
+
+                if not tool_calls:
+                    return text_response
+
+                # Add assistant's response to messages
+                messages.append({"role": "assistant", "content": response.content})
+
+                # Execute tools and add results
+                tool_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.input or {}
 
                     log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
 
@@ -539,17 +572,19 @@ class OpenAIClient(BaseLLMClient):
                     else:
                         tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_call.id,
                         "content": tool_result
                     })
+
+                messages.append({"role": "user", "content": tool_results})
 
             # Max iterations reached
             return "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question."
 
         except Exception as e:
-            log_debug_message(f"OpenAI ai_cell_with_tools error: {e}")
+            log_debug_message(f"Anthropic ai_cell_with_tools error: {e}")
             import traceback
             log_debug_message(f"Traceback: {traceback.format_exc()}")
             raise
@@ -622,15 +657,12 @@ class OpenAIClient(BaseLLMClient):
                         required.append(param_name)
 
             tools.append({
-                "type": "function",
-                "function": {
-                    "name": func_name,
-                    "description": description.strip()[:500],
-                    "parameters": {
-                        "type": "object",
-                        "properties": properties,
-                        "required": required
-                    }
+                "name": func_name,
+                "description": description.strip()[:500],
+                "input_schema": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required
                 }
             })
 

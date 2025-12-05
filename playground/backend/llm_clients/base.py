@@ -104,12 +104,13 @@ GUIDELINES:
 """
 
     @abstractmethod
-    def send_message(self, message: str) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
         """
         Send a message to the LLM and get a response.
 
         Args:
-            message: The user message (may include context)
+            message: The full message (may include context)
+            user_message: Optional - just the user's actual question (for web search keyword detection)
 
         Returns:
             str: Final response text (if auto_function_calling=True or no tools needed)

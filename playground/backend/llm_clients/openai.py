@@ -1,11 +1,9 @@
 """
-Ollama LLM Client - Ollama API implementation (OpenAI-compatible)
+OpenAI LLM Client - OpenAI API implementation
 
-Extends the OpenAI client since Ollama provides an OpenAI-compatible API.
-No API key required - just needs the Ollama server URL.
-
-Note: Tool/function calling support depends on the Ollama model.
-Models like llama3.1, mistral, and qwen2.5 support tools.
+Implements the BaseLLMClient interface for OpenAI models (GPT-4, etc.).
+Supports both automatic and manual (approval-based) function calling.
+Includes web search tool for real-time web information.
 """
 
 import json
@@ -13,49 +11,165 @@ import copy
 from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 
-from backend.llm_client_openai import OpenAIClient, _build_openai_tools, TOOL_MAP, _safe_json_loads
-from backend.llm_client_base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient
 from backend.utils.util_func import log_debug_message
-from backend.llm_tools import AI_CELL_TOOLS
+from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
 
-class OllamaClient(BaseLLMClient):
-    """Ollama LLM client - uses OpenAI-compatible API with tool support"""
+# Web search tool for OpenAI
+WEB_SEARCH_TOOL = {
+    "type": "web_search_preview",
+    "search_context_size": "medium"  # Options: "low", "medium", "high"
+}
 
-    def __init__(self, base_url: str, model_name: str = "qwen2.5-coder:7b", auto_function_calling: Optional[bool] = None):
+
+def _safe_json_loads(json_str: str, default: Dict = None) -> Dict[str, Any]:
+    """Safely parse JSON string, returning default on error."""
+    if default is None:
+        default = {}
+    try:
+        return json.loads(json_str) if json_str else default
+    except json.JSONDecodeError as e:
+        log_debug_message(f"⚠️ JSON parse error: {e} - Input: {json_str[:100]}...")
+        return default
+
+
+# Build OpenAI tool schemas from our function definitions
+def _build_openai_tools() -> List[Dict[str, Any]]:
+    """Convert our tool functions to OpenAI tool format"""
+    tools = []
+
+    for func in TOOL_FUNCTIONS:
+        # Get function metadata from docstring and annotations
+        func_name = func.__name__
+        func_doc = func.__doc__ or ""
+        annotations = func.__annotations__
+
+        # Parse docstring to get description and parameter descriptions
+        doc_lines = func_doc.strip().split('\n')
+        description = ""
+        param_descriptions = {}
+        current_section = None
+
+        for line in doc_lines:
+            line = line.strip()
+            if line.lower().startswith('args:'):
+                current_section = 'args'
+                continue
+            elif line.lower().startswith('returns:'):
+                current_section = 'returns'
+                continue
+            elif line.lower().startswith('example:'):
+                current_section = 'example'
+                continue
+
+            if current_section is None and line:
+                description += line + " "
+            elif current_section == 'args' and ':' in line:
+                param_name = line.split(':')[0].strip()
+                param_desc = ':'.join(line.split(':')[1:]).strip()
+                param_descriptions[param_name] = param_desc
+
+        # Build parameters schema
+        properties = {}
+        required = []
+
+        for param_name, param_type in annotations.items():
+            if param_name == 'return':
+                continue
+
+            # Map Python types to JSON schema types
+            json_type = "string"
+            if param_type == int:
+                json_type = "integer"
+            elif param_type == float:
+                json_type = "number"
+            elif param_type == bool:
+                json_type = "boolean"
+            elif param_type == str:
+                json_type = "string"
+
+            properties[param_name] = {
+                "type": json_type,
+                "description": param_descriptions.get(param_name, f"The {param_name} parameter")
+            }
+
+            # Check if parameter has a default value
+            defaults = func.__defaults__ or ()
+            code = func.__code__
+            num_params = code.co_argcount
+            num_defaults = len(defaults)
+            params_without_defaults = num_params - num_defaults
+
+            param_names = code.co_varnames[:num_params]
+            if param_name in param_names:
+                param_index = list(param_names).index(param_name)
+                if param_index < params_without_defaults:
+                    required.append(param_name)
+
+        tool = {
+            "type": "function",
+            "function": {
+                "name": func_name,
+                "description": description.strip(),
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required
+                }
+            }
+        }
+        tools.append(tool)
+
+    log_debug_message(f"OpenAI tools: {tools}")
+
+    return tools
+
+
+# Map function names to actual functions
+TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
+
+
+class OpenAIClient(BaseLLMClient):
+    """OpenAI LLM client with tool calling and web search support"""
+
+    def __init__(self, api_key: str, model_name: str = "gpt-4o", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
-        Initialize Ollama client.
+        Initialize OpenAI client.
 
         Args:
-            base_url: Ollama server URL (e.g., "http://192.168.0.136:11434/v1")
-            model_name: Model to use (default: qwen2.5-coder:7b)
+            api_key: OpenAI API key
+            model_name: Model to use (default: gpt-4o)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
+            enable_web_search: Enable web search tool for real-time web info (default: True)
         """
-        # Initialize OpenAI client with Ollama endpoint
-        self.client = OpenAI(
-            base_url=base_url,
-            api_key="ollama"  # Dummy key - Ollama doesn't validate it
-        )
+        self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
-        self.base_url = base_url
+        self.enable_web_search = enable_web_search
+
+        # Build tools list
         self.tools = _build_openai_tools()
+
+        # Add web search tool if enabled
+        if self.enable_web_search:
+            self.tools.append(WEB_SEARCH_TOOL)
+            log_debug_message("OpenAI web search tool enabled")
+
         self.history: List[Dict[str, Any]] = []
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
+        log_debug_message(f"OpenAI client initialized. Auto function calling: {self.auto_function_calling}")
+        log_debug_message(f"Web search enabled: {self.enable_web_search}")
 
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
         self._pending_tool_calls: List[Dict[str, Any]] = []
 
-        log_debug_message(f"Ollama client initialized: {base_url} with model {model_name}")
-        log_debug_message(f"Auto function calling: {self.auto_function_calling}")
-        log_debug_message(f"Tools available: {[t['function']['name'] for t in self.tools]}")
-
-    def _execute_tool(self, tool_name: str, arguments: dict) -> str:
-        """Execute a tool and return the result as JSON string"""
-        log_debug_message(f"Ollama executing tool: {tool_name} with args: {arguments}")
+    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Execute a tool and return the result as a string."""
+        log_debug_message(f"OpenAI executing tool: {tool_name} with args: {arguments}")
 
         if tool_name not in TOOL_MAP:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -66,9 +180,13 @@ class OllamaClient(BaseLLMClient):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    def send_message(self, message: str) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
         """
-        Send a message to Ollama.
+        Send a message to OpenAI.
+
+        Args:
+            message: The full message (may include context)
+            user_message: Optional - just the user's actual question (unused, for API compatibility)
 
         When auto_function_calling=True:
             Executes tools automatically and returns final response text
@@ -76,10 +194,17 @@ class OllamaClient(BaseLLMClient):
         When auto_function_calling=False:
             If model wants to call tools: Returns dict with pending_tool_calls
             If no tools needed: Returns the response text
+
+        Args:
+            message: The user message
+
+        Returns:
+            str: Final response text (if auto mode or no tools needed)
+            dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
         try:
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log_debug_message(f"📨 Ollama send_message() - User: {message[:60]}...")
+            log_debug_message(f"📨 OpenAI send_message() - User: {message[:60]}...")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             # Add user message to history
@@ -94,15 +219,17 @@ class OllamaClient(BaseLLMClient):
             ] + self.history
 
             if self.auto_function_calling:
-                log_debug_message(f"🤖 Ollama AUTO mode - executing tools automatically")
+                # Auto mode: loop until final response
+                log_debug_message(f"🤖 OpenAI AUTO mode - executing tools automatically")
                 return self._auto_execute_tools(messages)
             else:
-                log_debug_message(f"🤖 Ollama MANUAL mode - returning tools for approval")
+                # Manual mode: return pending tools for approval
+                log_debug_message(f"🤖 OpenAI MANUAL mode - returning tools for approval")
                 return self._get_pending_tools(messages)
 
         except Exception as e:
-            log_debug_message(f"❌ Ollama error: {e}")
-            return f"Ollama Error: {e}"
+            log_debug_message(f"❌ OpenAI error: {e}")
+            return f"OpenAI Error: {e}"
 
     def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
         """Execute tools automatically until we get a final response"""
@@ -111,26 +238,18 @@ class OllamaClient(BaseLLMClient):
 
         while iteration < max_iterations:
             iteration += 1
-            log_debug_message(f"🔄 Ollama iteration {iteration}/{max_iterations}")
+            log_debug_message(f"🔄 OpenAI iteration {iteration}/{max_iterations}")
 
-            try:
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    tools=self.tools,
-                    tool_choice="auto"
-                )
-            except Exception as e:
-                # If tools fail (model doesn't support), try without tools
-                log_debug_message(f"⚠️ Ollama tool calling failed, trying without tools: {e}")
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages
-                )
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                tools=self.tools,
+                tool_choice="auto"
+            )
 
             response_message = response.choices[0].message
 
-            if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
+            if response_message.tool_calls:
                 # Add assistant message with tool calls
                 messages.append({
                     "role": "assistant",
@@ -152,8 +271,7 @@ class OllamaClient(BaseLLMClient):
                 for tool_call in response_message.tool_calls:
                     func_name = tool_call.function.name
                     func_args = _safe_json_loads(tool_call.function.arguments)
-                    log_debug_message(f"🔧 Ollama calling tool: {func_name}")
-
+                    log_debug_message(f"🔧 OpenAI calling tool: {func_name}")
                     result = self._execute_tool(func_name, func_args)
 
                     messages.append({
@@ -168,31 +286,24 @@ class OllamaClient(BaseLLMClient):
                     "role": "assistant",
                     "content": final_response
                 })
-                log_debug_message(f"✅ Ollama response received - {len(final_response)} chars")
+                log_debug_message(f"✅ OpenAI response received - {len(final_response)} chars")
                 return final_response
 
-        log_debug_message(f"❌ Ollama max iterations reached")
+        log_debug_message(f"❌ OpenAI max iterations reached")
         return "Error: Maximum tool calling iterations reached"
 
     def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
         """Get pending tool calls without executing them"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                tools=self.tools,
-                tool_choice="auto"
-            )
-        except Exception as e:
-            log_debug_message(f"⚠️ Ollama tool calling failed, trying without tools: {e}")
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages
-            )
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            tools=self.tools,
+            tool_choice="auto"
+        )
 
         response_message = response.choices[0].message
 
-        if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
+        if response_message.tool_calls:
             # Store state for later execution
             self._pending_messages = copy.deepcopy(messages)
             self._pending_tool_calls = []
@@ -208,7 +319,7 @@ class OllamaClient(BaseLLMClient):
                 self._pending_tool_calls.append({
                     "id": tc.id,
                     "name": tc.function.name,
-                    "arguments": tc.function.arguments
+                    "arguments": tc.function.arguments  # Keep as string for OpenAI
                 })
 
             # Store assistant message for later
@@ -229,7 +340,7 @@ class OllamaClient(BaseLLMClient):
             })
 
             tools_names = [t["name"] for t in pending_tools]
-            log_debug_message(f"🔧 Ollama pending tools: {', '.join(tools_names)}")
+            log_debug_message(f"🔧 OpenAI pending tools: {', '.join(tools_names)}")
 
             return {
                 "pending_tool_calls": pending_tools,
@@ -242,11 +353,20 @@ class OllamaClient(BaseLLMClient):
                 "role": "assistant",
                 "content": final_response
             })
-            log_debug_message(f"✅ Ollama response (no tools) - {len(final_response)} chars")
+            log_debug_message(f"✅ OpenAI response (no tools) - {len(final_response)} chars")
             return final_response
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
-        """Execute approved tool calls and get the final response."""
+        """
+        Execute approved tool calls and get the final response.
+
+        Args:
+            approved_tool_calls: List of approved tools to execute
+                                [{"id": "...", "name": "...", "arguments": {...}}, ...]
+
+        Returns:
+            The final response text after tool execution
+        """
         try:
             if not self._pending_messages:
                 return "Error: No pending tool calls to execute"
@@ -281,28 +401,36 @@ class OllamaClient(BaseLLMClient):
             return f"Error executing tools: {e}"
 
     def clear_history(self) -> None:
+        """Clear conversation history"""
         self.history = []
         self._pending_messages = []
         self._pending_tool_calls = []
 
-    def get_history(self):
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Get conversation history"""
         return self.history
 
-    def set_history(self, history_list) -> None:
+    def set_history(self, history_list: List[Dict[str, Any]]) -> None:
+        """Set conversation history."""
         self.history = []
         for msg in history_list:
             role = msg.get("role", "user")
             if role == "model":
                 role = "assistant"
+
             if "parts" in msg:
                 content = msg["parts"][0] if msg["parts"] else ""
             else:
                 content = msg.get("content", "")
-            self.history.append({"role": role, "content": content})
+
+            self.history.append({
+                "role": role,
+                "content": content
+            })
 
     @property
     def provider_name(self) -> str:
-        return "Ollama"
+        return "OpenAI"
 
     def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
         """
@@ -324,12 +452,12 @@ class OllamaClient(BaseLLMClient):
             )
             return response.choices[0].message.content or ""
         except Exception as e:
-            log_debug_message(f"Ollama chat_completion error: {e}")
+            log_debug_message(f"OpenAI chat_completion error: {e}")
             raise
 
     def ai_cell_completion(self, prompt: str) -> str:
         """
-        AI Cell completion - no web search for Ollama (local model).
+        AI Cell completion - with web search but no notebook tools.
         Used for inline Q&A in AI cells.
 
         Args:
@@ -339,9 +467,10 @@ class OllamaClient(BaseLLMClient):
             The response text from the LLM
         """
         try:
-            log_debug_message(f"🤖 Ollama AI Cell completion starting...")
+            log_debug_message(f"🤖 OpenAI AI Cell completion starting...")
 
-            # Ollama is local, no web search capability
+            # OpenAI doesn't have native web search, so just do completion
+            # Could integrate with a search API in the future
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
@@ -349,19 +478,17 @@ class OllamaClient(BaseLLMClient):
             )
 
             result = response.choices[0].message.content or ""
-            log_debug_message(f"🤖 Ollama AI Cell response: {len(result)} chars")
+            log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars")
             return result
 
         except Exception as e:
-            log_debug_message(f"Ollama ai_cell_completion error: {e}")
+            log_debug_message(f"OpenAI ai_cell_completion error: {e}")
             raise
 
     def ai_cell_with_tools(self, prompt: str, max_iterations: int = 10) -> str:
         """
         AI Cell completion with tool calling support.
         Uses automatic function calling for kernel inspection and sandbox tools.
-
-        Note: Tool support depends on the Ollama model (llama3.1, mistral, qwen2.5 support tools).
 
         Args:
             prompt: The full prompt including notebook context and user question
@@ -371,7 +498,7 @@ class OllamaClient(BaseLLMClient):
             The final response text from the LLM
         """
         try:
-            log_debug_message(f"🤖 Ollama AI Cell with tools starting...")
+            log_debug_message(f"🤖 OpenAI AI Cell with tools starting...")
 
             # Build AI Cell tool schemas
             ai_cell_tools = self._build_ai_cell_tools()
@@ -382,26 +509,20 @@ class OllamaClient(BaseLLMClient):
             for iteration in range(max_iterations):
                 log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
 
-                try:
-                    response = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=messages,
-                        tools=ai_cell_tools,
-                        max_tokens=4096,
-                    )
-                except Exception as e:
-                    # If model doesn't support tools, fall back to simple completion
-                    if "tools" in str(e).lower() or "function" in str(e).lower():
-                        log_debug_message(f"⚠️ Ollama model doesn't support tools, falling back to simple completion")
-                        return self.ai_cell_completion(prompt)
-                    raise
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    tools=ai_cell_tools,
+                    tool_choice="auto",
+                    max_tokens=4096,
+                )
 
                 message = response.choices[0].message
 
                 # If no tool calls, return the response
                 if not message.tool_calls:
                     result = message.content or ""
-                    log_debug_message(f"🤖 Ollama AI Cell response: {len(result)} chars")
+                    log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars")
                     return result
 
                 # Execute tool calls
@@ -432,7 +553,7 @@ class OllamaClient(BaseLLMClient):
             return "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question."
 
         except Exception as e:
-            log_debug_message(f"Ollama ai_cell_with_tools error: {e}")
+            log_debug_message(f"OpenAI ai_cell_with_tools error: {e}")
             import traceback
             log_debug_message(f"Traceback: {traceback.format_exc()}")
             raise

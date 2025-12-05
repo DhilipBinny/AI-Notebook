@@ -111,6 +111,7 @@ class ChatService:
         context: List[CellContext],
         tool_mode: str = "manual",
         llm_provider: str = "gemini",
+        context_format: str = "xml",
         chat_id: str = DEFAULT_CHAT_ID,
     ) -> ChatResponse:
         """
@@ -128,6 +129,7 @@ class ChatService:
             context: Selected cells as context
             tool_mode: "auto", "manual", or "ai_decide"
             llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+            context_format: Context format for LLM ("xml" or "plain")
             chat_id: Chat ID (default: "default")
 
         Returns:
@@ -202,6 +204,7 @@ class ChatService:
                         "context": context_list,
                         "history": history_list,
                         "session_id": project.id,
+                        "context_format": context_format,
                     },
                     timeout=120,  # LLM can take a while
                 )
@@ -271,6 +274,7 @@ class ChatService:
         approved_tools: List[PendingToolCall],
         tool_mode: str,
         llm_provider: str,
+        context_format: str = "xml",
         chat_id: str = DEFAULT_CHAT_ID,
     ) -> ChatResponse:
         """
@@ -282,6 +286,7 @@ class ChatService:
             approved_tools: Tools approved by user
             tool_mode: "auto", "manual", or "ai_decide"
             llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+            context_format: Context format for LLM ("xml" or "plain")
             chat_id: Chat ID (default: "default")
 
         Returns:

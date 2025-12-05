@@ -150,34 +150,32 @@ print(json.dumps(_error_info))
 
 def get_dataframe_info(name: str) -> dict:
     """
-    Get detailed information about a pandas DataFrame.
+    Get COMPREHENSIVE info about a pandas DataFrame (columns, types, stats, nulls).
 
-    Use this tool when:
-    - User asks about a DataFrame's structure
-    - You need to understand columns, types, or data quality
+    WHEN TO USE THIS TOOL:
+    - Variable is a pandas DataFrame
+    - User asks about data structure, columns, or types
+    - You need to write code using the DataFrame
     - User asks for data analysis suggestions
-    - You need to write code that uses the DataFrame
+
+    WHEN NOT TO USE THIS TOOL:
+    - For non-DataFrame variables → use inspect_variable(name) instead
+
+    This tool provides DataFrame-specific info that inspect_variable doesn't:
+    - Column names and data types
+    - Null counts per column
+    - Statistical summary (describe)
+    - Sample values
+    - Memory usage
 
     Args:
         name: Name of the DataFrame variable
 
     Returns:
-        Dictionary with:
-        - success: Whether inspection succeeded
-        - name: DataFrame name
-        - shape: (rows, columns) tuple
-        - columns: List of column names
-        - dtypes: Dict of column -> dtype
-        - null_counts: Dict of column -> null count
-        - memory_usage: Memory used by DataFrame
-        - head: First 5 rows as string
-        - describe: Statistical summary for numeric columns
-        - sample_values: Sample values for each column
-        - error: Error message if failed
+        Dictionary with shape, columns, dtypes, null_counts, head, describe, sample_values
 
     Example:
-        result = get_dataframe_info("df")
-        # Returns detailed info about the DataFrame
+        get_dataframe_info("df")  → full DataFrame analysis
     """
     log_debug_message(f"==> get_dataframe_info({name}) called from LLM")
 
@@ -307,30 +305,28 @@ else:
 
 def get_cell_outputs(cell_id: str) -> dict:
     """
-    Get the outputs of a specific notebook cell.
+    Get a cell's EXECUTION OUTPUT (what it produced when run).
 
-    Use this tool when:
-    - You need to see what a cell produced
-    - User asks about the result of a cell
-    - You need to understand the output before suggesting changes
+    WHEN TO USE THIS TOOL:
+    - To see what a cell outputted (print statements, results, errors)
+    - User asks "what did cell 3 produce?"
+    - To check if a cell has an error
+
+    WHEN NOT TO USE THIS TOOL:
+    - To read the cell's source code → use get_cell_content(cell_id)
+
+    KEY DIFFERENCE:
+    - get_cell_content() → returns SOURCE (the code/markdown)
+    - get_cell_outputs() → returns OUTPUT (execution results, errors, images)
 
     Args:
-        cell_id: The ID of the cell to get outputs from
+        cell_id: The cell's unique ID
 
     Returns:
-        Dictionary with:
-        - success: Whether retrieval succeeded
-        - cell_id: The cell ID
-        - cell_type: "code" or "markdown"
-        - source: The cell's source code
-        - execution_count: The cell's execution count (if code cell)
-        - outputs: List of outputs (text, data, errors)
-        - has_error: Whether the cell has an error output
-        - error: Error message if failed
+        Dictionary with cell_id, outputs (list), has_error, source
 
     Example:
-        result = get_cell_outputs("abc123")
-        # Returns: {"success": True, "outputs": [...], "source": "print('hello')"}
+        get_cell_outputs(cell_id) → see print output, errors, images
     """
     log_debug_message(f"==> get_cell_outputs({cell_id}) called from LLM")
 

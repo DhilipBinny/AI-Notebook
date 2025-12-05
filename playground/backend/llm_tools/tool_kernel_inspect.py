@@ -182,33 +182,27 @@ print(json.dumps(_user_vars))
 
 def inspect_variable(name: str) -> dict:
     """
-    Get detailed information about a specific variable in the main kernel.
+    Get detailed info about ANY variable (list, dict, object, etc.).
 
-    Use this tool when you need to:
-    - Examine a specific variable in detail
-    - See DataFrame columns, dtypes, or sample data
-    - Inspect object attributes and methods
-    - Get the full value of a small variable
+    WHEN TO USE THIS TOOL:
+    - To examine a list, dict, or custom object
+    - To see object attributes and methods
+    - To get value of a variable
+    - For general variable inspection
+
+    WHEN NOT TO USE THIS TOOL:
+    - For pandas DataFrame → use get_dataframe_info(name) instead
+      (it provides columns, dtypes, null counts, describe stats)
 
     Args:
-        name: Name of the variable to inspect
+        name: Variable name to inspect
 
     Returns:
-        Dictionary with:
-        - success: Whether the inspection succeeded
-        - name: Variable name
-        - type: Type name (e.g., "DataFrame", "list", "dict")
-        - value: String representation (truncated if large)
-        - shape: Shape/length if applicable
-        - dtype: Data type for arrays/series
-        - columns: Column names for DataFrames
-        - sample: Sample data for large collections
-        - attributes: List of interesting attributes
-        - error: Error message if failed
+        Dictionary with name, type, value/sample, shape, attributes
 
     Example:
-        result = inspect_variable("df")
-        # Returns detailed info about the DataFrame
+        inspect_variable("my_list")  → info about a list
+        inspect_variable("config")   → info about a dict
     """
     log_debug_message(f"==> inspect_variable({name}) called from LLM")
 

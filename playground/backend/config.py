@@ -48,6 +48,12 @@ if AUTO_FUNCTION_CALLING:
 # Each provider uses its own search: Google Search, Bing, Brave respectively
 ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true"
 
+# === Context Format ===
+# Format for LLM context: "xml" or "plain"
+# XML is recommended for Claude (improves accuracy by up to 40%)
+# Note: Container default is "xml", but UI can override on each call
+CONTEXT_FORMAT = os.environ.get("CONTEXT_FORMAT", "xml")
+
 # === Provider Selection ===
 # Auto-detect default based on availability
 # User can switch via UI dropdown at runtime
@@ -70,6 +76,7 @@ def get_provider_info():
         "provider": LLM_PROVIDER,
         "auto_function_calling": AUTO_FUNCTION_CALLING,
         "tool_execution_mode": TOOL_EXECUTION_MODE,
+        "context_format": CONTEXT_FORMAT,
         "ollama": {
             "configured": True,  # Always available (no key needed)
             "model": OLLAMA_MODEL,

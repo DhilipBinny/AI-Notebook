@@ -13,7 +13,7 @@ from google import genai
 from google.genai import types
 from typing import List, Dict, Any, Optional, Union
 
-from backend.llm_client_base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient
 from backend.utils.util_func import log_response_details, log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
@@ -95,17 +95,26 @@ class GeminiClient(BaseLLMClient):
             tools=[types.Tool(google_search=types.GoogleSearch())]
         )
 
-    def _needs_web_search(self, message: str) -> bool:
-        """Determine if the message likely needs web search"""
+    def _needs_web_search(self, message: str, user_message_only: str = None) -> bool:
+        """
+        Determine if the message likely needs web search.
+
+        Args:
+            message: The full message (used for search query if triggered)
+            user_message_only: Optional - just the user's question (used for keyword detection)
+                               If not provided, uses the full message for detection
+        """
         if not self.enable_web_search:
             log_debug_message("🔍 Web search: DISABLED")
             return False
 
-        message_lower = message.lower()
+        # Use user_message_only for keyword detection if provided
+        # This prevents false triggers from notebook context containing keywords like "find", "search", etc.
+        check_text = (user_message_only if user_message_only else message).lower()
 
         # Check for search keywords
         for keyword in SEARCH_KEYWORDS:
-            if keyword in message_lower:
+            if keyword in check_text:
                 log_debug_message(f"🔍 Web search: TRIGGERED (keyword: '{keyword}')")
                 return True
 
@@ -274,7 +283,7 @@ class GeminiClient(BaseLLMClient):
             history=chat_history if chat_history else None
         )
 
-    def send_message(self, message: str) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
         """
         Send a message to Gemini using two-phase approach.
 
@@ -282,7 +291,8 @@ class GeminiClient(BaseLLMClient):
         Phase 2: Send message with search context to main chat (with function tools)
 
         Args:
-            message: The user message
+            message: The full message (may include context)
+            user_message: Optional - just the user's actual question (for web search keyword detection)
 
         Returns:
             str: Final response text (if auto mode or no tools needed)
@@ -293,10 +303,12 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"📨 Gemini send_message() - User: {message[:60]}...")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            # Phase 1: Check if web search is needed
+            # Phase 1: Check if web search is needed (use user_message for keyword detection)
             search_context = ""
-            if self._needs_web_search(message):
-                search_context = self._do_google_search(message)
+            if self._needs_web_search(message, user_message):
+                # Use user_message for search query if available, otherwise use full message
+                search_query = user_message if user_message else message
+                search_context = self._do_google_search(search_query)
 
             # Phase 2: Send to main chat with function tools
             if search_context:

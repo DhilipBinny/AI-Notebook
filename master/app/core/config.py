@@ -23,12 +23,6 @@ class Settings(BaseSettings):
         alias="DATABASE_URL"
     )
 
-    # Redis
-    redis_url: str = Field(
-        default="redis://localhost:6379/0",
-        alias="REDIS_URL"
-    )
-
     # S3/MinIO
     s3_endpoint: str = Field(default="http://localhost:9000", alias="S3_ENDPOINT")
     s3_access_key: str = Field(default="minioadmin", alias="S3_ACCESS_KEY")

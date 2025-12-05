@@ -280,6 +280,7 @@ async def send_message(
     request: ChatMessageCreate,
     tool_mode: str = "manual",
     llm_provider: str = "gemini",
+    context_format: str = "xml",
     chat_id: str = "default",
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -298,6 +299,7 @@ async def send_message(
         request: Message and context
         tool_mode: "auto", "manual", or "ai_decide"
         llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+        context_format: Context format for LLM ("xml" or "plain")
         chat_id: Chat ID (default: "default")
 
     Returns:
@@ -348,6 +350,7 @@ async def send_message(
         context=context,
         tool_mode=tool_mode,
         llm_provider=llm_provider,
+        context_format=context_format,
         chat_id=chat_id,
     )
 
@@ -360,6 +363,7 @@ async def execute_tools(
     request: ExecuteToolsRequest,
     tool_mode: str = "manual",
     llm_provider: str = "gemini",
+    context_format: str = "xml",
     chat_id: str = "default",
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -408,6 +412,7 @@ async def execute_tools(
         approved_tools=request.approved_tools,
         tool_mode=tool_mode,
         llm_provider=llm_provider,
+        context_format=context_format,
         chat_id=chat_id,
     )
 
@@ -448,6 +453,7 @@ async def run_ai_cell(
     project_id: str,
     request: AICellRunRequest,
     llm_provider: str = "gemini",
+    context_format: str = "xml",
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -464,6 +470,7 @@ async def run_ai_cell(
         project_id: Project ID
         request: AI Cell run request with prompt and context cell IDs
         llm_provider: LLM provider to use
+        context_format: Context format for LLM ("xml" or "plain")
 
     Returns:
         AICellResponse with AI response
@@ -550,6 +557,7 @@ async def run_ai_cell(
                     "ai_cell_id": request.ai_cell_id,
                     "ai_cell_index": request.ai_cell_index,
                     "session_id": project_id,
+                    "context_format": context_format,
                 },
                 timeout=120,  # LLM can take a while
             )

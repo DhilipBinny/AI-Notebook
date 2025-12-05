@@ -15,15 +15,13 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 import backend.config as cfg
-from backend.llm_client import LLMClient
+from backend.llm_clients import LLMClient
 from backend.utils.util_func import log_debug_message, log_chat_header, log_user_message, log_llm_response_box
 from backend.notebook_state import get_notebook_updates
-from backend.context_manager import ContextManager
+from backend.context_manager import ContextManager, ContextFormat
 from backend.session_manager import get_session_manager, set_current_session, clear_current_session
 
-from backend.route_kernel import router as kernel_router
-from backend.route_notebook import router as notebook_router
-from backend.route_session import router as session_router
+from backend.routes import kernel_router, notebook_router, session_router
 
 # Initialize FastAPI
 app = FastAPI(
@@ -70,6 +68,7 @@ class ChatRequest(BaseModel):
     context: List[CellContext] = []
     history: List[ChatMessage] = []
     session_id: Optional[str] = None
+    context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
     # Note: all_cells removed - LLM tools now fetch from Master API directly
 
 
@@ -222,6 +221,7 @@ class AICellRequest(BaseModel):
     ai_cell_id: Optional[str] = None  # The AI cell's own ID for positional awareness
     ai_cell_index: Optional[int] = None  # The AI cell's position (0-based)
     session_id: Optional[str] = None
+    context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
 
 
 class AICellResponse(BaseModel):
@@ -318,58 +318,28 @@ async def run_ai_cell(
         else:
             position_info = "Position unknown."
 
-        # Build notebook context with positional sections
-        cells_above = []
-        cells_below = []
+        # Build notebook context with positional sections using ContextManager
+        # Supports both plain text and XML formats
+        context_manager = ContextManager()
+        ctx_format = ContextFormat.XML if request.context_format == "xml" else ContextFormat.PLAIN
 
-        if request.context:
-            for i, cell in enumerate(request.context):
-                cell_type = "Code" if cell.type == "code" else cell.type.capitalize()
+        # Convert request context to cell dicts
+        cells_data = [
+            {
+                "id": cell.id,
+                "type": cell.type,
+                "content": cell.content,
+                "output": cell.output,
+                "cellNumber": cell.cellNumber
+            }
+            for cell in request.context
+        ] if request.context else []
 
-                # Build cell info with @cell_id reference
-                cell_info = f"[@{cell.id}] ({cell_type}):\n"
-                cell_info += cell.content
-                if cell.output:
-                    cell_info += f"\n[Output]: {cell.output[:500]}"
-
-                # Determine if this cell is above or below the AI cell
-                # Context cells are ordered, but we need to map their original position
-                cell_position = cell.cellNumber - 1 if cell.cellNumber else i
-
-                if ai_cell_index >= 0 and cell_position < ai_cell_index:
-                    cells_above.append((cell_position, cell_info, cell.id))
-                else:
-                    cells_below.append((cell_position, cell_info, cell.id))
-
-        # Sort by position
-        cells_above.sort(key=lambda x: x[0])
-        cells_below.sort(key=lambda x: x[0])
-
-        # Build structured context
-        notebook_context = ""
-
-        if cells_above:
-            notebook_context += "=== CELLS ABOVE YOU ===\n"
-            for pos, info, cell_id in cells_above:
-                # Mark the immediately above cell
-                if pos == ai_cell_index - 1:
-                    notebook_context += f"\n[IMMEDIATELY ABOVE] {info}\n"
-                else:
-                    notebook_context += f"\n{info}\n"
-
-        notebook_context += f"\n=== YOUR POSITION (AI Cell #{ai_cell_index + 1}) ===\n"
-
-        if cells_below:
-            notebook_context += "\n=== CELLS BELOW YOU ===\n"
-            for pos, info, cell_id in cells_below:
-                # Mark the immediately below cell
-                if pos == ai_cell_index + 1:
-                    notebook_context += f"\n[IMMEDIATELY BELOW] {info}\n"
-                else:
-                    notebook_context += f"\n{info}\n"
-
-        if not cells_above and not cells_below:
-            notebook_context = "(No other cells in notebook)"
+        notebook_context = context_manager.process_positional_context(
+            cells_data,
+            ai_cell_index,
+            format=ctx_format
+        )
 
         # Build the prompt with context
         full_prompt = AI_CELL_SYSTEM_PROMPT.format(
@@ -378,7 +348,14 @@ async def run_ai_cell(
             user_prompt=request.prompt
         )
 
-        log_debug_message(f"📋 AI Cell context: {len(notebook_context)} chars, position: {ai_cell_index + 1}/{total_cells}")
+        # Log the FULL prompt being sent to LLM for AI Cell
+        print(f"\n{'='*80}")
+        print(f"🤖 AI CELL FULL PROMPT TO LLM [{cfg.LLM_PROVIDER.upper()}] (format: {request.context_format})")
+        print(f"{'='*80}")
+        print(full_prompt)
+        print(f"{'='*80}")
+        print(f"📊 Stats: {len(full_prompt)} chars total, position: {ai_cell_index + 1}/{total_cells}")
+        print(f"{'='*80}\n")
 
         # Set up session for AI cell tools to access main kernel
         from backend.session_manager import get_session_manager, set_current_session
@@ -387,7 +364,7 @@ async def run_ai_cell(
         set_current_session(session_id)
 
         # Use LLM client with AI cell tools (inspection + sandbox)
-        from backend.llm_client import LLMClient
+        from backend.llm_clients import LLMClient
         client = LLMClient()
 
         # AI cells now have access to kernel inspection and sandbox tools
@@ -402,13 +379,22 @@ async def run_ai_cell(
         )
 
     except Exception as e:
-        log_debug_message(f"🤖 AI Cell error: {e}")
+        # Log error with full traceback for debugging
         import traceback
-        traceback.print_exc()
+        error_traceback = traceback.format_exc()
+        log_debug_message(f"🤖 AI Cell error: {e}\n{error_traceback}")
+
+        # Return user-friendly error message
+        error_msg = str(e)
+        if "API" in error_msg or "key" in error_msg.lower():
+            error_msg = "LLM API error. Please check your API key configuration."
+        elif "timeout" in error_msg.lower():
+            error_msg = "Request timed out. Please try again."
+
         return AICellResponse(
             success=False,
             response="",
-            error=str(e)
+            error=error_msg
         )
 
 
@@ -469,6 +455,7 @@ async def chat_with_llm(
             set_current_session(request.session_id)
 
         # Build context string using ContextManager (with fallback to simple format)
+        # Use XML format for Claude (recommended), plain for others or as configured
         context_str = ""
         if request.context:
             try:
@@ -483,7 +470,9 @@ async def chat_with_llm(
                     }
                     for cell in request.context
                 ]
-                context_str = context_manager.process_context(cells_data)
+                # Parse context format from request
+                ctx_format = ContextFormat.XML if request.context_format == "xml" else ContextFormat.PLAIN
+                context_str = context_manager.process_context(cells_data, format=ctx_format)
             except Exception as e:
                 # Fallback to simple format if context manager fails
                 log_debug_message(f"⚠️ Context manager error, using simple format: {e}")
@@ -514,16 +503,20 @@ async def chat_with_llm(
         full_message = request.message
         if context_str:
             full_message = f"=== NOTEBOOK CONTEXT ===\n\n{context_str}\n\n[MESSAGE]\n{request.message}"
-            # Log the full context being sent to LLM
-            log_debug_message(f"📋 Context prepared: {len(context_str)} chars, {len(request.context) if request.context else 0} cells")
-            print(f"\n{'='*60}")
-            print(f"CONTEXT SENT TO LLM ({len(context_str)} chars):")
-            print(f"{'='*60}")
-            print(context_str)
-            print(f"{'='*60}\n")
+
+        # Log the FULL message being sent to LLM (context + user message)
+        print(f"\n{'='*80}")
+        print(f"🚀 FULL MESSAGE TO LLM [{cfg.LLM_PROVIDER.upper()}] (format: {request.context_format})")
+        print(f"{'='*80}")
+        print(full_message)
+        print(f"{'='*80}")
+        print(f"📊 Stats: {len(full_message)} chars total, {len(context_str)} context, {len(request.message)} user message")
+        print(f"{'='*80}\n")
 
         log_debug_message(f"📤 Sending to {client.provider_name}...")
-        llm_response = client.send_message(full_message)
+        # Pass user_message separately for web search keyword detection
+        # This prevents false triggers from notebook context containing keywords like "find", "search", etc.
+        llm_response = client.send_message(full_message, user_message=request.message)
 
         # Process response
         pending_tools = []

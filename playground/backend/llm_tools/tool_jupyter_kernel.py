@@ -20,22 +20,27 @@ def _get_session_kernel():
 
 def execute_python_code(code: str) -> dict:
     """
-    Execute Python code in the Jupyter kernel and return results.
+    Execute Python code directly in the user's kernel for quick checks and calculations.
 
-    Use this tool when you need to:
-    - Perform calculations or data analysis
-    - Check current variable values or kernel state
-    - Run code to answer questions that require computation
-    - Test or verify something programmatically
-    - Generate data or visualizations
+    WHEN TO USE THIS TOOL:
+    - Quick calculations: "what's 2+2?" → execute_python_code("print(2+2)")
+    - Check variable values: "what's in x?" → execute_python_code("print(x)")
+    - Verify something works: execute_python_code("len(df)")
+    - Answer questions requiring computation
 
-    The code runs in a persistent Python session, so variables are preserved between calls.
+    WHEN NOT TO USE THIS TOOL:
+    - To run a notebook cell → use execute_cell(cell_id) instead
+    - To test code before suggesting → use sandbox_execute(code) instead
+    - To write code into a cell → use update_cell_content() instead
+
+    The code runs in the user's kernel. Variables persist between calls.
+    Output is NOT saved to any cell.
 
     Args:
-        code: Python code to execute. Can be multiple lines. Variables persist between executions.
+        code: Python code to execute (single or multiple lines)
 
     Returns:
-        Dictionary with execution results including success status, output, errors, and execution count.
+        Dictionary with success, output, error, execution_count
     """
 
     log_debug_message(f"==> execute_python_code: {code} called from LLM")

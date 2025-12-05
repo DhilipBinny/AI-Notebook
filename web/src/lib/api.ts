@@ -224,9 +224,10 @@ export const chat = {
     message: string,
     contextCellIds: string[],
     toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
-    llmProvider: string = 'gemini'
+    llmProvider: string = 'gemini',
+    contextFormat: 'xml' | 'plain' = 'xml'
   ): Promise<ChatResponse> => {
-    const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}`, {
+    const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       message,
       context_cell_ids: contextCellIds,
     })
@@ -237,9 +238,10 @@ export const chat = {
     projectId: string,
     approvedTools: PendingToolCall[],
     toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
-    llmProvider: string = 'gemini'
+    llmProvider: string = 'gemini',
+    contextFormat: 'xml' | 'plain' = 'xml'
   ): Promise<ChatResponse> => {
-    const { data } = await api.post(`/projects/${projectId}/chat/execute-tools?tool_mode=${toolMode}&llm_provider=${llmProvider}`, {
+    const { data } = await api.post(`/projects/${projectId}/chat/execute-tools?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       approved_tools: approvedTools,
     })
     return data
@@ -255,9 +257,10 @@ export const chat = {
     contextCellIds: string[],
     llmProvider: string = 'gemini',
     aiCellId?: string,
-    aiCellIndex?: number
+    aiCellIndex?: number,
+    contextFormat: 'xml' | 'plain' = 'xml'
   ): Promise<{ success: boolean; response: string; model: string; error?: string }> => {
-    const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}`, {
+    const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       prompt,
       context_cell_ids: contextCellIds,
       ai_cell_id: aiCellId,

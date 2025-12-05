@@ -2,21 +2,18 @@
 LLM Client Factory - Creates the appropriate LLM client based on configuration
 
 Usage:
-    from backend.llm_client import LLMClient, get_llm_client
+    from backend.llm_clients import LLMClient
 
-    # Create client using factory (recommended)
-    client = get_llm_client()
-
-    # Or use LLMClient class directly (uses configured provider)
+    # Use LLMClient class (uses configured provider)
     client = LLMClient()
 
     # Or specify provider explicitly
-    client = get_llm_client(provider="openai")
+    client = LLMClient(provider="openai")
 """
 
 from typing import Optional, List, Dict, Any, Union
 import backend.config as cfg
-from backend.llm_client_base import BaseLLMClient
+from backend.llm_clients.base import BaseLLMClient
 
 
 def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
@@ -24,11 +21,11 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
     Factory function to create an LLM client.
 
     Args:
-        provider: Optional provider name ("ollama", "gemini", or "openai").
+        provider: Optional provider name ("ollama", "gemini", "openai", or "anthropic").
                   If not specified, uses LLM_PROVIDER from config.
 
     Returns:
-        An LLM client instance (OllamaClient, GeminiClient, or OpenAIClient)
+        An LLM client instance
 
     Raises:
         ValueError: If provider is unknown or API key is missing
@@ -37,7 +34,7 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
     provider = provider or cfg.LLM_PROVIDER
 
     if provider == "ollama":
-        from backend.llm_client_ollama import OllamaClient
+        from backend.llm_clients.ollama import OllamaClient
         return OllamaClient(
             base_url=cfg.OLLAMA_URL,
             model_name=cfg.OLLAMA_MODEL
@@ -47,7 +44,7 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
         if not cfg.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY not configured")
 
-        from backend.llm_client_gemini import GeminiClient
+        from backend.llm_clients.gemini import GeminiClient
         return GeminiClient(
             api_key=cfg.GEMINI_API_KEY,
             model_name=cfg.GEMINI_MODEL,
@@ -58,7 +55,7 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
         if not cfg.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY not configured")
 
-        from backend.llm_client_openai import OpenAIClient
+        from backend.llm_clients.openai import OpenAIClient
         return OpenAIClient(
             api_key=cfg.OPENAI_API_KEY,
             model_name=cfg.OPENAI_MODEL,
@@ -69,7 +66,7 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
         if not cfg.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY not configured")
 
-        from backend.llm_client_anthropic import AnthropicClient
+        from backend.llm_clients.anthropic import AnthropicClient
         return AnthropicClient(
             api_key=cfg.ANTHROPIC_API_KEY,
             model_name=cfg.ANTHROPIC_MODEL,
@@ -97,8 +94,8 @@ class LLMClient(BaseLLMClient):
         """
         self._client = get_llm_client(provider)
 
-    def send_message(self, message: str) -> Union[str, Dict[str, Any]]:
-        return self._client.send_message(message)
+    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
+        return self._client.send_message(message, user_message)
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
         return self._client.execute_approved_tools(approved_tool_calls)

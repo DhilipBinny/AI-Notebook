@@ -30,6 +30,9 @@ class Session:
         self.created_at = datetime.now()
         self.last_activity = datetime.now()
 
+        # Thread lock for session-level operations
+        self._lock = threading.Lock()
+
         # Pending tool calls state (for manual function calling approval)
         self.pending_client = None  # LLM client with pending state
         self.pending_messages = []  # Chat messages awaiting tool execution
@@ -39,70 +42,91 @@ class Session:
         self.llm_steps = []  # List of {"type": "tool_call"|"tool_result"|"text", "name": str, "content": str}
 
     def add_llm_step(self, step_type: str, content: str, name: str = None):
-        """Add a step to the LLM steps list"""
-        from datetime import datetime
-        step = {
-            "type": step_type,
-            "content": content,
-            "timestamp": datetime.now().isoformat()
-        }
-        if name:
-            step["name"] = name
-        self.llm_steps.append(step)
-        self.update_activity()
+        """Add a step to the LLM steps list (thread-safe)"""
+        with self._lock:
+            step = {
+                "type": step_type,
+                "content": content,
+                "timestamp": datetime.now().isoformat()
+            }
+            if name:
+                step["name"] = name
+            self.llm_steps.append(step)
+            self.last_activity = datetime.now()
 
     def get_llm_steps(self) -> List[Dict[str, Any]]:
-        """Get and clear the LLM steps list"""
-        steps = self.llm_steps.copy()
-        self.llm_steps = []
-        return steps
+        """Get and clear the LLM steps list (thread-safe)"""
+        with self._lock:
+            steps = self.llm_steps.copy()
+            self.llm_steps = []
+            return steps
 
     def clear_llm_steps(self):
-        """Clear the LLM steps list"""
-        self.llm_steps = []
+        """Clear the LLM steps list (thread-safe)"""
+        with self._lock:
+            self.llm_steps = []
 
     def update_activity(self):
         """Update last activity timestamp"""
         self.last_activity = datetime.now()
 
     def set_notebook_cells(self, cells: List[Dict[str, Any]]):
-        """Set notebook cells for this session"""
-        self.notebook_state["cells"] = cells
-        self.notebook_state["updates"] = []
-        self.update_activity()
+        """Set notebook cells for this session (thread-safe)"""
+        with self._lock:
+            self.notebook_state["cells"] = cells
+            self.notebook_state["updates"] = []
+            self.last_activity = datetime.now()
 
     def get_notebook_cells(self) -> List[Dict[str, Any]]:
-        """Get notebook cells for this session"""
-        return self.notebook_state["cells"]
+        """Get notebook cells for this session (thread-safe)"""
+        with self._lock:
+            return self.notebook_state["cells"].copy()
 
     def update_notebook_cells(self, cells: List[Dict[str, Any]]):
-        """Update notebook cells"""
-        self.notebook_state["cells"] = cells
-        self.update_activity()
+        """Update notebook cells (thread-safe)"""
+        with self._lock:
+            self.notebook_state["cells"] = cells
+            self.last_activity = datetime.now()
 
     def add_notebook_update(self, update_type: str, data: Dict[str, Any]):
-        """Track a notebook update for this session"""
-        self.notebook_state["updates"].append({
-            "type": update_type,
-            "data": data
-        })
-        self.update_activity()
+        """Track a notebook update for this session (thread-safe)"""
+        with self._lock:
+            self.notebook_state["updates"].append({
+                "type": update_type,
+                "data": data
+            })
+            self.last_activity = datetime.now()
 
     def get_notebook_updates(self) -> List[Dict[str, Any]]:
-        """Get and clear pending notebook updates"""
-        updates = self.notebook_state["updates"].copy()
-        self.notebook_state["updates"] = []
-        return updates
+        """Get and clear pending notebook updates (thread-safe)"""
+        with self._lock:
+            updates = self.notebook_state["updates"].copy()
+            self.notebook_state["updates"] = []
+            return updates
 
     def cleanup(self):
-        """Cleanup session resources"""
-        if self.kernel.is_alive():
-            self.kernel.stop()
-        # Cleanup sandbox kernel for this session
-        from backend.llm_tools.tool_sandbox import cleanup_sandbox
-        cleanup_sandbox(self.session_id)
-        self.notebook_state = {"cells": [], "updates": []}
-        print(f"[Session] Cleaned up session {self.session_id}")
+        """Cleanup session resources (thread-safe with exception handling)"""
+        from backend.utils.util_func import log_debug_message
+        try:
+            # Stop kernel first
+            if self.kernel.is_alive():
+                self.kernel.stop()
+        except Exception as e:
+            log_debug_message(f"[Session] Error stopping kernel: {e}")
+
+        try:
+            # Cleanup sandbox kernel for this session
+            from backend.llm_tools.tool_sandbox import cleanup_sandbox
+            cleanup_sandbox(self.session_id)
+        except Exception as e:
+            log_debug_message(f"[Session] Error cleaning up sandbox: {e}")
+
+        # Always clear state, even if cleanup failed
+        with self._lock:
+            self.notebook_state = {"cells": [], "updates": []}
+            self.llm_steps = []
+
+        log_debug_message(f"[Session] Cleaned up session {self.session_id}")
 
 
 class SessionManager:

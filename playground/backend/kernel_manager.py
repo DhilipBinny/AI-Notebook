@@ -343,33 +343,38 @@ print("[Kernel] Module cache refreshed - new packages should now be importable")
                             # (for %pinfo, ?, ?? etc.)
                             # Need to loop through shell messages to find ours (queue may have old msgs)
                             try:
-                                for _ in range(10):  # Check up to 10 messages
+                                found_our_reply = False
+                                max_attempts = 20  # Increased for busy queues
+                                for attempt in range(max_attempts):
                                     try:
-                                        reply = self.kc.get_shell_msg(timeout=0.1)
-                                        reply_parent = reply.get('parent_header', {}).get('msg_id')
-                                        print(f"[Kernel] Shell reply parent={reply_parent}, our msg_id={msg_id}")
+                                        reply = self.kc.get_shell_msg(timeout=0.2)
+                                        reply_parent = reply.get('parent_header', {}).get('msg_id', '')
 
                                         if reply_parent == msg_id:
                                             reply_content = reply.get('content', {})
                                             payloads = reply_content.get('payload', [])
-                                            print(f"[Kernel] Found our reply! Payloads ({len(payloads)}): {payloads}")
 
                                             for payload in payloads:
                                                 if payload.get('source') == 'page':
                                                     data = payload.get('data', {})
                                                     text = data.get('text/plain', '')
-                                                    print(f"[Kernel] Pager text length: {len(text) if text else 0}")
                                                     if text:
                                                         yield {
                                                             "type": "stream",
                                                             "name": "stdout",
                                                             "text": text
                                                         }
+                                            found_our_reply = True
                                             break  # Found our reply, stop looking
+                                        # If not our message, continue looking
                                     except queue.Empty:
-                                        break  # No more messages
+                                        if found_our_reply or attempt >= 5:
+                                            break  # Give up after 5 empty attempts
+                                        continue  # Keep trying
                             except Exception as e:
-                                print(f"[Kernel] Shell msg error: {e}")
+                                # Log error but don't fail the execution
+                                from backend.utils.util_func import log_debug_message
+                                log_debug_message(f"[Kernel] Shell msg error (non-fatal): {e}")
 
                             yield {"type": "status", "status": "complete"}
                             break

@@ -55,8 +55,6 @@ services:
       APP_DEBUG: "true"
       # Database (use container name for Docker networking)
       DATABASE_URL: mysql+aiomysql://root:ainotebook_dev_password@ainotebook-mysql:3306/ainotebook
-      # Redis
-      REDIS_URL: redis://ainotebook-redis:6379/0
       # S3/MinIO
       S3_ENDPOINT: http://ainotebook-minio:9000
       S3_ACCESS_KEY: minioadmin
@@ -88,8 +86,6 @@ services:
       - ainotebook-network
     depends_on:
       mysql:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       minio:
         condition: service_healthy
@@ -150,23 +146,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-
-  redis:
-    image: redis:7-alpine
-    container_name: ainotebook-redis
-    restart: unless-stopped
-    ports:
-      - "6380:6379"
-    volumes:
-      - ./infrastructure/data/redis:/data
-    networks:
-      - ainotebook-network
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   minio:
     image: minio/minio:latest

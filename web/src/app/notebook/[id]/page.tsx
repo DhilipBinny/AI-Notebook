@@ -170,6 +170,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [pendingTools, setPendingTools] = useState<PendingToolCall[]>([])
   const [llmProvider, setLlmProvider] = useState('gemini')
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
+  const [contextFormat, setContextFormat] = useState<'xml' | 'plain'>('xml')
   const [showChat, setShowChat] = useState(true)
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
   const [confirmPopup, setConfirmPopup] = useState<{
@@ -546,7 +547,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const aiCellIndex = cells.findIndex(c => c.id === cellId)
 
     try {
-      const response = await chat.runAICell(projectId, prompt, contextCellIds, llmProvider, cellId, aiCellIndex)
+      const response = await chat.runAICell(projectId, prompt, contextCellIds, llmProvider, cellId, aiCellIndex, contextFormat)
 
       updateCell(cellId, {
         ai_data: {
@@ -571,7 +572,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         },
       })
     }
-  }, [cells, playground, projectId, llmProvider, updateCell, saveNotebook])
+  }, [cells, playground, projectId, llmProvider, contextFormat, updateCell, saveNotebook])
 
   // Insert code cells from AI cell suggestion (supports multiple code blocks)
   const handleInsertCodeFromAICell = useCallback((afterCellId: string, codeBlocks: string[]) => {
@@ -912,7 +913,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         return
       }
 
-      // If we're in the chat panel or modal inputs, ignore all shortcuts
+      // If we're in the chat panel, modal inputs, or any text input, ignore all shortcuts
       const activeElement = document.activeElement
       const isInChatOrModal = activeElement?.closest('.chat-panel') ||
         activeElement?.closest('[role="dialog"]') ||
@@ -920,11 +921,19 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
       if (isInChatOrModal) return
 
-      // If we're in a cell textarea, let the cell handle Shift+Enter (don't double-process)
+      // If we're in a cell textarea (code cell or AI cell), skip single-key shortcuts
+      // Only allow modifier combos (Ctrl/Cmd+key, Shift+Enter, etc.)
       const isInCellTextarea = activeElement?.tagName === 'TEXTAREA' && activeElement?.closest('.cell-wrapper')
-      if (isInCellTextarea && e.key === 'Enter' && e.shiftKey) {
-        console.log('[Page Global] Shift+Enter in cell textarea - skipping global handler')
-        return  // Let the cell's own handler deal with this
+      if (isInCellTextarea) {
+        // Allow Shift+Enter to be handled by cell's own handler
+        if (e.key === 'Enter' && e.shiftKey) {
+          console.log('[Page Global] Shift+Enter in cell textarea - skipping global handler')
+          return
+        }
+        // Skip all single-key shortcuts (a, b, d, j, k, etc.) when typing in textarea
+        if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+          return  // Let the textarea handle normal typing
+        }
       }
 
       // Escape - exit edit mode and move in last navigation direction
@@ -1219,7 +1228,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       const allCellIds = cells.map(c => c.id)
 
       // Call chat API - backend loads cell content from S3 notebook
-      const response = await chat.sendMessage(projectId, message, allCellIds, toolMode, llmProvider)
+      const response = await chat.sendMessage(projectId, message, allCellIds, toolMode, llmProvider, contextFormat)
 
       if (response.success) {
         // Handle pending tools
@@ -1266,12 +1275,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, cells, toolMode, llmProvider, playground, isDirty, saveNotebook, reloadNotebook])
+  }, [projectId, cells, toolMode, llmProvider, contextFormat, playground, isDirty, saveNotebook, reloadNotebook])
 
   const handleApproveTools = useCallback(async (tools: PendingToolCall[]) => {
     setChatLoading(true)
     try {
-      const response = await chat.executeTools(projectId, tools, toolMode, llmProvider)
+      const response = await chat.executeTools(projectId, tools, toolMode, llmProvider, contextFormat)
 
       if (response.success) {
         // Check for more pending tools
@@ -1357,7 +1366,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, toolMode, llmProvider, reloadNotebook])
+  }, [projectId, toolMode, llmProvider, contextFormat, reloadNotebook])
 
   const handleRejectTools = useCallback(() => {
     setPendingTools([])
@@ -1753,6 +1762,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               onProviderChange={handleProviderChange}
               toolMode={toolMode}
               onToolModeChange={setToolMode}
+              contextFormat={contextFormat}
+              onContextFormatChange={setContextFormat}
               onDeleteMessage={handleDeleteMessage}
               onEditMessage={handleEditMessage}
               onRerunMessage={handleRerunMessage}

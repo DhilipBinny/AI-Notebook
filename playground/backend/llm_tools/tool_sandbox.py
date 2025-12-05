@@ -51,35 +51,36 @@ def _get_main_kernel():
 
 def sandbox_execute(code: str, timeout: int = 10) -> dict:
     """
-    Execute Python code in an isolated sandbox kernel.
+    Test code in an ISOLATED environment before suggesting it to the user.
 
-    Use this tool when you need to:
-    - Test code before suggesting it to the user
-    - Verify that code works correctly
-    - See actual output instead of guessing
-    - Experiment with different approaches
-    - Check for syntax errors or runtime errors
+    WHEN TO USE THIS TOOL:
+    - To verify code works BEFORE writing it to a cell
+    - To test a solution without affecting user's kernel
+    - When you want to show "this code produces X output"
+    - To experiment with approaches safely
 
-    The sandbox is completely isolated from the user's main kernel.
-    Variables and imports do NOT affect the user's environment.
+    WHEN NOT TO USE THIS TOOL:
+    - To run user's existing cell → use execute_cell(cell_id)
+    - For quick checks in user's kernel → use execute_python_code()
+
+    KEY DIFFERENCE:
+    - sandbox_execute() = ISOLATED kernel, doesn't affect user's variables
+    - execute_python_code() = USER'S kernel, affects their variables
+    - execute_cell() = USER'S kernel + saves output to notebook
+
+    The sandbox is completely separate. Use sandbox_sync_from_main()
+    to copy user's variables into sandbox if needed.
 
     Args:
-        code: Python code to execute in the sandbox
-        timeout: Maximum execution time in seconds (default: 10, max: 30)
+        code: Python code to test
+        timeout: Max execution time in seconds (default: 10, max: 30)
 
     Returns:
-        Dictionary with:
-        - success: Whether execution succeeded
-        - output: Output text from the code
-        - error: Error message if execution failed
-        - execution_time: How long the code took to run
+        Dictionary with success, output, error, execution_time
 
-    Example:
-        result = sandbox_execute("print(2 + 2)")
-        # Returns: {"success": True, "output": "4", "error": None}
-
-        result = sandbox_execute("import pandas as pd; df = pd.DataFrame({'a': [1,2,3]}); print(df.head())")
-        # Returns: {"success": True, "output": "   a\\n0  1\\n1  2\\n2  3", "error": None}
+    Example workflow:
+        1. sandbox_execute("def fix(): ...") → test the fix works
+        2. If success → update_cell_content(cell_id, code) → write to notebook
     """
     log_debug_message(f"==> sandbox_execute: {code[:100]}... called from LLM")
 
@@ -312,8 +313,19 @@ print(json.dumps(_vars))
     copied = []
     failed = []
 
+    # Validate variable names to prevent code injection
+    # Valid Python identifiers only: letters, digits, underscores, not starting with digit
+    import re
+    valid_identifier = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
     for var_name in vars_to_copy:
         try:
+            # Security: validate variable name is a valid Python identifier
+            if not valid_identifier.match(var_name):
+                log_debug_message(f"[Sandbox] Invalid variable name rejected: {var_name}")
+                failed.append(var_name)
+                continue
+
             # Serialize in main kernel
             serialize_code = f'''
 import pickle
@@ -341,11 +353,18 @@ except Exception as e:
                 failed.append(var_name)
                 continue
 
-            # Deserialize in sandbox
+            # Security: validate base64 output contains only valid base64 characters
+            # Base64 alphabet: A-Z, a-z, 0-9, +, /, and = for padding
+            if not re.match(r'^[A-Za-z0-9+/=]+$', output_text):
+                log_debug_message(f"[Sandbox] Invalid base64 data for {var_name}")
+                failed.append(var_name)
+                continue
+
+            # Deserialize in sandbox - use repr() for safe string embedding
             deserialize_code = f'''
 import pickle
 import base64
-_data = base64.b64decode("{output_text}")
+_data = base64.b64decode({repr(output_text)})
 {var_name} = pickle.loads(_data)
 print("OK")
 '''

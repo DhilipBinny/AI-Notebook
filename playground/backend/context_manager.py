@@ -1,6 +1,13 @@
 """
 Context Manager - Smart context preparation for LLM
 
+Supports multiple context formats:
+- PLAIN: Simple text format (legacy)
+- XML: Structured XML tags (recommended for Claude, works well for all LLMs)
+
+Research shows XML format can improve LLM accuracy by up to 40% for complex tasks.
+Claude is specifically trained on XML tags.
+
 Tiered Context Approach:
 - TIER 1 (Always included): Imports, variables, errors, cell overview (minimal tokens)
 - TIER 2 (On-demand): Full cell content fetched via LLM tools
@@ -10,9 +17,16 @@ LLM uses get_cell_content(cell_id) to dig deeper when needed.
 """
 
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from dataclasses import dataclass, field
+from enum import Enum
 from backend.utils.util_func import log_debug_message
+
+
+class ContextFormat(str, Enum):
+    """Supported context formats for LLM"""
+    PLAIN = "plain"  # Simple text format
+    XML = "xml"      # XML tags (recommended)
 
 
 @dataclass
@@ -41,13 +55,19 @@ class ContextManager:
         """Initialize context manager."""
         pass
 
-    def process_context(self, cells: List[Dict[str, Any]], kernel_variables: Optional[Dict[str, str]] = None) -> str:
+    def process_context(
+        self,
+        cells: List[Dict[str, Any]],
+        kernel_variables: Optional[Dict[str, str]] = None,
+        format: ContextFormat = ContextFormat.PLAIN
+    ) -> str:
         """
         Process ALL notebook cells into a compact overview.
 
         Args:
             cells: List of cell dicts with id, type, content, output, cellNumber
             kernel_variables: Optional dict of variable names to types from kernel
+            format: Output format - PLAIN (legacy) or XML (recommended for Claude)
 
         Returns:
             Compact context string for LLM
@@ -58,10 +78,13 @@ class ContextManager:
         # Build structured context
         structured = self._extract_structured_context(cells, kernel_variables)
 
-        # Format for LLM (compact overview)
-        context_str = self._format_compact_context(structured)
+        # Format for LLM based on selected format
+        if format == ContextFormat.XML:
+            context_str = self._format_xml_context(structured)
+        else:
+            context_str = self._format_compact_context(structured)
 
-        log_debug_message(f"📋 Context: {len(context_str)} chars, {structured.total_cells} cells, {len(structured.imports)} imports, {len(structured.recent_errors)} errors")
+        log_debug_message(f"📋 Context [{format.value}]: {len(context_str)} chars, {structured.total_cells} cells, {len(structured.imports)} imports, {len(structured.recent_errors)} errors")
 
         return context_str
 
@@ -167,6 +190,204 @@ class ContextManager:
         parts.append("\n=== END OVERVIEW ===")
         parts.append("\nUse get_cell_content(cell_id) to read full cell content/output.")
 
+        return '\n'.join(parts)
+
+    def _format_xml_context(self, structured: StructuredContext) -> str:
+        """
+        Format structured context into XML for LLM.
+
+        XML format is recommended for Claude (specifically trained on XML tags)
+        and works well with other LLMs like GPT-4 and Gemini.
+        Research shows XML can improve accuracy by up to 40% for complex tasks.
+        """
+        parts = []
+
+        parts.append('<notebook_context>')
+        parts.append(f'  <overview total_cells="{structured.total_cells}"/>')
+
+        # Imports section
+        if structured.imports:
+            parts.append('  <imports>')
+            for imp in sorted(structured.imports)[:12]:
+                parts.append(f'    <import>{self._escape_xml(imp)}</import>')
+            if len(structured.imports) > 12:
+                parts.append(f'    <!-- +{len(structured.imports) - 12} more imports -->')
+            parts.append('  </imports>')
+
+        # Variables section
+        if structured.variables:
+            parts.append('  <variables>')
+            for name, var_type in list(structured.variables.items())[:10]:
+                parts.append(f'    <var name="{self._escape_xml(name)}" type="{self._escape_xml(var_type)}"/>')
+            if len(structured.variables) > 10:
+                parts.append(f'    <!-- +{len(structured.variables) - 10} more variables -->')
+            parts.append('  </variables>')
+
+        # Errors section (high priority - always show)
+        if structured.recent_errors:
+            parts.append('  <errors>')
+            for err in structured.recent_errors[-3:]:
+                parts.append(f'    <error cell_id="{self._escape_xml(err["cell_id"])}">')
+                parts.append(f'      {self._escape_xml(err["error"])}')
+                parts.append('    </error>')
+            parts.append('  </errors>')
+
+        # Cells section
+        parts.append('  <cells>')
+        for cell in structured.cells:
+            cell_type = "markdown" if cell["type"] == "markdown" else "code"
+            has_output = "true" if cell["has_output"] else "false"
+            has_error = "true" if cell["has_error"] else "false"
+            output_type = cell["output_type"] or ""
+
+            parts.append(f'    <cell id="{self._escape_xml(cell["cell_id"])}" type="{cell_type}" has_output="{has_output}" has_error="{has_error}" output_type="{output_type}">')
+            parts.append(f'      <preview>{self._escape_xml(cell["preview"][:50])}</preview>')
+            parts.append('    </cell>')
+        parts.append('  </cells>')
+
+        parts.append('</notebook_context>')
+        parts.append('')
+        parts.append('<tool_hint>Use get_cell_content(cell_id) to read full cell content and output.</tool_hint>')
+
+        return '\n'.join(parts)
+
+    def _escape_xml(self, text: str) -> str:
+        """Escape special XML characters"""
+        if not text:
+            return ""
+        text = str(text)
+        text = text.replace('&', '&amp;')
+        text = text.replace('<', '&lt;')
+        text = text.replace('>', '&gt;')
+        text = text.replace('"', '&quot;')
+        text = text.replace("'", '&apos;')
+        return text
+
+    # =========================================================================
+    # POSITIONAL CONTEXT (for AI Cell)
+    # =========================================================================
+
+    def process_positional_context(
+        self,
+        cells: List[Dict[str, Any]],
+        ai_cell_index: int,
+        format: ContextFormat = ContextFormat.PLAIN,
+        max_output_chars: int = 500
+    ) -> str:
+        """
+        Process notebook cells into positional context for AI Cell.
+
+        This creates a context with cells organized as "above" and "below"
+        the AI cell's position, with immediate neighbors marked.
+
+        Args:
+            cells: List of cell dicts with id, type, content, output, cellNumber
+            ai_cell_index: The 0-based index of the AI cell in the notebook
+            format: Output format - PLAIN or XML
+            max_output_chars: Max characters for cell output (default: 500)
+
+        Returns:
+            Positional context string for AI Cell
+        """
+        if not cells:
+            if format == ContextFormat.XML:
+                return "<notebook_context><empty>No other cells in notebook</empty></notebook_context>"
+            return "(No other cells in notebook)"
+
+        cells_above = []
+        cells_below = []
+
+        for i, cell in enumerate(cells):
+            cell_position = cell.get("cellNumber", i + 1) - 1 if cell.get("cellNumber") else i
+            output = cell.get("output", "") or ""
+
+            cell_data = {
+                "id": cell.get("id", f"cell-{i}"),
+                "type": cell.get("type", "code"),
+                "content": cell.get("content", "") or "",
+                "output": output[:max_output_chars] if output else "",
+                "position": cell_position,
+                "is_immediate": False
+            }
+
+            if ai_cell_index >= 0 and cell_position < ai_cell_index:
+                cell_data["is_immediate"] = (cell_position == ai_cell_index - 1)
+                cells_above.append(cell_data)
+            else:
+                cell_data["is_immediate"] = (cell_position == ai_cell_index + 1)
+                cells_below.append(cell_data)
+
+        # Sort by position
+        cells_above.sort(key=lambda x: x["position"])
+        cells_below.sort(key=lambda x: x["position"])
+
+        # Build context based on format
+        if format == ContextFormat.XML:
+            context_str = self._format_positional_xml(cells_above, cells_below, ai_cell_index)
+        else:
+            context_str = self._format_positional_plain(cells_above, cells_below, ai_cell_index)
+
+        log_debug_message(f"📋 Positional Context [{format.value}]: {len(context_str)} chars, {len(cells_above)} above, {len(cells_below)} below")
+
+        return context_str
+
+    def _format_positional_plain(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
+        """Format positional context in plain text"""
+        parts = []
+
+        if cells_above:
+            parts.append("=== CELLS ABOVE YOU ===")
+            for cell in cells_above:
+                cell_type = "Code" if cell["type"] == "code" else cell["type"].capitalize()
+                prefix = "[IMMEDIATELY ABOVE] " if cell["is_immediate"] else ""
+                cell_info = f"{prefix}[@{cell['id']}] ({cell_type}):\n{cell['content']}"
+                if cell["output"]:
+                    cell_info += f"\n[Output]: {cell['output']}"
+                parts.append(cell_info)
+
+        parts.append(f"\n=== YOUR POSITION (AI Cell #{ai_cell_index + 1}) ===")
+
+        if cells_below:
+            parts.append("\n=== CELLS BELOW YOU ===")
+            for cell in cells_below:
+                cell_type = "Code" if cell["type"] == "code" else cell["type"].capitalize()
+                prefix = "[IMMEDIATELY BELOW] " if cell["is_immediate"] else ""
+                cell_info = f"{prefix}[@{cell['id']}] ({cell_type}):\n{cell['content']}"
+                if cell["output"]:
+                    cell_info += f"\n[Output]: {cell['output']}"
+                parts.append(cell_info)
+
+        return "\n".join(parts)
+
+    def _format_positional_xml(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
+        """Format positional context in XML"""
+        parts = []
+        parts.append('<notebook_context>')
+        parts.append(f'  <your_position cell_number="{ai_cell_index + 1}"/>')
+
+        if cells_above:
+            parts.append('  <cells_above>')
+            for cell in cells_above:
+                immediate = ' immediate="true"' if cell["is_immediate"] else ''
+                parts.append(f'    <cell id="{self._escape_xml(cell["id"])}" type="{cell["type"]}"{immediate}>')
+                parts.append(f'      <content>{self._escape_xml(cell["content"])}</content>')
+                if cell["output"]:
+                    parts.append(f'      <output>{self._escape_xml(cell["output"])}</output>')
+                parts.append('    </cell>')
+            parts.append('  </cells_above>')
+
+        if cells_below:
+            parts.append('  <cells_below>')
+            for cell in cells_below:
+                immediate = ' immediate="true"' if cell["is_immediate"] else ''
+                parts.append(f'    <cell id="{self._escape_xml(cell["id"])}" type="{cell["type"]}"{immediate}>')
+                parts.append(f'      <content>{self._escape_xml(cell["content"])}</content>')
+                if cell["output"]:
+                    parts.append(f'      <output>{self._escape_xml(cell["output"])}</output>')
+                parts.append('    </cell>')
+            parts.append('  </cells_below>')
+
+        parts.append('</notebook_context>')
         return '\n'.join(parts)
 
     def _get_first_line(self, content: str) -> str:
@@ -320,8 +541,52 @@ class ContextManager:
         return any(indicators)
 
 
-# Convenience function
-def prepare_context(cells: List[Dict[str, Any]], kernel_variables: Optional[Dict[str, str]] = None) -> str:
-    """Quick function to process cells into compact context string."""
+# Convenience functions
+def prepare_context(
+    cells: List[Dict[str, Any]],
+    kernel_variables: Optional[Dict[str, str]] = None,
+    format: ContextFormat = ContextFormat.PLAIN
+) -> str:
+    """
+    Quick function to process cells into compact context string.
+
+    Args:
+        cells: List of cell dicts
+        kernel_variables: Optional dict of variable names to types
+        format: PLAIN (legacy) or XML (recommended for Claude)
+
+    Returns:
+        Formatted context string
+    """
     manager = ContextManager()
-    return manager.process_context(cells, kernel_variables)
+    return manager.process_context(cells, kernel_variables, format)
+
+
+def prepare_context_xml(cells: List[Dict[str, Any]], kernel_variables: Optional[Dict[str, str]] = None) -> str:
+    """Quick function to process cells into XML context string (recommended for Claude)."""
+    return prepare_context(cells, kernel_variables, ContextFormat.XML)
+
+
+def prepare_context_plain(cells: List[Dict[str, Any]], kernel_variables: Optional[Dict[str, str]] = None) -> str:
+    """Quick function to process cells into plain text context string (legacy)."""
+    return prepare_context(cells, kernel_variables, ContextFormat.PLAIN)
+
+
+def prepare_positional_context(
+    cells: List[Dict[str, Any]],
+    ai_cell_index: int,
+    format: ContextFormat = ContextFormat.PLAIN
+) -> str:
+    """
+    Quick function to process cells into positional context for AI Cell.
+
+    Args:
+        cells: List of cell dicts
+        ai_cell_index: 0-based index of the AI cell
+        format: PLAIN or XML
+
+    Returns:
+        Positional context string with above/below sections
+    """
+    manager = ContextManager()
+    return manager.process_positional_context(cells, ai_cell_index, format)
