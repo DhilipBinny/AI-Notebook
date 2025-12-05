@@ -89,17 +89,20 @@ RUN useradd --create-home --shell /bin/bash playground && \
 WORKDIR /app
 
 # Copy ONLY the compiled binary from builder
-COPY --from=builder /build/dist/playground_server /usr/local/bin/playground_server
-RUN chmod +x /usr/local/bin/playground_server
+# Set ownership to playground user with execute-only for others
+COPY --from=builder --chown=playground:playground /build/dist/playground_server /usr/local/bin/playground_server
+RUN chmod 500 /usr/local/bin/playground_server
 
-# Create entrypoint
+# Create entrypoint (also owned by playground, execute-only)
 RUN echo '#!/bin/bash\n\
 set -e\n\
 echo "Starting AI Notebook Playground (Compiled)..."\n\
 echo "Port: ${PLAYGROUND_PORT}"\n\
 echo "LLM Provider: ${LLM_PROVIDER}"\n\
 exec playground_server\n\
-' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+' > /app/entrypoint.sh && \
+    chown playground:playground /app/entrypoint.sh && \
+    chmod 500 /app/entrypoint.sh
 
 USER playground
 

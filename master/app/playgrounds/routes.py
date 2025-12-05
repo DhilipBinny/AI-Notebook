@@ -431,6 +431,7 @@ async def terminal_websocket(
 
     try:
         # Create exec instance with TTY
+        # Run as 'nobody' user to prevent access to playground binary
         container = docker_client.client.containers.get(container_id)
         exec_instance = docker_client.client.api.exec_create(
             container_id,
@@ -439,7 +440,8 @@ async def terminal_websocket(
             stdout=True,
             stderr=True,
             tty=True,
-            environment={"TERM": "xterm-256color"},
+            user="nobody",
+            environment={"TERM": "xterm-256color", "HOME": "/tmp"},
         )
         exec_id = exec_instance['Id']
 
