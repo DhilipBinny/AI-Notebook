@@ -1,13 +1,12 @@
 # LLM Configuration - Supports multiple providers
+#
+# All configuration is passed via environment variables from master-api.
+# No .env file is needed - API keys are injected when container is spawned.
 import os
 from pathlib import Path
 import sys
-from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# Load environment variables from backend folder
-load_dotenv(Path(__file__).parent / ".env")
 
 # === Master API Configuration ===
 # URL for the master API (for LLM tools to fetch notebook data)

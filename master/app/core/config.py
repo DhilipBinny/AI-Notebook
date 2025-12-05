@@ -45,13 +45,14 @@ class Settings(BaseSettings):
     github_client_id: Optional[str] = Field(default=None, alias="GITHUB_CLIENT_ID")
     github_client_secret: Optional[str] = Field(default=None, alias="GITHUB_CLIENT_SECRET")
 
-    # LLM API Keys (passed to playground containers)
+    # LLM API Keys (passed to playground containers as environment variables)
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
 
-    # Path to .env file with LLM API keys (mounted into playground containers)
-    llm_env_file: Optional[str] = Field(default=None, alias="LLM_ENV_FILE")
+    # Ollama Configuration (passed to playground containers)
+    ollama_url: Optional[str] = Field(default="http://host.docker.internal:11434/v1", alias="OLLAMA_URL")
+    ollama_model: Optional[str] = Field(default="qwen3-coder:30b", alias="OLLAMA_MODEL")
 
     # Playground settings
     playground_image: str = Field(default="ainotebook-playground:latest", alias="PLAYGROUND_IMAGE")

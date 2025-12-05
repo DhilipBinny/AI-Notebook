@@ -77,7 +77,7 @@ class DockerClient:
                 # Master API URL for LLM tools to fetch notebook data
                 "MASTER_API_URL": "http://ainotebook-master-api:8001/api",
             }
-            # Add LLM API keys if configured
+            # Add LLM API keys if configured (passed as env vars, not via .env file)
             if settings.gemini_api_key:
                 env["GEMINI_API_KEY"] = settings.gemini_api_key
             if settings.openai_api_key:
@@ -85,13 +85,11 @@ class DockerClient:
             if settings.anthropic_api_key:
                 env["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
-            # Build volumes dict
-            volumes = {}
-            if settings.llm_env_file:
-                volumes[settings.llm_env_file] = {
-                    "bind": "/app/.env",
-                    "mode": "ro"
-                }
+            # Add Ollama configuration
+            if settings.ollama_url:
+                env["OLLAMA_URL"] = settings.ollama_url
+            if settings.ollama_model:
+                env["OLLAMA_MODEL"] = settings.ollama_model
 
             container = self.client.containers.run(
                 image=settings.playground_image,
@@ -101,7 +99,6 @@ class DockerClient:
                 mem_limit=settings.playground_memory_limit,
                 cpu_quota=int(settings.playground_cpu_limit * 100000),
                 network=settings.playground_network,
-                volumes=volumes if volumes else None,
                 labels={
                     "app": "ainotebook-playground",
                     "project_id": project_id,
