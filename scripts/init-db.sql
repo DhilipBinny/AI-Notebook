@@ -55,10 +55,50 @@ CREATE TABLE IF NOT EXISTS users (
 
 
 -- =====================================================
+-- TABLE: workspaces
+-- =====================================================
+-- Organizes projects into groups/folders
+-- Each user can have multiple workspaces
+-- =====================================================
+CREATE TABLE IF NOT EXISTS workspaces (
+    -- Primary key (UUID v4)
+    id CHAR(36) NOT NULL,
+
+    -- Owner reference
+    user_id CHAR(36) NOT NULL,
+
+    -- Workspace info
+    name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+
+    -- Visual customization
+    color VARCHAR(7) NOT NULL DEFAULT '#3B82F6',  -- Hex color (default: blue)
+    icon VARCHAR(50) NULL DEFAULT 'folder',        -- Icon name
+
+    -- State
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,    -- One default per user
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,    -- Soft delete flag
+    sort_order VARCHAR(50) NOT NULL DEFAULT '0',  -- Display order
+
+    -- Timestamps
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,                    -- Soft delete timestamp
+
+    -- Constraints
+    PRIMARY KEY (id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_workspaces_user (user_id),
+    INDEX idx_workspaces_deleted (is_deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
 -- TABLE: projects
 -- =====================================================
 -- Stores notebook projects
 -- Each project has one .ipynb file stored in MinIO
+-- Projects can optionally belong to a workspace
 -- =====================================================
 CREATE TABLE IF NOT EXISTS projects (
     -- Primary key (UUID v4)
@@ -67,16 +107,20 @@ CREATE TABLE IF NOT EXISTS projects (
     -- Owner reference
     user_id CHAR(36) NOT NULL,
 
+    -- Workspace reference (optional - for grouping)
+    workspace_id CHAR(36) NULL,
+
     -- Project info
     name VARCHAR(255) NOT NULL,
     description TEXT NULL,
 
     -- Storage location in MinIO
-    -- Format: {user_id}/{project_id}/notebook.ipynb
+    -- Format: {mm-yyyy}/{project_id}/notebook.ipynb
     storage_path VARCHAR(500) NOT NULL,
+    storage_month VARCHAR(7) NOT NULL,  -- mm-yyyy format, for folder organization
 
     -- Settings
-    llm_provider ENUM('ollama', 'openai', 'anthropic', 'gemini') DEFAULT 'ollama',
+    llm_provider ENUM('ollama', 'openai', 'anthropic', 'gemini') DEFAULT 'gemini',
     llm_model VARCHAR(100) NULL,
 
     -- State
@@ -86,13 +130,17 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     last_opened_at TIMESTAMP NULL,
+    deleted_at TIMESTAMP NULL,  -- Soft delete timestamp
 
     -- Constraints
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
     INDEX idx_projects_user (user_id),
+    INDEX idx_projects_workspace (workspace_id),
     INDEX idx_projects_user_active (user_id, is_archived),
-    INDEX idx_projects_updated (updated_at)
+    INDEX idx_projects_updated (updated_at),
+    INDEX idx_projects_deleted (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -135,42 +183,6 @@ CREATE TABLE IF NOT EXISTS playgrounds (
     UNIQUE KEY uk_playgrounds_container (container_id),
     INDEX idx_playgrounds_status (status),
     INDEX idx_playgrounds_activity (last_activity_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
--- =====================================================
--- TABLE: chat_messages
--- =====================================================
--- Stores chat history for LLM conversations
--- Replaces the JSON file storage
--- =====================================================
-CREATE TABLE IF NOT EXISTS chat_messages (
-    -- Primary key (UUID v4)
-    id CHAR(36) NOT NULL,
-
-    -- Project reference
-    project_id CHAR(36) NOT NULL,
-
-    -- Message content
-    role ENUM('user', 'assistant', 'system') NOT NULL,
-    content TEXT NOT NULL,
-
-    -- Metadata (tool calls, llm steps, model info, etc.)
-    -- Stored as JSON for flexibility
-    metadata JSON NULL,
-
-    -- For tool calls tracking
-    tool_calls JSON NULL,           -- Array of tool calls made
-    tool_results JSON NULL,         -- Results from tool executions
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    -- Constraints
-    PRIMARY KEY (id),
-    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    INDEX idx_chat_project_time (project_id, created_at),
-    INDEX idx_chat_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
