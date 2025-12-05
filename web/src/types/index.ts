@@ -50,6 +50,13 @@ export interface Playground {
   url?: string
 }
 
+// Image input for AI Cell (pasted or uploaded images)
+export interface ImageInput {
+  data: string  // Base64 encoded image data
+  mime_type: string  // MIME type (image/png, image/jpeg, etc.)
+  filename?: string  // Original filename for display
+}
+
 // AI Cell data stored in metadata
 export interface AICellData {
   user_prompt: string
@@ -58,6 +65,7 @@ export interface AICellData {
   model?: string
   error?: string
   timestamp?: string
+  images?: ImageInput[]  // Attached images
 }
 
 // Frontend cell type (for React state)

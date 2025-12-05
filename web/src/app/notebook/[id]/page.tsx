@@ -522,7 +522,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [deleteCell])
 
   // Run AI cell - send prompt to LLM with notebook context
-  const handleRunAICell = useCallback(async (cellId: string, prompt: string) => {
+  const handleRunAICell = useCallback(async (
+    cellId: string,
+    prompt: string,
+    images?: { data: string; mime_type: string; filename?: string }[]
+  ) => {
     if (!playground || playground.status !== 'running') {
       updateCell(cellId, {
         ai_data: {
@@ -530,6 +534,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           llm_response: '',
           status: 'error',
           error: 'Playground is not running. Start the playground first.',
+          images: images,
         },
       })
       return
@@ -547,7 +552,16 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const aiCellIndex = cells.findIndex(c => c.id === cellId)
 
     try {
-      const response = await chat.runAICell(projectId, prompt, contextCellIds, llmProvider, cellId, aiCellIndex, contextFormat)
+      const response = await chat.runAICell(
+        projectId,
+        prompt,
+        contextCellIds,
+        llmProvider,
+        cellId,
+        aiCellIndex,
+        contextFormat,
+        images
+      )
 
       updateCell(cellId, {
         ai_data: {
@@ -557,6 +571,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           model: response.model,
           error: response.error,
           timestamp: new Date().toISOString(),
+          images: images,
         },
       })
 
@@ -569,6 +584,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           llm_response: '',
           status: 'error',
           error: err instanceof Error ? err.message : 'Unknown error',
+          images: images,
         },
       })
     }

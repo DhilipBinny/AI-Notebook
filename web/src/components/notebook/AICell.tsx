@@ -21,7 +21,7 @@ function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
 }
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import type { Cell as CellType, AICellData } from '@/types'
+import type { Cell as CellType, AICellData, ImageInput } from '@/types'
 
 // Configure marked
 marked.setOptions({
@@ -38,7 +38,7 @@ interface AICellProps {
   onMoveUp: () => void
   onMoveDown: () => void
   onUpdate: (updates: Partial<CellType>) => void
-  onRunAICell: (cellId: string, prompt: string) => Promise<void>
+  onRunAICell: (cellId: string, prompt: string, images?: ImageInput[]) => Promise<void>
   onInsertCodeCells: (afterCellId: string, codeBlocks: string[]) => void
   onScrollToCell?: (cellId: string) => void
 }
@@ -60,6 +60,7 @@ export default function AICell({
   const responseRef = useRef<HTMLDivElement>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [localPrompt, setLocalPrompt] = useState(cell.ai_data?.user_prompt || '')
+  const [images, setImages] = useState<ImageInput[]>(cell.ai_data?.images || [])
 
   // Copy feedback state
   const [copiedPrompt, setCopiedPrompt] = useState(false)
@@ -107,21 +108,78 @@ export default function AICell({
     }
   }, [isEditing])
 
+  // Handle paste event for images
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (!file) continue
+
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = reader.result as string
+          // Extract base64 data (remove "data:image/png;base64," prefix)
+          const base64 = dataUrl.split(',')[1]
+          const mimeType = dataUrl.split(';')[0].split(':')[1]
+
+          const filename = file.name || `pasted-image-${Date.now()}.${mimeType.split('/')[1]}`
+
+          const newImage: ImageInput = {
+            data: base64,
+            mime_type: mimeType,
+            filename: filename
+          }
+
+          setImages(prev => [...prev, newImage])
+
+          // Add placeholder text in prompt
+          setLocalPrompt(prev => {
+            const placeholder = `[📷 image: ${filename}]`
+            return prev ? `${prev}\n${placeholder}` : placeholder
+          })
+        }
+        reader.readAsDataURL(file)
+        break // Only handle first image
+      }
+    }
+  }, [])
+
+  // Remove image
+  const removeImage = useCallback((index: number) => {
+    setImages(prev => {
+      const removed = prev[index]
+      const newImages = prev.filter((_, i) => i !== index)
+
+      // Remove placeholder from prompt
+      if (removed.filename) {
+        setLocalPrompt(p => p.replace(`[📷 image: ${removed.filename}]`, '').trim())
+      }
+
+      return newImages
+    })
+  }, [])
+
   // Handle run
   const handleRun = async () => {
-    if (!localPrompt.trim()) return
+    if (!localPrompt.trim() && images.length === 0) return
 
-    // Update cell with prompt and running status
+    // Update cell with prompt, images, and running status
     onUpdate({
       ai_data: {
         ...aiData,
         user_prompt: localPrompt,
+        images: images.length > 0 ? images : undefined,
         status: 'running',
       },
     })
 
     setIsEditing(false)
-    await onRunAICell(cell.id, localPrompt)
+    await onRunAICell(cell.id, localPrompt, images.length > 0 ? images : undefined)
   }
 
   // Handle keyboard shortcuts
@@ -378,29 +436,67 @@ export default function AICell({
           )}
         </div>
         {isEditing || !aiData.user_prompt ? (
-          <textarea
-            ref={textareaRef}
-            value={localPrompt}
-            onChange={(e) => setLocalPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              if (localPrompt.trim()) {
-                onUpdate({
-                  ai_data: {
-                    ...aiData,
-                    user_prompt: localPrompt,
-                  },
-                })
-              }
-            }}
-            placeholder="Ask a question about your notebook... (Shift+Enter to run)"
-            className="w-full bg-transparent text-sm resize-none outline-none min-h-[48px] p-2 rounded"
-            style={{
-              color: 'var(--nb-text-primary)',
-              backgroundColor: 'rgba(168, 85, 247, 0.05)',
-              border: '1px solid rgba(168, 85, 247, 0.2)',
-            }}
-          />
+          <div>
+            <textarea
+              ref={textareaRef}
+              value={localPrompt}
+              onChange={(e) => setLocalPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onBlur={() => {
+                if (localPrompt.trim() || images.length > 0) {
+                  onUpdate({
+                    ai_data: {
+                      ...aiData,
+                      user_prompt: localPrompt,
+                      images: images.length > 0 ? images : undefined,
+                    },
+                  })
+                }
+              }}
+              placeholder="Ask a question about your notebook... (Shift+Enter to run, paste images)"
+              className="w-full bg-transparent text-sm resize-none outline-none min-h-[48px] p-2 rounded"
+              style={{
+                color: 'var(--nb-text-primary)',
+                backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                border: '1px solid rgba(168, 85, 247, 0.2)',
+              }}
+            />
+            {/* Image previews */}
+            {images.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {images.map((img, idx) => (
+                  <div
+                    key={idx}
+                    className="relative group/img rounded overflow-hidden"
+                    style={{ border: '1px solid rgba(168, 85, 247, 0.3)' }}
+                  >
+                    <img
+                      src={`data:${img.mime_type};base64,${img.data}`}
+                      alt={img.filename || 'Pasted image'}
+                      className="h-16 w-auto object-cover"
+                    />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeImage(idx) }}
+                      className="absolute top-0 right-0 p-0.5 rounded-bl opacity-0 group-hover/img:opacity-100 transition-opacity"
+                      style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)' }}
+                      title="Remove image"
+                    >
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <div
+                      className="absolute bottom-0 left-0 right-0 text-[9px] px-1 truncate"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: '#fff' }}
+                    >
+                      {img.filename}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div
             className="text-sm cursor-pointer p-2 rounded hover:opacity-80"

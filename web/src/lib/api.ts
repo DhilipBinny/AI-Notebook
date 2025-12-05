@@ -258,13 +258,15 @@ export const chat = {
     llmProvider: string = 'gemini',
     aiCellId?: string,
     aiCellIndex?: number,
-    contextFormat: 'xml' | 'plain' = 'xml'
+    contextFormat: 'xml' | 'plain' = 'xml',
+    images?: { data: string; mime_type: string; filename?: string }[]
   ): Promise<{ success: boolean; response: string; model: string; error?: string }> => {
     const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       prompt,
       context_cell_ids: contextCellIds,
       ai_cell_id: aiCellId,
       ai_cell_index: aiCellIndex,
+      images: images || undefined,
     })
     return data
   },
