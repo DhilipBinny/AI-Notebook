@@ -67,8 +67,17 @@ services:
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
       # CORS
       CORS_ORIGINS: http://localhost,http://localhost:3000,http://localhost:8001
-      # LLM API Keys - mount the .env file from playground/backend into containers
-      LLM_ENV_FILE: /host/playground/backend/.env
+      # LLM API Keys (passed to playground containers as env vars)
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # LLM Models (defaults can be overridden)
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+      # Ollama Configuration
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/v1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3-coder:30b}
       # Playground
       PLAYGROUND_IMAGE: ainotebook-playground:latest
       PLAYGROUND_NETWORK: ainotebook-network
@@ -80,8 +89,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Mount source for hot reload in development
       - ./master/app:/app/app:ro
-      # Mount project root so we can access playground/.env for LLM keys
-      - .:/host:ro
     networks:
       - ainotebook-network
     depends_on:
