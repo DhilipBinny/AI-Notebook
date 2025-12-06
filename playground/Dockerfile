@@ -13,12 +13,7 @@ ARG PLAYGROUND_PORT=8888
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PLAYGROUND_PORT=${PLAYGROUND_PORT} \
-    # Default to Ollama (can be overridden at runtime)
-    LLM_PROVIDER=ollama \
-    OLLAMA_URL=http://host.docker.internal:11434/v1 \
-    OLLAMA_MODEL=qwen3-coder:30b \
-    TOOL_EXECUTION_MODE=manual
+    PLAYGROUND_PORT=${PLAYGROUND_PORT}
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -58,7 +53,6 @@ check_health() {\n\
 echo "Starting AI Notebook Playground..."\n\
 echo "Port: ${PLAYGROUND_PORT}"\n\
 echo "LLM Provider: ${LLM_PROVIDER}"\n\
-echo "Ollama URL: ${OLLAMA_URL}"\n\
 \n\
 # Start the server\n\
 exec python -m uvicorn backend.server:app \\\n\

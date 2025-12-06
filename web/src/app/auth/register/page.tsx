@@ -15,6 +15,14 @@ export default function RegisterPage() {
   const router = useRouter()
   const setUser = useAuthStore((state) => state.setUser)
 
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      router.push('/dashboard')
+    }
+  }, [router])
+
   // Apply dark theme on mount for auth pages
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'dark')
