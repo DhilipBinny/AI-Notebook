@@ -81,13 +81,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install production requirements
-# These include kernel dependencies + user libraries
-COPY requirements.prod.txt /tmp/
-RUN pip install --no-cache-dir -r /tmp/requirements.prod.txt && \
-    rm /tmp/requirements.prod.txt
-
-# Create shared group for workspace access (allows both playground service and terminal user)
+# Create shared group for workspace access BEFORE installing packages
 # - 'playground' user: runs the server binary (owns the binary exclusively)
 # - 'workspace' group: shared access to /workspace for file uploads and terminal
 # - 'nobody' user: runs terminal sessions (added to workspace group)
@@ -99,6 +93,15 @@ RUN groupadd -r workspace && \
     chown -R playground:playground /app /notebooks && \
     chown playground:workspace /workspace && \
     chmod 2775 /workspace
+
+# Copy and install production requirements
+# These include kernel dependencies + user libraries
+COPY requirements.prod.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.prod.txt && \
+    rm /tmp/requirements.prod.txt
+
+# Install ipykernel spec system-wide so all users can access it
+RUN python -m ipykernel install --name python3 --display-name "Python 3"
 
 WORKDIR /app
 
