@@ -494,8 +494,9 @@ async def chat_with_llm(
     try:
         from datetime import datetime
 
-        # Pretty print chat request header
-        log_chat_header(cfg.LLM_PROVIDER.upper(), cfg.TOOL_EXECUTION_MODE, len(request.context) if request.context else 0)
+        # Pretty print chat request header (use request.provider if provided, else default)
+        provider_display = (request.provider or cfg.LLM_PROVIDER).upper()
+        log_chat_header(provider_display, cfg.TOOL_EXECUTION_MODE, len(request.context) if request.context else 0)
         log_user_message(request.message)
 
         # Get or create session - this ensures the session exists for tool execution
