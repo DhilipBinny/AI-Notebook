@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     playground_memory_limit: str = Field(default="4g", alias="PLAYGROUND_MEMORY_LIMIT")
     playground_cpu_limit: float = Field(default=4.0, alias="PLAYGROUND_CPU_LIMIT")
     playground_idle_timeout: int = Field(default=3600, alias="PLAYGROUND_IDLE_TIMEOUT")
+    master_api_url: str = Field(default="http://ainotebook-master-api:8001/api", alias="MASTER_API_URL")
 
     # User limits
     default_max_projects: int = Field(default=5, alias="DEFAULT_MAX_PROJECTS")

@@ -63,7 +63,6 @@ async def get_notebook(
 
     if notebook_data is None:
         # Return empty notebook (Jupyter .ipynb standard format)
-        import uuid
         initial_cell_id = f"cell-{uuid.uuid4().hex[:12]}"
         notebook_data = {
             "cells": [

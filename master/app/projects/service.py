@@ -179,8 +179,3 @@ class ProjectService:
         """Permanently delete a project (hard delete)."""
         self.db.delete(project)  # delete() is sync, marks for deletion
         await self.db.flush()
-
-    def _generate_project_id(self) -> str:
-        """Generate a temporary project ID (replaced after creation)."""
-        from uuid import uuid4
-        return str(uuid4())

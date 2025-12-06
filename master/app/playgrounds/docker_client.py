@@ -75,7 +75,7 @@ class DockerClient:
                 "S3_SECRET_KEY": settings.s3_secret_key,
                 "S3_BUCKET": settings.s3_bucket_notebooks,
                 # Master API URL for LLM tools to fetch notebook data
-                "MASTER_API_URL": "http://ainotebook-master-api:8001/api",
+                "MASTER_API_URL": settings.master_api_url,
             }
             # Add LLM API keys if configured (passed as env vars, not via .env file)
             if settings.gemini_api_key:
