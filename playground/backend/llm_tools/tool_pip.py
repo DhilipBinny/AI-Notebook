@@ -12,13 +12,11 @@ from backend.utils.util_func import log_debug_message
 
 
 def _get_session_kernel():
-    """Get kernel from current session, or fallback to global kernel"""
+    """Get kernel from current session. Raises if no session."""
     session = get_current_session()
-    if session:
-        return session.kernel
-    # Fallback to global kernel
-    from backend.kernel_manager import get_kernel
-    return get_kernel()
+    if not session:
+        raise RuntimeError("No active session. Session is required for kernel operations.")
+    return session.kernel
 
 
 def _execute_in_kernel(code: str) -> dict:

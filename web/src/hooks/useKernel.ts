@@ -206,10 +206,10 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
 
   // Interrupt execution
   const interrupt = useCallback(async () => {
-    if (!playgroundUrl) return false
+    if (!playgroundUrl || !sessionIdRef.current) return false
 
     try {
-      const response = await fetch(`${playgroundUrl}/kernel/interrupt`, {
+      const response = await fetch(`${playgroundUrl}/session/${sessionIdRef.current}/kernel/interrupt`, {
         method: 'POST',
       })
       if (response.ok) {
@@ -224,10 +224,10 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
 
   // Restart kernel
   const restart = useCallback(async () => {
-    if (!playgroundUrl) return false
+    if (!playgroundUrl || !sessionIdRef.current) return false
 
     try {
-      const response = await fetch(`${playgroundUrl}/kernel/restart`, {
+      const response = await fetch(`${playgroundUrl}/session/${sessionIdRef.current}/kernel/restart`, {
         method: 'POST',
       })
       if (response.ok) {

@@ -21,7 +21,7 @@ function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
 }
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import type { Cell as CellType, AICellData, ImageInput } from '@/types'
+import type { Cell as CellType, AICellData, ImageInput, LLMStep } from '@/types'
 
 // Configure marked
 marked.setOptions({
@@ -283,6 +283,50 @@ export default function AICell({
       }
     }
   }, [onScrollToCell])
+
+  // Render LLM steps (tool calls and results)
+  const renderSteps = (steps: LLMStep[]) => {
+    if (!steps || steps.length === 0) return null
+
+    const toolNames = [...new Set(steps.filter(s => s.name).map(s => s.name))]
+    const summaryText = toolNames.length > 0
+      ? `Used ${toolNames.length} tool${toolNames.length > 1 ? 's' : ''}: ${toolNames.join(', ')}`
+      : `${steps.length} step${steps.length > 1 ? 's' : ''}`
+
+    return (
+      <details className="mt-3 text-xs">
+        <summary className="cursor-pointer flex items-center gap-1.5 transition-colors" style={{ color: 'var(--nb-text-muted)' }}>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          {summaryText}
+        </summary>
+        <div className="mt-2 space-y-2 ml-2 pl-3" style={{ borderLeft: '2px solid var(--nb-border-default)' }}>
+          {steps.map((step, idx) => (
+            <div key={idx} style={{ color: 'var(--nb-text-muted)' }}>
+              <span className="font-medium flex items-center gap-1.5" style={{ color: 'var(--nb-text-secondary)' }}>
+                {step.type === 'tool_call' && (
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7' }}>⚡</span>
+                )}
+                {step.type === 'tool_result' && (
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(166, 227, 161, 0.2)', color: 'var(--nb-accent-success)' }}>✓</span>
+                )}
+                {step.type === 'text' && (
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(203, 166, 247, 0.2)', color: 'var(--nb-accent-markdown)' }}>💭</span>
+                )}
+                {step.name || step.type}
+              </span>
+              <pre className="mt-1.5 text-[11px] rounded-md p-2 whitespace-pre-wrap break-words overflow-hidden font-mono" style={{ backgroundColor: 'var(--nb-bg-ai-cell)', color: 'var(--nb-text-secondary)' }}>
+                {step.content.slice(0, 500)}
+                {step.content.length > 500 && '...'}
+              </pre>
+            </div>
+          ))}
+        </div>
+      </details>
+    )
+  }
 
   // Render response with code block actions
   const renderResponse = () => {
@@ -688,6 +732,9 @@ export default function AICell({
           )}
 
           {aiData.llm_response && renderResponse()}
+
+          {/* Tool call steps */}
+          {aiData.steps && aiData.steps.length > 0 && renderSteps(aiData.steps)}
         </div>
       )}
 

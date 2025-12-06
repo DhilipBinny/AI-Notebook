@@ -415,15 +415,3 @@ print("[Kernel] Module cache refreshed - new packages should now be importable")
         except Exception as e:
             yield {"type": "error", "ename": "ExecutionError", "evalue": str(e), "traceback": []}
             yield {"type": "status", "status": "error"}
-
-
-# Global kernel instance
-_kernel: Optional[NotebookKernel] = None
-
-
-def get_kernel() -> NotebookKernel:
-    """Get or create the global kernel instance"""
-    global _kernel
-    if _kernel is None:
-        _kernel = NotebookKernel()
-    return _kernel

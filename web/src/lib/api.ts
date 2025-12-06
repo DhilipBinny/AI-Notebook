@@ -262,7 +262,7 @@ export const chat = {
     aiCellIndex?: number,
     contextFormat: 'xml' | 'plain' = 'xml',
     images?: { data: string; mime_type: string; filename?: string }[]
-  ): Promise<{ success: boolean; response: string; model: string; error?: string }> => {
+  ): Promise<{ success: boolean; response: string; model: string; error?: string; steps?: LLMStep[] }> => {
     const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       prompt,
       context_cell_ids: contextCellIds,

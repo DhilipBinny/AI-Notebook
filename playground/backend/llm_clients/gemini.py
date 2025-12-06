@@ -677,7 +677,7 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"Gemini ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
         """
         AI Cell completion with tool calling support.
         Focuses on kernel inspection and sandbox tools only (no web search).
@@ -689,8 +689,9 @@ class GeminiClient(BaseLLMClient):
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
-            The final response text from the LLM
+            Dict with "response" (str) and "steps" (list of tool call info)
         """
+        steps = []
         try:
             log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
             log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
@@ -716,8 +717,40 @@ class GeminiClient(BaseLLMClient):
             content = self._build_content_with_images(final_prompt, images)
 
             # Send the message - tools will be auto-executed
+            # For chat.send_message with parts, we need to wrap in a Content object
             log_debug_message(f"🤖 Sending AI Cell message with auto tool execution...")
-            response = chat.send_message(message=content)
+            if isinstance(content, list):
+                # Wrap parts in a Content object for chat API
+                response = chat.send_message(message=types.Content(parts=content, role="user"))
+            else:
+                response = chat.send_message(message=content)
+
+            # Extract tool call steps from chat history
+            if hasattr(chat, '_curated_history') and chat._curated_history:
+                for msg in chat._curated_history:
+                    if hasattr(msg, 'parts'):
+                        for part in msg.parts:
+                            # Tool call (function_call)
+                            if hasattr(part, 'function_call') and part.function_call:
+                                fc = part.function_call
+                                args_str = json.dumps(dict(fc.args) if hasattr(fc, 'args') and fc.args else {}, indent=2)
+                                steps.append({
+                                    "type": "tool_call",
+                                    "name": fc.name if hasattr(fc, 'name') else "unknown",
+                                    "content": args_str
+                                })
+                            # Tool result (function_response)
+                            if hasattr(part, 'function_response') and part.function_response:
+                                fr = part.function_response
+                                result_str = str(fr.response) if hasattr(fr, 'response') else str(fr)
+                                # Truncate long results
+                                if len(result_str) > 1000:
+                                    result_str = result_str[:1000] + "..."
+                                steps.append({
+                                    "type": "tool_result",
+                                    "name": fr.name if hasattr(fr, 'name') else "unknown",
+                                    "content": result_str
+                                })
 
             # In auto mode, tools are already executed - just return text
             result = response.text or ""
@@ -735,8 +768,8 @@ class GeminiClient(BaseLLMClient):
                 if not result:
                     result = "I've analyzed your notebook using the available tools. Please let me know if you need more specific information."
 
-            log_debug_message(f"🤖 Gemini AI Cell with tools response: {len(result)} chars")
-            return result
+            log_debug_message(f"🤖 Gemini AI Cell with tools response: {len(result)} chars, {len(steps)} steps")
+            return {"response": result, "steps": steps}
 
         except Exception as e:
             log_debug_message(f"Gemini ai_cell_with_tools error: {e}")

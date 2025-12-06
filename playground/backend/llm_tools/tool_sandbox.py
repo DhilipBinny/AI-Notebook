@@ -41,12 +41,11 @@ def _get_sandbox_kernel() -> Optional[NotebookKernel]:
 
 
 def _get_main_kernel():
-    """Get the main kernel from current session"""
+    """Get the main kernel from current session. Raises if no session."""
     session = get_current_session()
-    if session:
-        return session.kernel
-    from backend.kernel_manager import get_kernel
-    return get_kernel()
+    if not session:
+        raise RuntimeError("No active session. Session is required for kernel operations.")
+    return session.kernel
 
 
 def sandbox_execute(code: str, timeout: int = 10) -> dict:

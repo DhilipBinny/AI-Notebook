@@ -417,7 +417,7 @@ class OllamaClient(BaseLLMClient):
             log_debug_message(f"Ollama ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
         """
         AI Cell completion with tool calling support.
         Uses automatic function calling for kernel inspection and sandbox tools.
@@ -432,8 +432,9 @@ class OllamaClient(BaseLLMClient):
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
-            The final response text from the LLM
+            Dict with "response" (str) and "steps" (list of tool call info)
         """
+        steps = []
         try:
             log_debug_message(f"🤖 Ollama AI Cell with tools starting...")
             if images:
@@ -461,7 +462,8 @@ class OllamaClient(BaseLLMClient):
                     # If model doesn't support tools, fall back to simple completion
                     if "tools" in str(e).lower() or "function" in str(e).lower():
                         log_debug_message(f"⚠️ Ollama model doesn't support tools, falling back to simple completion")
-                        return self.ai_cell_completion(prompt)
+                        result = self.ai_cell_completion(prompt)
+                        return {"response": result, "steps": []}
                     raise
 
                 message = response.choices[0].message
@@ -469,8 +471,8 @@ class OllamaClient(BaseLLMClient):
                 # If no tool calls, return the response
                 if not message.tool_calls:
                     result = message.content or ""
-                    log_debug_message(f"🤖 Ollama AI Cell response: {len(result)} chars")
-                    return result
+                    log_debug_message(f"🤖 Ollama AI Cell response: {len(result)} chars, {len(steps)} steps")
+                    return {"response": result, "steps": steps}
 
                 # Execute tool calls
                 messages.append(message.model_dump())
@@ -481,6 +483,13 @@ class OllamaClient(BaseLLMClient):
 
                     log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
 
+                    # Record tool call step
+                    steps.append({
+                        "type": "tool_call",
+                        "name": tool_name,
+                        "content": json.dumps(tool_args, indent=2)
+                    })
+
                     if tool_name in ai_cell_tool_map:
                         try:
                             result = ai_cell_tool_map[tool_name](**tool_args)
@@ -490,6 +499,14 @@ class OllamaClient(BaseLLMClient):
                     else:
                         tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
 
+                    # Record tool result step
+                    result_preview = tool_result[:1000] + "..." if len(tool_result) > 1000 else tool_result
+                    steps.append({
+                        "type": "tool_result",
+                        "name": tool_name,
+                        "content": result_preview
+                    })
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -497,7 +514,7 @@ class OllamaClient(BaseLLMClient):
                     })
 
             # Max iterations reached
-            return "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question."
+            return {"response": "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question.", "steps": steps}
 
         except Exception as e:
             log_debug_message(f"Ollama ai_cell_with_tools error: {e}")

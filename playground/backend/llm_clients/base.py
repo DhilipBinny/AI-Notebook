@@ -283,7 +283,7 @@ GUIDELINES:
         pass
 
     @abstractmethod
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
         """
         AI Cell completion with tool calling support.
         Used for inline Q&A with kernel inspection and sandbox execution.
@@ -304,6 +304,8 @@ GUIDELINES:
             max_iterations: Maximum number of tool-calling iterations (default: 10)
 
         Returns:
-            The final response text from the LLM after all tool executions
+            Dict with:
+            - "response": The final response text from the LLM
+            - "steps": List of tool call steps [{"type": "tool_call"|"tool_result", "name": str, "content": str}]
         """
         pass

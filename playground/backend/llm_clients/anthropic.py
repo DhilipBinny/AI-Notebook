@@ -559,7 +559,7 @@ class AnthropicClient(BaseLLMClient):
             log_debug_message(f"Anthropic ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
         """
         AI Cell completion with tool calling support.
         Uses automatic function calling for kernel inspection and sandbox tools.
@@ -571,8 +571,9 @@ class AnthropicClient(BaseLLMClient):
             max_iterations: Maximum number of tool-calling iterations
 
         Returns:
-            The final response text from the LLM
+            Dict with "response" (str) and "steps" (list of tool call info)
         """
+        steps = []
         try:
             log_debug_message(f"🤖 Anthropic AI Cell with tools starting...")
             if images:
@@ -621,8 +622,8 @@ class AnthropicClient(BaseLLMClient):
                     for block in response.content:
                         if hasattr(block, 'text') and block.text:
                             result += block.text
-                    log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars")
-                    return result
+                    log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars, {len(steps)} steps")
+                    return {"response": result, "steps": steps}
 
                 # Process tool calls
                 tool_calls = []
@@ -635,7 +636,7 @@ class AnthropicClient(BaseLLMClient):
                         tool_calls.append(block)
 
                 if not tool_calls:
-                    return text_response
+                    return {"response": text_response, "steps": steps}
 
                 # Add assistant's response to messages
                 messages.append({"role": "assistant", "content": response.content})
@@ -648,6 +649,13 @@ class AnthropicClient(BaseLLMClient):
 
                     log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
 
+                    # Record tool call step
+                    steps.append({
+                        "type": "tool_call",
+                        "name": tool_name,
+                        "content": json.dumps(tool_args, indent=2)
+                    })
+
                     if tool_name in ai_cell_tool_map:
                         try:
                             result = ai_cell_tool_map[tool_name](**tool_args)
@@ -656,6 +664,14 @@ class AnthropicClient(BaseLLMClient):
                             tool_result = json.dumps({"error": str(e)})
                     else:
                         tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+                    # Record tool result step
+                    result_preview = tool_result[:1000] + "..." if len(tool_result) > 1000 else tool_result
+                    steps.append({
+                        "type": "tool_result",
+                        "name": tool_name,
+                        "content": result_preview
+                    })
 
                     tool_results.append({
                         "type": "tool_result",
@@ -666,7 +682,7 @@ class AnthropicClient(BaseLLMClient):
                 messages.append({"role": "user", "content": tool_results})
 
             # Max iterations reached
-            return "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question."
+            return {"response": "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question.", "steps": steps}
 
         except Exception as e:
             log_debug_message(f"Anthropic ai_cell_with_tools error: {e}")

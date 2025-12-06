@@ -1,12 +1,13 @@
 """
-Kernel Inspection Tools - Allows AI to inspect the notebook's runtime state
+Runtime Inspection Tools - Inspect live kernel state
 
-These tools provide read-only access to the main kernel's state:
+These tools execute code in the running kernel to get runtime information:
 - Variables (names, types, shapes, values)
 - User-defined functions
 - Imported modules
 - Kernel info (memory, execution count)
 
+All functions prefixed with 'runtime_' to indicate they require a running kernel.
 Uses session-scoped kernel from session_manager.
 """
 
@@ -16,7 +17,7 @@ from backend.utils.util_func import log_debug_message
 
 
 def _get_session_kernel(auto_start: bool = True):
-    """Get kernel from current session, or fallback to global kernel.
+    """Get kernel from current session. Raises if no session.
 
     Args:
         auto_start: If True, automatically start the kernel if not running
@@ -25,25 +26,19 @@ def _get_session_kernel(auto_start: bool = True):
         The kernel instance
     """
     session = get_current_session()
-    if session:
-        kernel = session.kernel
-        # Auto-start kernel if not running
-        if auto_start and not kernel.is_alive():
-            log_debug_message("[Kernel Inspect] Auto-starting kernel for session")
-            kernel.start()
-        return kernel
-    # Fallback to global kernel
-    from backend.kernel_manager import get_kernel
-    kernel = get_kernel()
+    if not session:
+        raise RuntimeError("No active session. Session is required for kernel operations.")
+    kernel = session.kernel
+    # Auto-start kernel if not running
     if auto_start and not kernel.is_alive():
-        log_debug_message("[Kernel Inspect] Auto-starting global kernel")
+        log_debug_message("[Kernel Inspect] Auto-starting kernel for session")
         kernel.start()
     return kernel
 
 
-def inspect_variables() -> dict:
+def runtime_list_variables() -> dict:
     """
-    List all user-defined variables in the main kernel with their types and shapes.
+    List all user-defined variables in the running kernel with their types and shapes.
 
     Use this tool when you need to:
     - See what variables are available in the notebook
@@ -58,13 +53,13 @@ def inspect_variables() -> dict:
         - error: Error message if failed
 
     Example:
-        result = inspect_variables()
+        result = runtime_list_variables()
         # Returns: {"success": True, "variables": [
         #   {"name": "df", "type": "DataFrame", "shape": "(1000, 5)", "size": "~40KB", "preview": "..."},
         #   {"name": "x", "type": "int", "shape": null, "size": "28 bytes", "preview": "42"},
         # ]}
     """
-    log_debug_message("==> inspect_variables() called from LLM")
+    log_debug_message("==> runtime_list_variables() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -180,9 +175,9 @@ print(json.dumps(_user_vars))
         }
 
 
-def inspect_variable(name: str) -> dict:
+def runtime_get_variable(name: str) -> dict:
     """
-    Get detailed info about ANY variable (list, dict, object, etc.).
+    Get detailed info about ANY variable (list, dict, object, etc.) from the running kernel.
 
     WHEN TO USE THIS TOOL:
     - To examine a list, dict, or custom object
@@ -191,7 +186,7 @@ def inspect_variable(name: str) -> dict:
     - For general variable inspection
 
     WHEN NOT TO USE THIS TOOL:
-    - For pandas DataFrame → use get_dataframe_info(name) instead
+    - For pandas DataFrame → use runtime_get_dataframe(name) instead
       (it provides columns, dtypes, null counts, describe stats)
 
     Args:
@@ -201,10 +196,10 @@ def inspect_variable(name: str) -> dict:
         Dictionary with name, type, value/sample, shape, attributes
 
     Example:
-        inspect_variable("my_list")  → info about a list
-        inspect_variable("config")   → info about a dict
+        runtime_get_variable("my_list")  → info about a list
+        runtime_get_variable("config")   → info about a dict
     """
-    log_debug_message(f"==> inspect_variable({name}) called from LLM")
+    log_debug_message(f"==> runtime_get_variable({name}) called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -342,9 +337,9 @@ else:
         }
 
 
-def list_functions() -> dict:
+def runtime_list_functions() -> dict:
     """
-    List all user-defined functions in the main kernel.
+    List all user-defined functions in the running kernel.
 
     Use this tool when you need to:
     - See what functions the user has defined
@@ -358,12 +353,12 @@ def list_functions() -> dict:
         - error: Error message if failed
 
     Example:
-        result = list_functions()
+        result = runtime_list_functions()
         # Returns: {"success": True, "functions": [
         #   {"name": "process_data", "args": "(x, y=10)", "docstring": "Process data...", "source": "def process_data..."},
         # ]}
     """
-    log_debug_message("==> list_functions() called from LLM")
+    log_debug_message("==> runtime_list_functions() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -461,9 +456,9 @@ print(json.dumps(_functions))
         }
 
 
-def list_imports() -> dict:
+def runtime_list_imports() -> dict:
     """
-    List all imported modules in the main kernel.
+    List all imported modules in the running kernel.
 
     Use this tool when you need to:
     - See what libraries are already imported
@@ -477,13 +472,13 @@ def list_imports() -> dict:
         - error: Error message if failed
 
     Example:
-        result = list_imports()
+        result = runtime_list_imports()
         # Returns: {"success": True, "imports": [
         #   {"name": "pd", "module_name": "pandas", "version": "2.0.0"},
         #   {"name": "np", "module_name": "numpy", "version": "1.24.0"},
         # ]}
     """
-    log_debug_message("==> list_imports() called from LLM")
+    log_debug_message("==> runtime_list_imports() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -571,9 +566,9 @@ print(json.dumps(_imports))
         }
 
 
-def kernel_info() -> dict:
+def runtime_kernel_status() -> dict:
     """
-    Get information about the main kernel's state.
+    Get information about the running kernel's state.
 
     Use this tool when you need to:
     - Check if the kernel is running
@@ -592,10 +587,10 @@ def kernel_info() -> dict:
         - error: Error message if failed
 
     Example:
-        result = kernel_info()
+        result = runtime_kernel_status()
         # Returns: {"success": True, "alive": True, "execution_count": 15, "memory_used": "~256MB", ...}
     """
-    log_debug_message("==> kernel_info() called from LLM")
+    log_debug_message("==> runtime_kernel_status() called from LLM")
 
     kernel = _get_session_kernel()
 

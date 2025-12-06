@@ -247,6 +247,7 @@ class AICellResponse(BaseModel):
     response: str
     model: str = ""
     error: Optional[str] = None
+    steps: List[LLMStep] = []  # Tool call steps for UI display
 
 
 # AI Cell system prompt - focused on notebook analysis with tools for inspection and experimentation
@@ -256,50 +257,60 @@ POSITION: {position_info}
 
 CRITICAL - RUNTIME vs STATIC DATA:
 - The NOTEBOOK CONTEXT below shows STATIC cell previews (code text, not executed results)
-- For RUNTIME data (actual variable values, types, errors), you MUST use kernel inspection tools
-- ALWAYS use inspect_variables() for "what variables?" questions - don't just read cell text!
+- For RUNTIME data (actual variable values, types, errors), you MUST use Runtime Inspection tools
+- ALWAYS use runtime_list_variables() for "what variables?" questions - don't just read cell text!
 
 CELL REFERENCES:
 - Cells shown as @cell-xxx or `cell-xxx` (e.g., @cell-abc123 or `cell-abc123`)
 - "above" = cells BEFORE your position, "below" = cells AFTER
 - Use these formats in your responses so users can click to navigate
 
-TOOL PRIORITY (MUST follow this order):
+AVAILABLE TOOLS (organized by category):
 
-1. **FIRST - Kernel Inspection** (ALWAYS start here for runtime questions):
-   - inspect_variables() - List all RUNTIME variables with actual types, shapes, values
-   - inspect_variable(name) - Detailed info: DataFrame columns, dtypes, sample rows
-   - list_functions() - User-defined functions with signatures
-   - list_imports() - Actually imported modules (not just written in cells)
-   - kernel_info() - Memory usage, execution count
-   - get_last_error() - Get most recent error with traceback
-   - get_dataframe_info(name) - Detailed DataFrame inspection
-   - get_cell_outputs(cell_id) - Get execution outputs from a cell
-   - search_notebook(query) - Search for text in cells
+1. **Runtime Inspection** (live kernel state - requires running kernel):
+   - runtime_list_variables() - List all variables with types, shapes, values
+   - runtime_get_variable(name) - Detailed variable info (value, attributes)
+   - runtime_get_dataframe(name) - DataFrame columns, dtypes, stats, sample rows
+   - runtime_list_functions() - User-defined functions with signatures
+   - runtime_list_imports() - Actually imported modules with versions
+   - runtime_kernel_status() - Memory usage, execution count
+   - runtime_get_last_error() - Most recent exception with traceback
 
    USE FOR: "what variables?", "show my data", "what type is x?", "why error?"
 
-2. **SECOND - Sandbox Testing** (verify code before suggesting):
-   - sandbox_execute(code) - Run code in ISOLATED kernel (safe testing)
-   - sandbox_sync_from_main(["var1", "var2"]) - Copy variables to sandbox
-   - sandbox_reset() - Clear sandbox state
+2. **Notebook Inspection** (fetches from saved notebook in S3):
+   - get_notebook_overview() - List all cells with IDs, types, and previews
+   - get_notebook_overview(detail="full") - Full cell contents and outputs
+   - get_cell_content(cell_id) - Get specific cell's source code and outputs
 
-EXAMPLES - Correct Tool Usage:
-- "What variables do I have?" → inspect_variables() (NOT reading cell previews)
-- "What's in my DataFrame?" → inspect_variable("df") or get_dataframe_info("df")
-- "Why did this error?" → get_last_error() then inspect relevant variables
-- "Where is X defined?" → search_notebook("X =") to find the cell
+   USE FOR: "show me the notebook", "what's in cell 3?", "list all cells"
+
+3. **Sandbox Testing** (isolated kernel for safe experimentation):
+   - sandbox_execute(code) - Run code in ISOLATED kernel (doesn't affect user's work)
+   - sandbox_sync_from_main(["var1", "var2"]) - Copy variables to sandbox for testing
+   - sandbox_reset() - Clear sandbox state
+   - sandbox_status() - Check if sandbox is running
+
+   USE FOR: Testing code before suggesting, verifying fixes work
+
+TOOL SELECTION GUIDE:
+- "What variables do I have?" → runtime_list_variables() (Runtime)
+- "What's in my DataFrame?" → runtime_get_dataframe("df") (Runtime)
+- "Why did this error?" → runtime_get_last_error() (Runtime)
+- "Show me the notebook" → get_notebook_overview() (Notebook)
+- "What's in cell 3?" → get_cell_content(cell_id) (Notebook)
+- "Will this code work?" → sandbox_execute(code) (Sandbox)
 
 WORKFLOW:
-1. User asks about data → inspect_variables() first (RUNTIME values)
-2. Need details → inspect_variable("df") to see columns, types, sample
-3. Suggesting code → sandbox_execute() to verify it works
-4. Reference the cell where code should go using @cell-xxx or `cell-xxx`
+1. User asks about data → runtime_list_variables() or runtime_get_dataframe() (Runtime)
+2. Need notebook structure → get_notebook_overview() (Notebook)
+3. Suggesting code → sandbox_execute() to verify it works (Sandbox)
+4. Reference cells as @cell-xxx or `cell-xxx` (clickable in UI)
 
 OUTPUT FORMAT:
 - Wrap code in ```python blocks
 - Show sandbox output when helpful
-- Reference cells as @cell-xxx or `cell-xxx` (clickable in UI)
+- Reference cells as @cell-xxx or `cell-xxx`
 - Be concise
 
 {notebook_context}
@@ -401,14 +412,17 @@ async def run_ai_cell(
                 log_debug_message(f"📷 AI Cell: {len(llm_images)} image(s) attached")
 
         # AI cells now have access to kernel inspection and sandbox tools
-        response_text = client.ai_cell_with_tools(full_prompt, images=llm_images)
+        result = client.ai_cell_with_tools(full_prompt, images=llm_images)
+        response_text = result.get("response", "")
+        llm_steps = result.get("steps", [])
 
-        log_debug_message(f"🤖 AI Cell response: {len(response_text)} chars")
+        log_debug_message(f"🤖 AI Cell response: {len(response_text)} chars, {len(llm_steps)} steps")
 
         return AICellResponse(
             success=True,
             response=response_text,
-            model=cfg.LLM_PROVIDER
+            model=cfg.LLM_PROVIDER,
+            steps=[LLMStep(**step) for step in llm_steps]
         )
 
     except Exception as e:

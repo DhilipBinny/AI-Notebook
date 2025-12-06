@@ -15,6 +15,13 @@ class ImageInput(BaseModel):
     filename: Optional[str] = None  # Original filename for display
 
 
+class LLMStep(BaseModel):
+    """Tool call step for AI Cell response."""
+    type: str  # "tool_call", "tool_result", "text"
+    name: Optional[str] = None  # Tool name
+    content: str  # Arguments or result content
+
+
 class AICellData(BaseModel):
     """AI Cell specific data."""
     user_prompt: str = ""
@@ -24,6 +31,7 @@ class AICellData(BaseModel):
     error: Optional[str] = None
     timestamp: Optional[str] = None
     images: Optional[List[ImageInput]] = None  # Pasted/uploaded images for visual analysis
+    steps: Optional[List[LLMStep]] = None  # Tool call steps
 
 
 class CellData(BaseModel):

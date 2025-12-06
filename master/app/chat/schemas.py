@@ -81,3 +81,4 @@ class AICellResponse(BaseModel):
     response: str
     model: str = ""
     error: Optional[str] = None
+    steps: List[LLMStep] = []  # Tool call steps

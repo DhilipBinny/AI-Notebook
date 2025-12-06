@@ -574,6 +574,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           error: response.error,
           timestamp: new Date().toISOString(),
           images: images,
+          steps: response.steps,
         },
       })
 

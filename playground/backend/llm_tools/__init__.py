@@ -31,11 +31,11 @@ from backend.llm_tools.tool_pip import (
     extract_missing_modules
 )
 from backend.llm_tools.tool_kernel_inspect import (
-    inspect_variables,
-    inspect_variable,
-    list_functions,
-    list_imports,
-    kernel_info
+    runtime_list_variables,
+    runtime_get_variable,
+    runtime_list_functions,
+    runtime_list_imports,
+    runtime_kernel_status
 )
 from backend.llm_tools.tool_sandbox import (
     sandbox_execute,
@@ -44,10 +44,8 @@ from backend.llm_tools.tool_sandbox import (
     sandbox_status
 )
 from backend.llm_tools.tool_kernel_utils import (
-    get_last_error,
-    get_dataframe_info,
-    get_cell_outputs,
-    search_notebook
+    runtime_get_last_error,
+    runtime_get_dataframe
 )
 from backend.llm_tools.tool_web import (
     fetch_url_as_markdown,
@@ -86,20 +84,16 @@ TOOL_FUNCTIONS = [
     pip_search_installed,
     extract_missing_modules,
 
-    # Kernel inspection (read-only)
-    inspect_variables,
-    inspect_variable,
-    list_functions,
-    list_imports,
-    kernel_info,
+    # Runtime Inspection (live kernel state - requires running kernel)
+    runtime_list_variables,
+    runtime_get_variable,
+    runtime_get_dataframe,
+    runtime_list_functions,
+    runtime_list_imports,
+    runtime_kernel_status,
+    runtime_get_last_error,
 
-    # Kernel utilities (debugging & data inspection)
-    get_last_error,
-    get_dataframe_info,
-    get_cell_outputs,
-    search_notebook,
-
-    # Sandbox execution (isolated testing)
+    # Sandbox Testing (isolated kernel for safe experimentation)
     sandbox_execute,
     sandbox_reset,
     sandbox_sync_from_main,
@@ -112,20 +106,20 @@ TOOL_FUNCTIONS = [
 
 # AI Cell tools - subset for inline AI cell (read-only + sandbox)
 AI_CELL_TOOLS = [
-    # Kernel inspection (read-only access to main kernel)
-    inspect_variables,
-    inspect_variable,
-    list_functions,
-    list_imports,
-    kernel_info,
+    # Runtime Inspection (live kernel state - requires running kernel)
+    runtime_list_variables,
+    runtime_get_variable,
+    runtime_get_dataframe,
+    runtime_list_functions,
+    runtime_list_imports,
+    runtime_kernel_status,
+    runtime_get_last_error,
 
-    # Kernel utilities (debugging & data inspection)
-    get_last_error,
-    get_dataframe_info,
-    get_cell_outputs,
-    search_notebook,
+    # Notebook Inspection (fetches from Master API → S3)
+    get_notebook_overview,
+    get_cell_content,
 
-    # Sandbox execution (isolated testing environment)
+    # Sandbox Testing (isolated kernel for safe experimentation)
     sandbox_execute,
     sandbox_reset,
     sandbox_sync_from_main,

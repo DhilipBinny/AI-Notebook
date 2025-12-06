@@ -66,6 +66,7 @@ export interface AICellData {
   error?: string
   timestamp?: string
   images?: ImageInput[]  // Attached images
+  steps?: LLMStep[]  // Tool call steps
 }
 
 // Frontend cell type (for React state)

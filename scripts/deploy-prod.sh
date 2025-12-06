@@ -111,17 +111,17 @@ echo "[1/5] Building production Docker images..."
 
 if [[ "$BUILD_WEB" == "true" ]]; then
   echo "  Building web (Next.js production)..."
-  docker build -t ${REGISTRY_PREFIX}-web:latest -f web/Dockerfile.prod ./web
+  docker build -t ${REGISTRY_PREFIX}-web:prod -f web/Dockerfile.prod ./web
 fi
 
 if [[ "$BUILD_MASTER" == "true" ]]; then
   echo "  Building master-api (FastAPI production)..."
-  docker build -t ${REGISTRY_PREFIX}-master-api:latest -f master/Dockerfile.prod ./master
+  docker build -t ${REGISTRY_PREFIX}-master-api:prod -f master/Dockerfile.prod ./master
 fi
 
 if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
   echo "  Building playground (stealth/compiled)..."
-  docker build -t ${REGISTRY_PREFIX}-playground:latest -f ./playground/Dockerfile.stealth ./playground
+  docker build -t ${REGISTRY_PREFIX}-playground:prod -f ./playground/Dockerfile.stealth ./playground
 fi
 
 echo ""
@@ -130,17 +130,17 @@ mkdir -p ./dist
 
 if [[ "$BUILD_WEB" == "true" ]]; then
   echo "  Saving web..."
-  docker save ${REGISTRY_PREFIX}-web:latest | gzip > ./dist/ainotebook-web.tar.gz
+  docker save ${REGISTRY_PREFIX}-web:prod | gzip > ./dist/ainotebook-web.tar.gz
 fi
 
 if [[ "$BUILD_MASTER" == "true" ]]; then
   echo "  Saving master-api..."
-  docker save ${REGISTRY_PREFIX}-master-api:latest | gzip > ./dist/ainotebook-master-api.tar.gz
+  docker save ${REGISTRY_PREFIX}-master-api:prod | gzip > ./dist/ainotebook-master-api.tar.gz
 fi
 
 if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
   echo "  Saving playground..."
-  docker save ${REGISTRY_PREFIX}-playground:latest | gzip > ./dist/ainotebook-playground.tar.gz
+  docker save ${REGISTRY_PREFIX}-playground:prod | gzip > ./dist/ainotebook-playground.tar.gz
 fi
 
 echo "  Images saved to ./dist/"

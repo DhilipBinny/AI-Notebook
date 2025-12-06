@@ -119,5 +119,5 @@ class LLMClient(BaseLLMClient):
     def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
         return self._client.ai_cell_completion(prompt, images)
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> str:
+    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
         return self._client.ai_cell_with_tools(prompt, images, max_iterations)

@@ -640,6 +640,7 @@ async def run_ai_cell(
                 response=data.get("response", ""),
                 model=data.get("model", llm_provider),
                 error=data.get("error"),
+                steps=data.get("steps", []),
             )
 
     except httpx.TimeoutException:
