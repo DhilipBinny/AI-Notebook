@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from datetime import datetime, timezone
 from typing import Optional
+import hmac
 import hashlib
 
 from .models import Session
+from app.core.config import settings
 from .jwt import create_token_pair, verify_token, get_refresh_token_expiry, TokenPair
 from .password import verify_password, hash_password
 from app.users.models import User
@@ -230,5 +232,15 @@ class AuthService:
 
     @staticmethod
     def _hash_token(token: str) -> str:
-        """Hash a token for storage."""
-        return hashlib.sha256(token.encode()).hexdigest()
+        """
+        Hash a token for storage using HMAC with the JWT secret.
+
+        Using HMAC instead of plain SHA256 prevents rainbow table attacks
+        if the database is compromised, as the attacker would also need
+        the secret key to generate matching hashes.
+        """
+        return hmac.new(
+            key=settings.jwt_secret.encode(),
+            msg=token.encode(),
+            digestmod=hashlib.sha256
+        ).hexdigest()
