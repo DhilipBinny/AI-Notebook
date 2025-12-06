@@ -4,10 +4,13 @@ JWT token utilities for authentication.
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import JWTError, jwt
+from jose import JWTError, ExpiredSignatureError, jwt
 from pydantic import BaseModel
+import logging
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class TokenData(BaseModel):
@@ -121,9 +124,11 @@ def verify_token(token: str, expected_type: str = "access") -> Optional[TokenDat
         exp = payload.get("exp")
 
         if user_id is None or token_type is None:
+            logger.debug(f"Token missing required fields: sub={user_id is not None}, type={token_type is not None}")
             return None
 
         if token_type != expected_type:
+            logger.debug(f"Token type mismatch: expected {expected_type}, got {token_type}")
             return None
 
         return TokenData(
@@ -132,7 +137,11 @@ def verify_token(token: str, expected_type: str = "access") -> Optional[TokenDat
             exp=datetime.fromtimestamp(exp, tz=timezone.utc)
         )
 
-    except JWTError:
+    except ExpiredSignatureError:
+        logger.debug(f"Token expired for type {expected_type}")
+        return None
+    except JWTError as e:
+        logger.warning(f"JWT verification failed: {type(e).__name__}: {e}")
         return None
 
 

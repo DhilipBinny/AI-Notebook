@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .models import User, OAuthProvider
 from .schemas import UserCreate, UserCreateOAuth, UserUpdate
@@ -122,7 +122,7 @@ class UserService:
 
     async def update_last_login(self, user: User) -> None:
         """Update user's last login timestamp."""
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(timezone.utc)
         await self.db.flush()
 
     async def delete(self, user: User) -> None:

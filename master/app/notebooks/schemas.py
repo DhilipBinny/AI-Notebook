@@ -2,9 +2,13 @@
 Notebook Pydantic schemas.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import json
+
+# Maximum notebook size: 50MB (generous limit for notebooks with embedded images)
+MAX_NOTEBOOK_SIZE_BYTES = 50 * 1024 * 1024
 
 
 class ImageInput(BaseModel):
@@ -69,6 +73,18 @@ class NotebookSaveRequest(BaseModel):
     cells: List[CellData]
     metadata: Optional[Dict[str, Any]] = None
 
+    @model_validator(mode='after')
+    def validate_size(self) -> 'NotebookSaveRequest':
+        """Validate notebook size to prevent DoS attacks."""
+        # Estimate size by serializing to JSON
+        size = len(json.dumps([c.model_dump() for c in self.cells]))
+        if size > MAX_NOTEBOOK_SIZE_BYTES:
+            raise ValueError(
+                f"Notebook size ({size / 1024 / 1024:.1f}MB) exceeds "
+                f"maximum allowed ({MAX_NOTEBOOK_SIZE_BYTES / 1024 / 1024:.0f}MB)"
+            )
+        return self
+
 
 class NotebookResponse(BaseModel):
     """Response with notebook data."""
@@ -102,3 +118,14 @@ class NotebookSyncRequest(BaseModel):
 class NotebookImportRequest(BaseModel):
     """Request to import a .ipynb file."""
     ipynb_data: Dict[str, Any]  # The raw .ipynb JSON data
+
+    @model_validator(mode='after')
+    def validate_size(self) -> 'NotebookImportRequest':
+        """Validate notebook size to prevent DoS attacks."""
+        size = len(json.dumps(self.ipynb_data))
+        if size > MAX_NOTEBOOK_SIZE_BYTES:
+            raise ValueError(
+                f"Notebook size ({size / 1024 / 1024:.1f}MB) exceeds "
+                f"maximum allowed ({MAX_NOTEBOOK_SIZE_BYTES / 1024 / 1024:.0f}MB)"
+            )
+        return self

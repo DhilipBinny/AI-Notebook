@@ -148,7 +148,7 @@ class ProjectService:
 
     async def update_last_opened(self, project: Project) -> None:
         """Update project's last opened timestamp."""
-        project.last_opened_at = datetime.utcnow()
+        project.last_opened_at = datetime.now(timezone.utc)
         await self.db.flush()
 
     async def archive(self, project: Project) -> Project:

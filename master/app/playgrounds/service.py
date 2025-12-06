@@ -237,8 +237,12 @@ class PlaygroundService:
         try:
             docker_client.stop_container(playground.container_id)
             docker_client.remove_container(playground.container_id, force=True)
-        except Exception:
-            pass
+        except Exception as e:
+            # Log container cleanup failures for debugging orphaned containers
+            logger.warning(
+                f"Failed to cleanup container {playground.container_id} "
+                f"for project {playground.project_id}: {e}"
+            )
 
         self.db.delete(playground)  # delete() is sync, marks for deletion
         await self.db.flush()
