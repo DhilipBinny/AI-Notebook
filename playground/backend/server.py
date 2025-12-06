@@ -78,6 +78,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
     images: Optional[List[ImageInput]] = None  # Attached images for visual analysis
+    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
     # Note: all_cells removed - LLM tools now fetch from Master API directly
 
 
@@ -220,6 +221,7 @@ async def get_tool_mode(authorized: bool = Depends(verify_internal_secret)):
 class LLMCompleteRequest(BaseModel):
     prompt: str
     max_tokens: int = 1000
+    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
 
 
 class ImageInput(BaseModel):
@@ -239,6 +241,7 @@ class AICellRequest(BaseModel):
     ai_cell_index: Optional[int] = None  # The AI cell's position (0-based)
     session_id: Optional[str] = None
     context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
+    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
 
 
 class AICellResponse(BaseModel):
@@ -395,7 +398,7 @@ async def run_ai_cell(
 
         # Use LLM client with AI cell tools (inspection + sandbox)
         from backend.llm_clients import LLMClient
-        client = LLMClient()
+        client = LLMClient(provider=request.provider)
 
         # Convert images to LLM format if provided
         llm_images = None
@@ -460,7 +463,7 @@ async def llm_complete(
         log_debug_message(f"LLM complete request: {request.prompt[:200]}...")
 
         # Use LLMClient's chat_completion method
-        client = LLMClient()
+        client = LLMClient(provider=request.provider)
         response_text = client.chat_completion(request.prompt, request.max_tokens)
 
         log_debug_message(f"LLM complete response: {response_text[:200]}...")
@@ -535,7 +538,7 @@ async def chat_with_llm(
 
         # Initialize LLM client
         try:
-            client = LLMClient()
+            client = LLMClient(provider=request.provider)
         except Exception as e:
             return ChatResponse(success=False, response="", error=str(e))
 
@@ -705,6 +708,7 @@ async def chat_with_llm(
 class ExecuteToolsRequest(BaseModel):
     session_id: str
     approved_tools: List[PendingToolCall]
+    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
 
 
 @app.post("/chat/execute-tools", response_model=ChatResponse)

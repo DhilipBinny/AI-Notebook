@@ -181,15 +181,7 @@ class ChatService:
 
             # Call playground's chat endpoint
             async with httpx.AsyncClient() as client:
-                # First, set the LLM provider
-                await client.post(
-                    f"{playground.internal_url}/llm/provider",
-                    headers={"X-Internal-Secret": playground.internal_secret},
-                    json={"provider": llm_provider},
-                    timeout=10,
-                )
-
-                # Set tool execution mode
+                # Set tool execution mode (still global per-container, but tool mode is less critical)
                 await client.post(
                     f"{playground.internal_url}/llm/tool-mode",
                     headers={"X-Internal-Secret": playground.internal_secret},
@@ -197,7 +189,7 @@ class ChatService:
                     timeout=10,
                 )
 
-                # Now send the chat message with history
+                # Send the chat message with provider in request body (multi-user safe)
                 # Use project_id as session_id for tracking pending tools
                 # Note: LLM tools fetch notebook data on-demand from playground's notebook state
                 request_body = {
@@ -206,6 +198,7 @@ class ChatService:
                     "history": history_list,
                     "session_id": project.id,
                     "context_format": context_format,
+                    "provider": llm_provider,  # Pass provider per-request for multi-user safety
                 }
                 if images:
                     request_body["images"] = images
@@ -309,14 +302,6 @@ class ChatService:
 
         try:
             async with httpx.AsyncClient() as client:
-                # Set the LLM provider before executing tools (important after container restart)
-                await client.post(
-                    f"{playground.internal_url}/llm/provider",
-                    headers={"X-Internal-Secret": playground.internal_secret},
-                    json={"provider": llm_provider},
-                    timeout=10,
-                )
-
                 # Set tool execution mode
                 await client.post(
                     f"{playground.internal_url}/llm/tool-mode",
@@ -326,6 +311,7 @@ class ChatService:
                 )
 
                 # Execute the approved tools
+                # Note: provider is already set in the session from the initial chat request
                 response = await client.post(
                     f"{playground.internal_url}/chat/execute-tools",
                     headers={"X-Internal-Secret": playground.internal_secret},

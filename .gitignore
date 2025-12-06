@@ -4,9 +4,9 @@
 # Old source project (reference only)
 _source_project/
 
-# Conversation/session files (but not requirements.txt)
+# Conversation/session files (but not requirements*.txt)
 *.txt
-!requirements.txt
+!requirements*.txt
 
 # Backup files
 *.backup

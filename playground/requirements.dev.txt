@@ -1,0 +1,31 @@
+# AI Notebook Playground Container Dependencies
+
+# Web Framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.0
+
+# Jupyter Kernel
+jupyter-client==8.6.3
+ipykernel==6.29.5
+
+# LLM Providers
+openai>=1.0.0          # OpenAI + Ollama (compatible API)
+anthropic>=0.18.0       # Anthropic Claude
+google-genai>=1.0.0         # Google Gemini (new SDK with Google Search)
+
+# Config
+# In Docker: env vars passed from master-api
+# Locally: python-dotenv loads from .env file
+python-dotenv==1.0.1
+pydantic==2.10.1
+pydantic-settings>=2.0.0
+
+# Async HTTP
+httpx>=0.25.0
+aiohttp>=3.9.0
+
+# Security
+python-jose[cryptography]>=3.3.0
+
+# Utilities
+websockets>=12.0

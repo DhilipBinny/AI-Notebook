@@ -586,14 +586,6 @@ async def run_ai_cell(
 
     try:
         async with httpx.AsyncClient() as client:
-            # Set the LLM provider
-            await client.post(
-                f"{playground.internal_url}/llm/provider",
-                headers={"X-Internal-Secret": playground.internal_secret},
-                json={"provider": llm_provider},
-                timeout=10,
-            )
-
             # Prepare images for forwarding (convert Pydantic models to dicts)
             images_data = None
             if request.images:
@@ -610,7 +602,7 @@ async def run_ai_cell(
                 if not images_data:
                     images_data = None
 
-            # Call AI Cell endpoint
+            # Call AI Cell endpoint with provider in request body (multi-user safe)
             response = await client.post(
                 f"{playground.internal_url}/ai-cell/run",
                 headers={"X-Internal-Secret": playground.internal_secret},
@@ -622,6 +614,7 @@ async def run_ai_cell(
                     "session_id": project_id,
                     "context_format": context_format,
                     "images": images_data,
+                    "provider": llm_provider,  # Pass provider per-request for multi-user safety
                 },
                 timeout=120,  # LLM can take a while
             )
