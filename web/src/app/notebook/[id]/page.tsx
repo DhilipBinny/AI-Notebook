@@ -271,17 +271,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         const pg = await playgrounds.get(projectId)
         setPlayground(pg)
 
-        // If playground not running, show error and redirect back to dashboard
+        // If playground not running, still load notebook but show error popup
         if (!pg || pg.status !== 'running') {
-          console.warn('Playground not running, redirecting to dashboard')
-          // Can't use setErrorPopup here as component isn't mounted yet
-          // Use a brief timeout to show alert-style message before redirect
-          setTimeout(() => {
-            router.push('/dashboard')
-          }, 100)
-          // Set a flag to show message on dashboard (stored in sessionStorage)
-          sessionStorage.setItem('notebook_redirect_message', 'Playground is not running. Please start it from the dashboard first.')
-          return
+          console.warn('Playground not running, showing start prompt')
+          // We'll show the error popup after loading the notebook
+          // This allows user to view/edit notebook and start playground from here
         }
 
         // Load notebook from S3
@@ -332,6 +326,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         } catch {
           // No chat history yet
           console.log('No chat history found')
+        }
+
+        // Show playground not running popup after everything is loaded
+        if (!pg || pg.status !== 'running') {
+          setErrorPopup('Playground is not running. Start the playground to execute code and use AI features.')
         }
 
       } catch (err) {
