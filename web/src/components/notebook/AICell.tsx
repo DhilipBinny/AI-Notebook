@@ -61,6 +61,7 @@ export default function AICell({
   const [isEditing, setIsEditing] = useState(false)
   const [localPrompt, setLocalPrompt] = useState(cell.ai_data?.user_prompt || '')
   const [images, setImages] = useState<ImageInput[]>(cell.ai_data?.images || [])
+  const [imagesLoading, setImagesLoading] = useState(0) // Count of images currently being processed
 
   // Image modal state
   const [enlargedImage, setEnlargedImage] = useState<ImageInput | null>(null)
@@ -129,24 +130,61 @@ export default function AICell({
 
   // Process a file and add it as an image
   const addImageFile = useCallback((file: File) => {
+    // Increment loading counter before starting async operation
+    setImagesLoading(prev => prev + 1)
+
     const reader = new FileReader()
+
     reader.onload = () => {
-      const dataUrl = reader.result as string
-      // Extract base64 data (remove "data:image/png;base64," prefix)
-      const base64 = dataUrl.split(',')[1]
-      const mimeType = dataUrl.split(';')[0].split(':')[1]
+      try {
+        const dataUrl = reader.result as string
 
-      const filename = file.name || `image-${Date.now()}.${mimeType.split('/')[1]}`
+        // Validate DataURL format
+        if (!dataUrl || !dataUrl.includes(',') || !dataUrl.includes(':') || !dataUrl.includes(';')) {
+          console.error('[AICell] Invalid DataURL format')
+          setImagesLoading(prev => Math.max(0, prev - 1))
+          return
+        }
 
-      const newImage: ImageInput = {
-        data: base64,
-        mime_type: mimeType,
-        filename: filename
+        // Extract base64 data (remove "data:image/png;base64," prefix)
+        const base64 = dataUrl.split(',')[1]
+        const mimeType = dataUrl.split(';')[0].split(':')[1]
+
+        // Validate extracted data
+        if (!base64 || base64.length === 0) {
+          console.error('[AICell] Empty base64 data')
+          setImagesLoading(prev => Math.max(0, prev - 1))
+          return
+        }
+
+        if (!mimeType || !mimeType.startsWith('image/')) {
+          console.error('[AICell] Invalid mime type:', mimeType)
+          setImagesLoading(prev => Math.max(0, prev - 1))
+          return
+        }
+
+        const filename = file.name || `image-${Date.now()}.${mimeType.split('/')[1]}`
+
+        const newImage: ImageInput = {
+          data: base64,
+          mime_type: mimeType,
+          filename: filename
+        }
+
+        setImages(prev => [...prev, newImage])
+      } catch (err) {
+        console.error('[AICell] Error processing image:', err)
+      } finally {
+        // Decrement loading counter when done (success or failure)
+        setImagesLoading(prev => Math.max(0, prev - 1))
       }
-
-      setImages(prev => [...prev, newImage])
-      // Note: No placeholder text added - image preview thumbnails show what's attached
     }
+
+    reader.onerror = () => {
+      console.error('[AICell] FileReader error')
+      setImagesLoading(prev => Math.max(0, prev - 1))
+    }
+
     reader.readAsDataURL(file)
   }, [])
 
@@ -218,7 +256,14 @@ export default function AICell({
 
   // Handle run
   const handleRun = async () => {
+    // Don't run if no content
     if (!localPrompt.trim() && images.length === 0) return
+
+    // Don't run if images are still loading
+    if (imagesLoading > 0) {
+      console.log('[AICell] Waiting for images to finish loading...')
+      return
+    }
 
     // Update cell with prompt, images, and running status
     onUpdate({
@@ -509,14 +554,21 @@ export default function AICell({
               e.stopPropagation()
               handleRun()
             }}
-            disabled={aiData.status === 'running' || !localPrompt.trim()}
+            disabled={aiData.status === 'running' || imagesLoading > 0 || (!localPrompt.trim() && images.length === 0)}
             className="p-1 rounded hover:opacity-80 disabled:opacity-30"
             style={{ color: 'var(--nb-accent-success)' }}
-            title="Run AI Cell (Shift+Enter)"
+            title={imagesLoading > 0 ? 'Loading images...' : 'Run AI Cell (Shift+Enter)'}
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+            {imagesLoading > 0 ? (
+              <div
+                className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
+                style={{ borderColor: 'var(--nb-accent-success)', borderTopColor: 'transparent' }}
+              />
+            ) : (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete() }}
@@ -577,11 +629,20 @@ export default function AICell({
             />
 
             {/* Image previews - improved layout */}
-            {images.length > 0 && (
+            {(images.length > 0 || imagesLoading > 0) && (
               <div className="mt-2 p-2 rounded" style={{ backgroundColor: 'rgba(168, 85, 247, 0.05)' }}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
-                    {images.length} image{images.length > 1 ? 's' : ''} attached
+                  <span className="text-xs flex items-center gap-2" style={{ color: 'var(--nb-text-muted)' }}>
+                    {images.length} image{images.length !== 1 ? 's' : ''} attached
+                    {imagesLoading > 0 && (
+                      <span className="flex items-center gap-1 text-amber-400">
+                        <div
+                          className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
+                          style={{ borderColor: '#fbbf24', borderTopColor: 'transparent' }}
+                        />
+                        Loading {imagesLoading}...
+                      </span>
+                    )}
                   </span>
                   <button
                     onClick={(e) => {

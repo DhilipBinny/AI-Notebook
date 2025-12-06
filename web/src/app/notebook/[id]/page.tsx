@@ -1182,6 +1182,41 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells, selectedCellId, enterEditMode, exitEditMode, handleRunCell, lastNavDirection, clipboardCell, deletedCells, addCell, deleteCell, updateCell])
 
+  const handleStartKernel = useCallback(async () => {
+    // Check if playground is running first
+    if (!playground || playground.status !== 'running') {
+      setErrorPopup('Playground is not running. Please start the playground first.')
+      return
+    }
+
+    // Start kernel by calling the start endpoint
+    const success = await kernel.start()
+    if (!success) {
+      setErrorPopup('Failed to start kernel. Try running a code cell instead.')
+    }
+  }, [kernel, playground])
+
+  const handleStopKernel = useCallback(() => {
+    setConfirmPopup({
+      title: 'Stop Kernel',
+      message: 'Are you sure you want to stop the kernel?\n\nThis will terminate the Python process. All variables and execution state will be lost.',
+      confirmText: 'Stop Kernel',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        setConfirmPopup(null)
+        const success = await kernel.stop()
+        if (success) {
+          // Clear execution counts
+          cells.forEach((cell) => {
+            if (cell.type === 'code') {
+              updateCell(cell.id, { execution_count: undefined })
+            }
+          })
+        }
+      },
+    })
+  }, [kernel, cells, updateCell])
+
   const handleRestartKernel = useCallback(() => {
     setConfirmPopup({
       title: 'Restart Kernel',
@@ -1202,6 +1237,39 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       },
     })
   }, [kernel, cells, updateCell])
+
+  const handleRestartPlayground = useCallback(() => {
+    setConfirmPopup({
+      title: 'Restart Playground',
+      message: 'Are you sure you want to restart the playground container?\n\nThis will stop the current container and start a new one. All kernel state, variables, and installed packages will be lost.',
+      confirmText: 'Restart Playground',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        setConfirmPopup(null)
+        setPlaygroundLoading(true)
+        try {
+          // Stop the playground
+          await playgrounds.stop(projectId)
+          // Wait a bit for cleanup
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          // Start a new playground
+          const result = await playgrounds.start(projectId)
+          setPlayground(result.playground)
+          // Clear execution counts
+          cells.forEach((cell) => {
+            if (cell.type === 'code') {
+              updateCell(cell.id, { execution_count: undefined })
+            }
+          })
+        } catch (err) {
+          console.error('Failed to restart playground:', err)
+          setErrorPopup('Failed to restart playground. Please try again.')
+        } finally {
+          setPlaygroundLoading(false)
+        }
+      },
+    })
+  }, [projectId, cells, updateCell])
 
   // Handle LLM provider change (local state only, not persisted)
   const handleProviderChange = useCallback((provider: string) => {
@@ -1518,50 +1586,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           </div>
           {isDirty && <span className="text-amber-400 text-sm flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> Unsaved</span>}
         </div>
-        <div className="flex items-center gap-3">
-          {/* Playground controls */}
-          {playground?.status === 'running' ? (
-            <>
-              <span className="flex items-center gap-2 text-sm text-emerald-400 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50" />
-                Running
-              </span>
-              <button
-                onClick={handleStopPlayground}
-                disabled={playgroundLoading}
-                className="px-4 py-1.5 text-sm bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg transition-all disabled:opacity-50"
-              >
-                Stop
-              </button>
-            </>
-          ) : playground?.status === 'starting' ? (
-            <span className="flex items-center gap-2 text-sm text-amber-400 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-              <div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-              Starting...
-            </span>
-          ) : (
-            <button
-              onClick={handleStartPlayground}
-              disabled={playgroundLoading}
-              className="px-4 py-1.5 text-sm bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all disabled:opacity-50 flex items-center gap-2"
-            >
-              {playgroundLoading ? (
-                <>
-                  <div className="w-3 h-3 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Start Playground
-                </>
-              )}
-            </button>
-          )}
-        </div>
       </header>
 
       {/* Toolbar */}
@@ -1578,8 +1602,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         totalCells={cells.length}
         isDirty={isDirty}
         isSaving={isSaving}
-        kernelStatus={kernel.status}
+        playgroundStatus={kernel.status}
+        kernelStatus={kernel.kernelStatus}
+        onStartKernel={handleStartKernel}
+        onStopKernel={handleStopKernel}
         onRestartKernel={handleRestartKernel}
+        onRestartPlayground={handleRestartPlayground}
         showChat={showChat}
         onToggleChat={() => setShowChat(!showChat)}
         onOpenLogs={handleOpenLogs}
@@ -1845,6 +1873,38 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                   Start Playground
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Playground Loading Overlay */}
+      {playgroundLoading && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div
+            className="rounded-xl p-8 max-w-sm mx-4 shadow-2xl text-center"
+            style={{
+              backgroundColor: 'var(--nb-bg-cell)',
+              border: '1px solid var(--nb-border-default)',
+            }}
+          >
+            <div className="relative w-16 h-16 mx-auto mb-4">
+              {/* Outer spinning ring */}
+              <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full" />
+              <div className="absolute inset-0 border-4 border-transparent border-t-blue-500 rounded-full animate-spin" />
+              {/* Inner pulsing circle */}
+              <div className="absolute inset-3 bg-gradient-to-br from-blue-500 to-teal-500 rounded-full animate-pulse" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--nb-text-primary)' }}>
+              Starting Playground
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--nb-text-muted)' }}>
+              Setting up your Python environment...
+            </p>
+            <div className="mt-4 flex justify-center gap-1">
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
           </div>
         </div>

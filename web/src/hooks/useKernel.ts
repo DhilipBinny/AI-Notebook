@@ -5,11 +5,12 @@ import type { CellOutput } from '@/types'
 
 interface KernelState {
   status: 'disconnected' | 'connecting' | 'connected'
+  kernelStatus: 'idle' | 'busy' | 'stopped' | 'error' | 'unknown'
   executionCount: number
 }
 
 interface ExecutionMessage {
-  type: 'execution_count' | 'stream' | 'execute_result' | 'display_data' | 'error' | 'status'
+  type: 'execution_count' | 'stream' | 'execute_result' | 'display_data' | 'error' | 'status' | 'kernel_status'
   cell_id: string
   count?: number
   name?: string
@@ -18,12 +19,13 @@ interface ExecutionMessage {
   ename?: string
   evalue?: string
   traceback?: string[]
-  status?: 'complete' | 'error'
+  status?: 'complete' | 'error' | 'idle' | 'busy' | 'stopped' | 'starting'
 }
 
 export function useKernel(playgroundUrl: string | null, sessionId: string | null = null) {
   const [kernelState, setKernelState] = useState<KernelState>({
     status: 'disconnected',
+    kernelStatus: 'unknown',
     executionCount: 0,
   })
   const [runningCellId, setRunningCellId] = useState<string | null>(null)
@@ -54,6 +56,13 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
       ws.onopen = () => {
         console.log('[Kernel] WebSocket connected')
         setKernelState((prev) => ({ ...prev, status: 'connected' }))
+        // Request initial kernel status
+        if (sessionIdRef.current) {
+          ws.send(JSON.stringify({
+            type: 'get_status',
+            session_id: sessionIdRef.current,
+          }))
+        }
       }
 
       ws.onmessage = (event) => {
@@ -132,6 +141,21 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
         if (data.status === 'complete' || data.status === 'error') {
           setRunningCellId(null)
           completionCallbackRef.current?.(cellId, data.status === 'complete')
+        }
+        break
+
+      case 'kernel_status':
+        // Update kernel status from WebSocket message
+        if (data.status) {
+          const statusMap: Record<string, KernelState['kernelStatus']> = {
+            'idle': 'idle',
+            'busy': 'busy',
+            'stopped': 'stopped',
+            'starting': 'busy', // Show as busy while starting
+            'error': 'error',
+          }
+          const kernelStatus = statusMap[data.status] || 'unknown'
+          setKernelState((prev) => ({ ...prev, kernelStatus }))
         }
         break
     }
@@ -222,6 +246,43 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
     return false
   }, [playgroundUrl])
 
+  // Start kernel
+  const start = useCallback(async () => {
+    if (!playgroundUrl || !sessionIdRef.current) return false
+
+    try {
+      const response = await fetch(`${playgroundUrl}/session/${sessionIdRef.current}/kernel/start`, {
+        method: 'POST',
+      })
+      if (response.ok) {
+        setKernelState((prev) => ({ ...prev, kernelStatus: 'idle' }))
+        return true
+      }
+    } catch (err) {
+      console.error('[Kernel] Failed to start:', err)
+    }
+    return false
+  }, [playgroundUrl])
+
+  // Stop kernel
+  const stop = useCallback(async () => {
+    if (!playgroundUrl || !sessionIdRef.current) return false
+
+    try {
+      const response = await fetch(`${playgroundUrl}/session/${sessionIdRef.current}/kernel/stop`, {
+        method: 'POST',
+      })
+      if (response.ok) {
+        setRunningCellId(null)
+        setKernelState((prev) => ({ ...prev, kernelStatus: 'stopped', executionCount: 0 }))
+        return true
+      }
+    } catch (err) {
+      console.error('[Kernel] Failed to stop:', err)
+    }
+    return false
+  }, [playgroundUrl])
+
   // Restart kernel
   const restart = useCallback(async () => {
     if (!playgroundUrl || !sessionIdRef.current) return false
@@ -273,12 +334,22 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
     }
   }, [playgroundUrl, connect])
 
+  // Update kernel status to busy when executing
+  useEffect(() => {
+    if (runningCellId) {
+      setKernelState(prev => ({ ...prev, kernelStatus: 'busy' }))
+    }
+  }, [runningCellId])
+
   return {
     status: kernelState.status,
+    kernelStatus: kernelState.kernelStatus,
     executionCount: kernelState.executionCount,
     runningCellId,
     execute,
     executeAndWait,
+    start,
+    stop,
     interrupt,
     restart,
     setOutputCallback,

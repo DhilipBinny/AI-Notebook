@@ -130,6 +130,34 @@ if user_site and user_site not in sys.path:
             return False
         return self.km.is_alive()
 
+    def get_status(self) -> str:
+        """
+        Get detailed kernel status.
+        Returns: 'idle', 'busy', 'starting', 'stopped', 'error'
+        """
+        if self.km is None:
+            return 'stopped'
+
+        if not self.km.is_alive():
+            return 'stopped'
+
+        # Try to get current execution state from kernel
+        try:
+            if self.kc:
+                # Request kernel info to check responsiveness
+                msg_id = self.kc.kernel_info()
+                # Try to get reply with short timeout
+                try:
+                    reply = self.kc.get_shell_msg(timeout=0.5)
+                    if reply.get('parent_header', {}).get('msg_id') == msg_id:
+                        return 'idle'
+                except:
+                    # If no reply quickly, kernel might be busy
+                    return 'busy'
+            return 'idle'
+        except Exception:
+            return 'error'
+
     def interrupt(self) -> bool:
         """Interrupt the currently running code"""
         try:

@@ -50,6 +50,7 @@ export default function DashboardPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [downloadingProject, setDownloadingProject] = useState<string | null>(null)
+  const [playgroundLoadingOverlay, setPlaygroundLoadingOverlay] = useState(false)
 
   // Workspace state
   const [workspaceList, setWorkspaceList] = useState<Workspace[]>([])
@@ -187,6 +188,7 @@ export default function DashboardPage() {
   }, [projectList, playgroundStatuses])
 
   const handleStartPlayground = async (projectId: string) => {
+    setPlaygroundLoadingOverlay(true)
     setPlaygroundStatuses(prev => ({
       ...prev,
       [projectId]: { status: 'starting', loading: true }
@@ -208,6 +210,8 @@ export default function DashboardPage() {
         ...prev,
         [projectId]: { status: 'error', loading: false, error: 'Failed to start' }
       }))
+    } finally {
+      setPlaygroundLoadingOverlay(false)
     }
   }
 
@@ -232,6 +236,7 @@ export default function DashboardPage() {
   }
 
   const handleRestartPlayground = async (projectId: string) => {
+    setPlaygroundLoadingOverlay(true)
     setPlaygroundStatuses(prev => ({
       ...prev,
       [projectId]: { status: 'starting', loading: true }
@@ -254,6 +259,8 @@ export default function DashboardPage() {
         ...prev,
         [projectId]: { status: 'error', loading: false, error: 'Failed to restart' }
       }))
+    } finally {
+      setPlaygroundLoadingOverlay(false)
     }
   }
 
@@ -1671,6 +1678,38 @@ export default function DashboardPage() {
             <div className="flex gap-3">
               <button onClick={() => setDeleteWorkspaceConfirm(null)} className="flex-1 px-4 py-2.5 rounded-xl" style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}>Cancel</button>
               <button onClick={handleDeleteWorkspace} className="flex-1 px-4 py-2.5 rounded-xl text-white font-medium" style={{ backgroundColor: 'var(--app-accent-error)' }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Playground Loading Overlay */}
+      {playgroundLoadingOverlay && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div
+            className="rounded-xl p-8 max-w-sm mx-4 shadow-2xl text-center"
+            style={{
+              backgroundColor: 'var(--app-bg-secondary)',
+              border: '1px solid var(--app-border-default)',
+            }}
+          >
+            <div className="relative w-16 h-16 mx-auto mb-4">
+              {/* Outer spinning ring */}
+              <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full" />
+              <div className="absolute inset-0 border-4 border-transparent border-t-blue-500 rounded-full animate-spin" />
+              {/* Inner pulsing circle */}
+              <div className="absolute inset-3 bg-gradient-to-br from-blue-500 to-teal-500 rounded-full animate-pulse" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--app-text-primary)' }}>
+              Starting Playground
+            </h3>
+            <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
+              Setting up your Python environment...
+            </p>
+            <div className="mt-4 flex justify-center gap-1">
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
           </div>
         </div>

@@ -15,8 +15,12 @@ interface NotebookToolbarProps {
   totalCells: number
   isDirty: boolean
   isSaving: boolean
-  kernelStatus: 'connected' | 'connecting' | 'disconnected'
+  playgroundStatus: 'connected' | 'connecting' | 'disconnected'
+  kernelStatus: 'idle' | 'busy' | 'stopped' | 'error' | 'unknown'
+  onStartKernel: () => void
+  onStopKernel: () => void
   onRestartKernel: () => void
+  onRestartPlayground: () => void
   showChat: boolean
   onToggleChat: () => void
   onOpenLogs: () => void
@@ -37,8 +41,12 @@ export default function NotebookToolbar({
   totalCells,
   isDirty,
   isSaving,
+  playgroundStatus,
   kernelStatus,
+  onStartKernel,
+  onStopKernel,
   onRestartKernel,
+  onRestartPlayground,
   showChat,
   onToggleChat,
   onOpenLogs,
@@ -123,30 +131,105 @@ export default function NotebookToolbar({
 
         <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
-        {/* Kernel restart - gradient */}
+        {/* Kernel control - unified button with state */}
+        {kernelStatus === 'stopped' || kernelStatus === 'unknown' ? (
+          // Start Kernel button (green) - shown when kernel is not running
+          <button
+            onClick={onStartKernel}
+            className="px-3 py-1.5 text-sm rounded-lg transition-all flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/30"
+            title="Start kernel"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Start Kernel
+          </button>
+        ) : (
+          // Kernel running - show status with dropdown menu
+          <div className="relative group">
+            <div
+              className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--nb-border-default)' }}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  kernelStatus === 'idle'
+                    ? 'bg-green-500'
+                    : kernelStatus === 'busy'
+                    ? 'bg-yellow-500 animate-pulse'
+                    : 'bg-red-500'
+                }`}
+              />
+              <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+                Kernel: {kernelStatus === 'idle' ? 'Idle' : kernelStatus === 'busy' ? 'Busy' : 'Error'}
+              </span>
+              <svg className="w-3 h-3" style={{ color: 'var(--nb-text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+
+            {/* Dropdown menu */}
+            <div
+              className="absolute top-full left-0 mt-1 w-40 py-1 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50"
+              style={{
+                backgroundColor: 'var(--nb-bg-secondary)',
+                border: '1px solid var(--nb-border-default)',
+              }}
+            >
+              <button
+                onClick={onRestartKernel}
+                className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 hover:bg-amber-500/20 transition-colors"
+                style={{ color: 'var(--nb-text-secondary)' }}
+              >
+                <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Restart Kernel
+              </button>
+              <button
+                onClick={onStopKernel}
+                className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 hover:bg-red-500/20 transition-colors"
+                style={{ color: 'var(--nb-text-secondary)' }}
+              >
+                <svg className="w-3.5 h-3.5 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+                Stop Kernel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="w-px h-6 mx-1" style={{ backgroundColor: 'var(--nb-border-default)' }} />
+
+        {/* Playground restart button */}
         <button
-          onClick={onRestartKernel}
+          onClick={onRestartPlayground}
           className="p-2 rounded-lg transition-all bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white shadow-md shadow-red-500/20 hover:shadow-red-500/30"
-          title="Restart kernel (clears all variables)"
+          title="Restart playground container"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         </button>
 
-        {/* Kernel status */}
-        <div className="flex items-center gap-2 ml-2">
+        {/* Playground connection status indicator */}
+        <div className="flex items-center gap-2 ml-1 px-2 py-1 rounded-lg" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--nb-border-default)' }}>
           <span
             className={`w-2 h-2 rounded-full ${
-              kernelStatus === 'connected'
+              playgroundStatus === 'connected'
                 ? 'bg-green-500'
-                : kernelStatus === 'connecting'
+                : playgroundStatus === 'connecting'
                 ? 'bg-yellow-500 animate-pulse'
                 : 'bg-red-500'
             }`}
           />
-          <span className="text-xs capitalize" style={{ color: 'var(--nb-text-muted)' }}>{kernelStatus}</span>
+          <span className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+            Playground: {playgroundStatus === 'connected' ? 'Connected' : playgroundStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+          </span>
         </div>
+
+        <div className="w-px h-6 mx-2" style={{ backgroundColor: 'var(--nb-border-default)' }} />
 
         {/* Keyboard shortcuts button with hover tooltip */}
         <div className="relative group ml-2">

@@ -135,12 +135,11 @@ async def list_sessions():
 
 @router.post("/{session_id}/kernel/start")
 async def start_session_kernel(session_id: str):
-    """Start the kernel for a specific session"""
+    """Start the kernel for a specific session. Creates session if it doesn't exist."""
     session_manager = get_session_manager()
-    session = session_manager.get_session(session_id)
 
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    # Get or create session - this allows starting kernel even if no code was run yet
+    session = session_manager.get_or_create_session(session_id, "default")
 
     if session.kernel.is_alive():
         return {"success": True, "status": "already_running", "message": "Kernel already running"}
@@ -159,7 +158,8 @@ async def stop_session_kernel(session_id: str):
     session = session_manager.get_session(session_id)
 
     if not session:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        # Session not found - kernel was never started, nothing to stop
+        return {"success": True, "status": "not_running", "message": "Kernel was not running (no active session)"}
 
     stopped = session.kernel.stop()
     if stopped:
@@ -175,7 +175,8 @@ async def restart_session_kernel(session_id: str):
     session = session_manager.get_session(session_id)
 
     if not session:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        # Session not found - kernel was never started, nothing to restart
+        return {"success": True, "status": "not_running", "message": "Kernel was not running (no active session)"}
 
     restarted = session.kernel.restart()
     if restarted:
@@ -191,7 +192,8 @@ async def interrupt_session_kernel(session_id: str):
     session = session_manager.get_session(session_id)
 
     if not session:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        # Session not found - kernel was never started, nothing to interrupt
+        return {"success": True, "message": "Kernel was not running (no active session)"}
 
     interrupted = session.kernel.interrupt()
     if interrupted:
@@ -202,16 +204,31 @@ async def interrupt_session_kernel(session_id: str):
 
 @router.get("/{session_id}/kernel/status")
 async def get_session_kernel_status(session_id: str):
-    """Get kernel status for a specific session"""
+    """
+    Get kernel status for a specific session.
+
+    Returns:
+        status: 'idle' | 'busy' | 'stopped' | 'error'
+        - idle: Kernel running and ready for execution
+        - busy: Kernel is executing code
+        - stopped: Kernel not started or stopped
+        - error: Kernel in error state
+    """
     session_manager = get_session_manager()
     session = session_manager.get_session(session_id)
 
     if not session:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        # Session not found - kernel not started yet
+        return {
+            "success": True,
+            "session_id": session_id,
+            "status": "stopped",
+            "execution_count": 0
+        }
 
     return {
         "success": True,
         "session_id": session_id,
-        "status": "running" if session.kernel.is_alive() else "stopped",
+        "status": session.kernel.get_status(),
         "execution_count": session.kernel.execution_count
     }
