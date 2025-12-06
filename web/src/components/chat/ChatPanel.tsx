@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
-import type { ChatMessage, LLMStep } from '@/types'
+import type { ChatMessage, LLMStep, ImageInput } from '@/types'
 
 interface PendingToolCall {
   id: string
@@ -14,7 +14,7 @@ interface ChatPanelProps {
   messages: ChatMessage[]
   isLoading: boolean
   pendingTools: PendingToolCall[]
-  onSendMessage: (message: string) => void
+  onSendMessage: (message: string, images?: ImageInput[]) => void
   onApproveTools: (tools: PendingToolCall[]) => void
   onRejectTools: () => void
   llmProvider: string
@@ -79,9 +79,13 @@ export default function ChatPanel({
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editContent, setEditContent] = useState('')
+  const [images, setImages] = useState<ImageInput[]>([])
+  const [enlargedImage, setEnlargedImage] = useState<ImageInput | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const editTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { theme } = useTheme()
   const colors = themeColors[theme]
 
@@ -128,11 +132,120 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
+  // Handle Escape key to close enlarged image
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && enlargedImage) {
+        setEnlargedImage(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [enlargedImage])
+
+  // Process image file to base64
+  const processImageFile = (file: File): Promise<ImageInput> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const result = e.target?.result as string
+        const base64Data = result.split(',')[1]
+        resolve({
+          data: base64Data,
+          mime_type: file.type || 'image/png',
+          filename: file.name
+        })
+      }
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // Handle paste event for images
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) {
+          try {
+            const imageInput = await processImageFile(file)
+            setImages(prev => [...prev, imageInput])
+          } catch (error) {
+            console.error('Failed to process pasted image:', error)
+          }
+        }
+        break
+      }
+    }
+  }
+
+  // Handle drag events
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true)
+    }
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const files = e.dataTransfer.files
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        try {
+          const imageInput = await processImageFile(file)
+          setImages(prev => [...prev, imageInput])
+        } catch (error) {
+          console.error('Failed to process dropped image:', error)
+        }
+      }
+    }
+  }
+
+  // Handle file input change
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        try {
+          const imageInput = await processImageFile(file)
+          setImages(prev => [...prev, imageInput])
+        } catch (error) {
+          console.error('Failed to process selected image:', error)
+        }
+      }
+    }
+    // Reset input so same file can be selected again
+    e.target.value = ''
+  }
+
+  // Remove an image
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
-    onSendMessage(input.trim())
+    if ((!input.trim() && images.length === 0) || isLoading) return
+    onSendMessage(input.trim(), images.length > 0 ? images : undefined)
     setInput('')
+    setImages([])
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -484,6 +597,20 @@ export default function ChatPanel({
                       <div className="text-sm whitespace-pre-wrap leading-relaxed">
                         {msg.role === 'assistant' ? renderMessageContent(msg.content) : msg.content}
                       </div>
+                      {/* Show images attached to user messages */}
+                      {msg.role === 'user' && msg.images && msg.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {msg.images.map((img, imgIdx) => (
+                            <img
+                              key={imgIdx}
+                              src={`data:${img.mime_type};base64,${img.data}`}
+                              alt={img.filename || `Image ${imgIdx + 1}`}
+                              className="w-16 h-16 object-cover rounded-lg border border-white/20 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => setEnlargedImage(img)}
+                            />
+                          ))}
+                        </div>
+                      )}
                       {msg.role === 'assistant' && msg.steps && renderSteps(msg.steps)}
                     </>
                   )}
@@ -629,15 +756,54 @@ export default function ChatPanel({
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4" style={{ background: colors.inputBg, borderTop: `1px solid ${colors.border}` }}>
-        <div className="flex gap-3">
+      <form
+        onSubmit={handleSubmit}
+        className="p-4"
+        style={{ background: colors.inputBg, borderTop: `1px solid ${colors.border}` }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Image previews */}
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {images.map((img, idx) => (
+              <div key={idx} className="relative group">
+                <img
+                  src={`data:${img.mime_type};base64,${img.data}`}
+                  alt={img.filename || `Image ${idx + 1}`}
+                  className="w-16 h-16 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                  style={{ borderColor: colors.border }}
+                  onClick={() => setEnlargedImage(img)}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeImage(idx)}
+                  className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className={`flex gap-3 relative ${isDragging ? 'opacity-50' : ''}`}>
+          {/* Drag overlay */}
+          {isDragging && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10 z-10">
+              <span className="text-blue-400 text-sm font-medium">Drop image here</span>
+            </div>
+          )}
+
           <div className="flex-1 relative">
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask AI for help... (Enter to send, Shift+Enter for new line)"
+              onPaste={handlePaste}
+              placeholder="Ask AI for help... (Enter to send, Shift+Enter for new line, paste/drop images)"
               className="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
               style={{
                 minHeight: '80px',
@@ -649,10 +815,30 @@ export default function ChatPanel({
               disabled={isLoading}
             />
           </div>
-          <div className="flex items-end pb-1">
+          <div className="flex flex-col items-center gap-2 pb-1 justify-end">
+            {/* Image upload button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 rounded-lg transition-all hover:opacity-80"
+              style={{ color: textMuted, backgroundColor: theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
+              title="Attach image"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && images.length === 0) || isLoading}
               className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 disabled:shadow-none"
               title="Send message"
             >
@@ -680,6 +866,33 @@ export default function ChatPanel({
           animation: fadeIn 0.3s ease-out forwards;
         }
       `}</style>
+
+      {/* Enlarged image modal */}
+      {enlargedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setEnlargedImage(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            <img
+              src={`data:${enlargedImage.mime_type};base64,${enlargedImage.data}`}
+              alt={enlargedImage.filename || 'Enlarged image'}
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+            />
+            <button
+              onClick={() => setEnlargedImage(null)}
+              className="absolute top-2 right-2 w-8 h-8 bg-black/60 hover:bg-black/80 text-white rounded-full flex items-center justify-center transition-colors"
+            >
+              ×
+            </button>
+            {enlargedImage.filename && (
+              <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                {enlargedImage.filename}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

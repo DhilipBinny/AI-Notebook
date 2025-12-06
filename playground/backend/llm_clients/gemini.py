@@ -283,7 +283,7 @@ class GeminiClient(BaseLLMClient):
             history=chat_history if chat_history else None
         )
 
-    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None, images: Optional[List[ImageData]] = None) -> Union[str, Dict[str, Any]]:
         """
         Send a message to Gemini using two-phase approach.
 
@@ -293,6 +293,7 @@ class GeminiClient(BaseLLMClient):
         Args:
             message: The full message (may include context)
             user_message: Optional - just the user's actual question (for web search keyword detection)
+            images: Optional list of images for visual analysis
 
         Returns:
             str: Final response text (if auto mode or no tools needed)
@@ -301,6 +302,8 @@ class GeminiClient(BaseLLMClient):
         try:
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             log_debug_message(f"📨 Gemini send_message() - User: {message[:60]}...")
+            if images:
+                log_debug_message(f"📷 Chat panel: {len(images)} image(s) attached")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
             # Phase 1: Check if web search is needed (use user_message for keyword detection)
@@ -319,7 +322,10 @@ class GeminiClient(BaseLLMClient):
                 enhanced_message = message
                 log_debug_message(f"🤖 [PHASE 2] Sending to Gemini (no search)")
 
-            response = self.chat.send_message(message=enhanced_message)
+            # Build content with optional images
+            content = self._build_content_with_images(enhanced_message, images)
+
+            response = self.chat.send_message(message=content)
             log_debug_message(f"✅ Gemini response received")
 
             # Debug: Log response details

@@ -62,6 +62,9 @@ export default function AICell({
   const [localPrompt, setLocalPrompt] = useState(cell.ai_data?.user_prompt || '')
   const [images, setImages] = useState<ImageInput[]>(cell.ai_data?.images || [])
 
+  // Image modal state
+  const [enlargedImage, setEnlargedImage] = useState<ImageInput | null>(null)
+
   // Copy feedback state
   const [copiedPrompt, setCopiedPrompt] = useState(false)
   const [copiedResponse, setCopiedResponse] = useState(false)
@@ -89,6 +92,11 @@ export default function AICell({
     setLocalPrompt(cell.ai_data?.user_prompt || '')
   }, [cell.ai_data?.user_prompt])
 
+  // Update images when cell changes (e.g., on page reload)
+  useEffect(() => {
+    setImages(cell.ai_data?.images || [])
+  }, [cell.ai_data?.images])
+
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
     if (textareaRef.current) {
@@ -108,6 +116,17 @@ export default function AICell({
     }
   }, [isEditing])
 
+  // Close enlarged image on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && enlargedImage) {
+        setEnlargedImage(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [enlargedImage])
+
   // Process a file and add it as an image
   const addImageFile = useCallback((file: File) => {
     const reader = new FileReader()
@@ -126,12 +145,7 @@ export default function AICell({
       }
 
       setImages(prev => [...prev, newImage])
-
-      // Add placeholder text in prompt
-      setLocalPrompt(prev => {
-        const placeholder = `[📷 image: ${filename}]`
-        return prev ? `${prev}\n${placeholder}` : placeholder
-      })
+      // Note: No placeholder text added - image preview thumbnails show what's attached
     }
     reader.readAsDataURL(file)
   }, [])
@@ -182,27 +196,24 @@ export default function AICell({
     const files = e.dataTransfer?.files
     if (!files) return
 
+    let hasImage = false
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (file.type.startsWith('image/')) {
         addImageFile(file)
+        hasImage = true
       }
+    }
+
+    // Enter edit mode when images are dropped
+    if (hasImage) {
+      setIsEditing(true)
     }
   }, [addImageFile])
 
   // Remove image
   const removeImage = useCallback((index: number) => {
-    setImages(prev => {
-      const removed = prev[index]
-      const newImages = prev.filter((_, i) => i !== index)
-
-      // Remove placeholder from prompt
-      if (removed.filename) {
-        setLocalPrompt(p => p.replace(`[📷 image: ${removed.filename}]`, '').trim())
-      }
-
-      return newImages
-    })
+    setImages(prev => prev.filter((_, i) => i !== index))
   }, [])
 
   // Handle run
@@ -349,14 +360,31 @@ export default function AICell({
   return (
     <div
       id={`cell-${cell.id}`}
-      className="group rounded-lg transition-all overflow-hidden cell-wrapper cell-ai"
+      className="group rounded-lg transition-all overflow-hidden cell-wrapper cell-ai relative"
       onClick={onSelect}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       style={{
         backgroundColor: 'var(--nb-bg-ai-cell, #2a1f4e)',
         borderColor: 'var(--nb-border-default)',
         ...getSelectionStyle(),
       }}
     >
+      {/* Drag overlay - shown when dragging anywhere on the cell */}
+      {isDragging && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center rounded-lg"
+          style={{
+            backgroundColor: 'rgba(168, 85, 247, 0.2)',
+            border: '2px dashed #a855f7',
+          }}
+        >
+          <div className="text-sm font-medium" style={{ color: '#a855f7' }}>
+            Drop images here
+          </div>
+        </div>
+      )}
       {/* Cell Header */}
       <div
         className="flex items-center justify-between px-3 py-2 cell-ai-header"
@@ -477,27 +505,7 @@ export default function AICell({
           )}
         </div>
         {isEditing || !aiData.user_prompt ? (
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className="relative"
-          >
-            {/* Drag overlay */}
-            {isDragging && (
-              <div
-                className="absolute inset-0 z-10 flex items-center justify-center rounded"
-                style={{
-                  backgroundColor: 'rgba(168, 85, 247, 0.2)',
-                  border: '2px dashed #a855f7',
-                }}
-              >
-                <div className="text-sm font-medium" style={{ color: '#a855f7' }}>
-                  Drop images here
-                </div>
-              </div>
-            )}
-
+          <div className="relative">
             <textarea
               ref={textareaRef}
               value={localPrompt}
@@ -535,8 +543,6 @@ export default function AICell({
                     onClick={(e) => {
                       e.stopPropagation()
                       setImages([])
-                      // Remove all image placeholders from prompt
-                      setLocalPrompt(p => p.replace(/\[📷 image: [^\]]+\]\n?/g, '').trim())
                     }}
                     className="text-xs px-2 py-0.5 rounded hover:opacity-80"
                     style={{ color: 'var(--nb-accent-error)' }}
@@ -549,8 +555,10 @@ export default function AICell({
                   {images.map((img, idx) => (
                     <div
                       key={idx}
-                      className="relative group/img rounded-lg overflow-hidden shadow-sm"
+                      className="relative group/img rounded-lg overflow-hidden shadow-sm cursor-pointer"
                       style={{ border: '1px solid rgba(168, 85, 247, 0.3)' }}
+                      onClick={(e) => { e.stopPropagation(); setEnlargedImage(img) }}
+                      title="Click to enlarge"
                     >
                       <img
                         src={`data:${img.mime_type};base64,${img.data}`}
@@ -614,8 +622,10 @@ export default function AICell({
                 {aiData.images.map((img, idx) => (
                   <div
                     key={idx}
-                    className="relative rounded-lg overflow-hidden shadow-sm"
+                    className="relative rounded-lg overflow-hidden shadow-sm cursor-pointer"
                     style={{ border: '1px solid rgba(168, 85, 247, 0.3)' }}
+                    onClick={(e) => { e.stopPropagation(); setEnlargedImage(img) }}
+                    title="Click to enlarge"
                   >
                     <img
                       src={`data:${img.mime_type};base64,${img.data}`}
@@ -678,6 +688,41 @@ export default function AICell({
           )}
 
           {aiData.llm_response && renderResponse()}
+        </div>
+      )}
+
+      {/* Image Enlarge Modal */}
+      {enlargedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setEnlargedImage(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            {/* Close button */}
+            <button
+              onClick={() => setEnlargedImage(null)}
+              className="absolute -top-10 right-0 p-2 rounded-full hover:bg-white/10 transition-colors"
+              style={{ color: '#fff' }}
+              title="Close (Esc)"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {/* Enlarged image */}
+            <img
+              src={`data:${enlargedImage.mime_type};base64,${enlargedImage.data}`}
+              alt={enlargedImage.filename || 'Enlarged image'}
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            {/* Filename */}
+            {enlargedImage.filename && (
+              <div className="absolute -bottom-8 left-0 right-0 text-center text-sm text-white/70">
+                {enlargedImage.filename}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

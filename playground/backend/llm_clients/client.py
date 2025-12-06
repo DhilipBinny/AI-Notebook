@@ -94,8 +94,8 @@ class LLMClient(BaseLLMClient):
         """
         self._client = get_llm_client(provider)
 
-    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
-        return self._client.send_message(message, user_message)
+    def send_message(self, message: str, user_message: str = None, images: Optional[List[ImageData]] = None) -> Union[str, Dict[str, Any]]:
+        return self._client.send_message(message, user_message, images)
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
         return self._client.execute_approved_tools(approved_tool_calls)

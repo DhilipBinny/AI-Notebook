@@ -11,7 +11,7 @@ import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
 import { useKernel } from '@/hooks/useKernel'
 import { ThemeProvider } from '@/contexts/ThemeContext'
-import type { Cell as CellType, Playground, ChatMessage } from '@/types'
+import type { Cell as CellType, Playground, ChatMessage, ImageInput } from '@/types'
 
 // ANSI color code to CSS color mapping
 const ansiColors: Record<number, string> = {
@@ -324,6 +324,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             setChatMessages(historyData.messages.map(m => ({
               role: m.role as 'user' | 'assistant',
               content: m.content,
+              images: m.images,  // Include images from chat history
+              steps: m.steps,   // Include steps from chat history
             })))
             console.log(`Loaded ${historyData.messages.length} messages from chat history`)
           }
@@ -1207,7 +1209,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [])
 
   // Chat handlers
-  const handleSendMessage = useCallback(async (message: string) => {
+  const handleSendMessage = useCallback(async (message: string, images?: ImageInput[]) => {
     // Check if playground is running
     if (!playground || playground.status !== 'running') {
       const shouldStart = confirm('Playground is not running. Start it now?')
@@ -1232,7 +1234,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
 
     setChatLoading(true)
-    setChatMessages((prev) => [...prev, { role: 'user', content: message }])
+    setChatMessages((prev) => [...prev, { role: 'user', content: message, images }])
 
     try {
       // Auto-save notebook before sending message (ensure LLM sees latest edits via Master API)
@@ -1244,7 +1246,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       const allCellIds = cells.map(c => c.id)
 
       // Call chat API - backend loads cell content from S3 notebook
-      const response = await chat.sendMessage(projectId, message, allCellIds, toolMode, llmProvider, contextFormat)
+      const response = await chat.sendMessage(projectId, message, allCellIds, toolMode, llmProvider, contextFormat, images)
 
       if (response.success) {
         // Handle pending tools

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput } from '@/types'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -225,11 +225,13 @@ export const chat = {
     contextCellIds: string[],
     toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
     llmProvider: string = 'gemini',
-    contextFormat: 'xml' | 'plain' = 'xml'
+    contextFormat: 'xml' | 'plain' = 'xml',
+    images?: ImageInput[]
   ): Promise<ChatResponse> => {
     const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       message,
       context_cell_ids: contextCellIds,
+      images,
     })
     return data
   },

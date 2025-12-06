@@ -180,13 +180,14 @@ class OpenAIClient(BaseLLMClient):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None, images: Optional[List[ImageData]] = None) -> Union[str, Dict[str, Any]]:
         """
         Send a message to OpenAI.
 
         Args:
             message: The full message (may include context)
             user_message: Optional - just the user's actual question (unused, for API compatibility)
+            images: Optional list of images for visual analysis
 
         When auto_function_calling=True:
             Executes tools automatically and returns final response text
@@ -205,12 +206,17 @@ class OpenAIClient(BaseLLMClient):
         try:
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             log_debug_message(f"📨 OpenAI send_message() - User: {message[:60]}...")
+            if images:
+                log_debug_message(f"📷 Chat panel: {len(images)} image(s) attached")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            # Build content with optional images
+            content = self._build_content_with_images(message, images)
 
             # Add user message to history
             self.history.append({
                 "role": "user",
-                "content": message
+                "content": content
             })
 
             # Build messages with system prompt

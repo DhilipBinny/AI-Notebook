@@ -66,13 +66,14 @@ class OllamaClient(BaseLLMClient):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None, images = None) -> Union[str, Dict[str, Any]]:
         """
         Send a message to Ollama.
 
         Args:
             message: The full message (may include context)
             user_message: Optional - just the user's actual question (unused, for API compatibility)
+            images: Optional list of images (not currently supported by Ollama client)
 
         When auto_function_calling=True:
             Executes tools automatically and returns final response text
@@ -84,9 +85,11 @@ class OllamaClient(BaseLLMClient):
         try:
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             log_debug_message(f"📨 Ollama send_message() - User: {message[:60]}...")
+            if images:
+                log_debug_message(f"⚠️ Chat panel: {len(images)} image(s) attached but Ollama doesn't support images")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            # Add user message to history
+            # Add user message to history (images not supported by Ollama)
             self.history.append({
                 "role": "user",
                 "content": message

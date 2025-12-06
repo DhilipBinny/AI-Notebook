@@ -168,13 +168,14 @@ class AnthropicClient(BaseLLMClient):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    def send_message(self, message: str, user_message: str = None) -> Union[str, Dict[str, Any]]:
+    def send_message(self, message: str, user_message: str = None, images: Optional[List[ImageData]] = None) -> Union[str, Dict[str, Any]]:
         """
         Send a message to Anthropic.
 
         Args:
             message: The full message (may include context)
             user_message: Optional - just the user's actual question (unused, for API compatibility)
+            images: Optional list of images for visual analysis
 
         When auto_function_calling=True:
             Executes tools automatically and returns final response text
@@ -193,12 +194,17 @@ class AnthropicClient(BaseLLMClient):
         try:
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             log_debug_message(f"📨 Anthropic send_message() - User: {message[:60]}...")
+            if images:
+                log_debug_message(f"📷 Chat panel: {len(images)} image(s) attached")
             log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            # Build content with optional images
+            content = self._build_content_with_images(message, images)
 
             # Add user message to history
             self.history.append({
                 "role": "user",
-                "content": message
+                "content": content
             })
 
             # Build messages (Anthropic system prompt is separate)
@@ -470,8 +476,10 @@ class AnthropicClient(BaseLLMClient):
         content = []
 
         # Add images first
-        for img in images:
+        for idx, img in enumerate(images):
+            log_debug_message(f"📷 Processing image {idx + 1}: keys={list(img.keys())}, mime_type={img.get('mime_type', 'N/A')}")
             prepared = prepare_image(img)
+            log_debug_message(f"📷 Prepared image {idx + 1}: keys={list(prepared.keys())}, mime_type={prepared.get('mime_type', 'N/A')}, data_len={len(prepared.get('data', ''))}")
             if "url" in prepared:
                 # Anthropic supports URL-based images
                 content.append({
@@ -491,6 +499,8 @@ class AnthropicClient(BaseLLMClient):
                         "data": prepared["data"]
                     }
                 })
+
+        log_debug_message(f"📷 Built content with {len(content)} image blocks + text")
 
         # Add text last
         content.append({
@@ -577,6 +587,22 @@ class AnthropicClient(BaseLLMClient):
             # Build content with optional images
             content = self._build_content_with_images(prompt, images)
             messages = [{"role": "user", "content": content}]
+
+            # Debug: log what we're sending
+            if isinstance(content, list):
+                log_debug_message(f"📷 Sending {len(content)} content blocks to Anthropic")
+                for i, block in enumerate(content):
+                    block_type = block.get("type", "unknown")
+                    if block_type == "image":
+                        source_type = block.get("source", {}).get("type", "unknown")
+                        mime = block.get("source", {}).get("media_type", "N/A")
+                        data_len = len(block.get("source", {}).get("data", ""))
+                        log_debug_message(f"📷 Block {i}: type=image, source_type={source_type}, mime={mime}, data_len={data_len}")
+                    else:
+                        text_preview = str(block.get("text", ""))[:50]
+                        log_debug_message(f"📷 Block {i}: type={block_type}, text_preview='{text_preview}...'")
+            else:
+                log_debug_message(f"📷 Sending text-only content (no images)")
 
             for iteration in range(max_iterations):
                 log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")

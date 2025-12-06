@@ -113,6 +113,7 @@ class ChatService:
         llm_provider: str = "gemini",
         context_format: str = "xml",
         chat_id: str = DEFAULT_CHAT_ID,
+        images: Optional[List[Dict[str, Any]]] = None,
     ) -> ChatResponse:
         """
         Send a message to the LLM via the playground container.
@@ -144,6 +145,9 @@ class ChatService:
             "content": message,
             "timestamp": datetime.now().isoformat(),
         }
+        # Include images in user message if provided
+        if images:
+            user_message["images"] = images
         stored_messages.append(user_message)
 
         # Check if playground is running
@@ -196,16 +200,20 @@ class ChatService:
                 # Now send the chat message with history
                 # Use project_id as session_id for tracking pending tools
                 # Note: LLM tools fetch notebook data on-demand from playground's notebook state
+                request_body = {
+                    "message": message,
+                    "context": context_list,
+                    "history": history_list,
+                    "session_id": project.id,
+                    "context_format": context_format,
+                }
+                if images:
+                    request_body["images"] = images
+
                 response = await client.post(
                     f"{playground.internal_url}/chat",
                     headers={"X-Internal-Secret": playground.internal_secret},
-                    json={
-                        "message": message,
-                        "context": context_list,
-                        "history": history_list,
-                        "session_id": project.id,
-                        "context_format": context_format,
-                    },
+                    json=request_body,
                     timeout=120,  # LLM can take a while
                 )
 

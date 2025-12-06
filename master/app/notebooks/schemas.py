@@ -7,6 +7,14 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
+class ImageInput(BaseModel):
+    """Image input for AI Cell (pasted or uploaded images)."""
+    data: Optional[str] = None  # Base64 encoded image data
+    mime_type: Optional[str] = "image/png"  # MIME type
+    url: Optional[str] = None  # URL-based image
+    filename: Optional[str] = None  # Original filename for display
+
+
 class AICellData(BaseModel):
     """AI Cell specific data."""
     user_prompt: str = ""
@@ -15,6 +23,7 @@ class AICellData(BaseModel):
     model: Optional[str] = None
     error: Optional[str] = None
     timestamp: Optional[str] = None
+    images: Optional[List[ImageInput]] = None  # Pasted/uploaded images for visual analysis
 
 
 class CellData(BaseModel):

@@ -63,12 +63,21 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class ImageInput(BaseModel):
+    """Image input for visual analysis."""
+    data: Optional[str] = None  # Base64 encoded image data
+    mime_type: Optional[str] = "image/png"  # MIME type
+    url: Optional[str] = None  # URL-based image
+    filename: Optional[str] = None  # Original filename for display
+
+
 class ChatRequest(BaseModel):
     message: str
     context: List[CellContext] = []
     history: List[ChatMessage] = []
     session_id: Optional[str] = None
     context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
+    images: Optional[List[ImageInput]] = None  # Attached images for visual analysis
     # Note: all_cells removed - LLM tools now fetch from Master API directly
 
 
@@ -540,7 +549,23 @@ async def chat_with_llm(
         log_debug_message(f"📤 Sending to {client.provider_name}...")
         # Pass user_message separately for web search keyword detection
         # This prevents false triggers from notebook context containing keywords like "find", "search", etc.
-        llm_response = client.send_message(full_message, user_message=request.message)
+        # Convert images to dict format if present
+        images_data = None
+        if request.images:
+            images_data = [
+                {
+                    "data": img.data,
+                    "mime_type": img.mime_type,
+                    "url": img.url,
+                    "filename": img.filename,
+                }
+                for img in request.images
+                if img.data or img.url
+            ]
+            if images_data:
+                log_debug_message(f"📷 Chat: {len(images_data)} image(s) attached")
+
+        llm_response = client.send_message(full_message, user_message=request.message, images=images_data)
 
         # Process response
         pending_tools = []

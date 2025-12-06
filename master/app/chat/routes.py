@@ -356,6 +356,22 @@ async def send_message(
     if playground:
         await playground_service.update_activity(playground)
 
+    # Convert images to dict format for forwarding
+    images_data = None
+    if request.images:
+        images_data = [
+            {
+                "data": img.data,
+                "mime_type": img.mime_type,
+                "url": img.url,
+                "filename": img.filename,
+            }
+            for img in request.images
+            if img.data or img.url  # Only include images with actual content
+        ]
+        if not images_data:
+            images_data = None
+
     # Send message
     chat_service = ChatService(project.storage_month)
     response = await chat_service.send_message(
@@ -367,6 +383,7 @@ async def send_message(
         llm_provider=llm_provider,
         context_format=context_format,
         chat_id=chat_id,
+        images=images_data,
     )
 
     return response

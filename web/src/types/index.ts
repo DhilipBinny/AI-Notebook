@@ -105,6 +105,7 @@ export interface ChatMessage {
   content: string
   timestamp?: string
   steps?: LLMStep[]
+  images?: ImageInput[]  // Attached images (only for user messages)
 }
 
 export interface LLMStep {
