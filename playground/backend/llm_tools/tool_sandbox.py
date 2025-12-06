@@ -198,6 +198,111 @@ def sandbox_reset() -> dict:
         }
 
 
+def sandbox_pip_install(packages: str) -> dict:
+    """
+    Install Python packages in the sandbox kernel environment.
+
+    Use this tool when you need to:
+    - Install a library to test code in sandbox
+    - Add dependencies before running sandbox_execute()
+    - Install packages without affecting user's knowledge of what's installed
+
+    The package is installed system-wide (same Python environment), but running
+    this in sandbox ensures the sandbox kernel's import cache is refreshed.
+
+    Args:
+        packages: Package name(s) to install. Can be:
+                  - Single package: "pandas"
+                  - Multiple packages (space-separated): "pandas numpy"
+                  - With version: "pandas==2.0.0"
+
+    Returns:
+        Dictionary with success, output, error
+
+    Example:
+        sandbox_pip_install("pandas matplotlib")
+        sandbox_execute("import pandas as pd; print(pd.__version__)")
+    """
+    log_debug_message(f"==> sandbox_pip_install({packages}) called from LLM")
+
+    if not packages or not packages.strip():
+        return {
+            "success": False,
+            "output": "",
+            "error": "No packages specified"
+        }
+
+    sandbox = _get_sandbox_kernel()
+    if sandbox is None:
+        return {
+            "success": False,
+            "output": "",
+            "error": "No session available for sandbox"
+        }
+
+    # Start sandbox kernel if not running
+    if not sandbox.is_alive():
+        log_debug_message("[Sandbox] Starting sandbox kernel for pip install...")
+        if not sandbox.start():
+            return {
+                "success": False,
+                "output": "",
+                "error": "Failed to start sandbox kernel"
+            }
+
+    # Build pip install command
+    package_list = packages.strip().split()
+    packages_str = "', '".join(package_list)
+
+    install_code = f'''
+import subprocess
+import sys
+import site
+import importlib
+
+# Run pip install
+result = subprocess.run(
+    [sys.executable, "-m", "pip", "install", '{packages_str}'],
+    capture_output=True,
+    text=True
+)
+print(result.stdout)
+if result.stderr:
+    print("STDERR:", result.stderr)
+
+# Refresh import cache so new packages are available
+importlib.invalidate_caches()
+
+# Ensure user site-packages is in path
+user_site = site.getusersitepackages()
+if user_site and user_site not in sys.path:
+    sys.path.insert(0, user_site)
+
+print("\\n✓ Packages installed and import cache refreshed")
+print("Exit code:", result.returncode)
+'''
+
+    result = sandbox.execute(install_code, timeout=120)  # 2 min timeout for pip
+
+    # Format output
+    output_text = ""
+    if result["outputs"]:
+        for output in result["outputs"]:
+            if output.get("type") == "stream":
+                output_text += output.get("text", "")
+            elif output.get("type") == "execute_result":
+                output_text += output.get("data", {}).get("text/plain", "")
+
+    success = result["success"] and "Exit code: 0" in output_text
+
+    return {
+        "success": success,
+        "packages": package_list,
+        "output": output_text.strip(),
+        "error": str(result.get("error", "")) if not success else None
+    }
+
+
 def sandbox_sync_from_main(variable_names: List[str] = None) -> dict:
     """
     Copy variables from the main kernel to the sandbox.

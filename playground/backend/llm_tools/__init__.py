@@ -40,6 +40,7 @@ from backend.llm_tools.tool_kernel_inspect import (
 from backend.llm_tools.tool_sandbox import (
     sandbox_execute,
     sandbox_reset,
+    sandbox_pip_install,
     sandbox_sync_from_main,
     sandbox_status
 )
@@ -122,6 +123,7 @@ AI_CELL_TOOLS = [
     # Sandbox Testing (isolated kernel for safe experimentation)
     sandbox_execute,
     sandbox_reset,
+    sandbox_pip_install,  # Install packages in sandbox for testing
     sandbox_sync_from_main,
-    sandbox_status
+    sandbox_status,
 ]

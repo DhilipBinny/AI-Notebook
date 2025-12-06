@@ -19,10 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     patchelf \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies + PyInstaller
-COPY requirements.txt /build/
+# Install Python dependencies + PyInstaller (use dev requirements for building)
+COPY requirements.dev.txt /build/
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
+    pip install -r requirements.dev.txt && \
     pip install pyinstaller
 
 # Copy source code
@@ -81,10 +81,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install kernel dependencies - needed for subprocess kernel spawning
-# The compiled binary runs the server, but kernel execution spawns a separate
-# Python process that requires ipykernel to be installed in the system
-RUN pip install --no-cache-dir jupyter_client ipykernel
+# Copy and install production requirements
+# These include kernel dependencies + user libraries
+COPY requirements.prod.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.prod.txt && \
+    rm /tmp/requirements.prod.txt
 
 # Create shared group for workspace access (allows both playground service and terminal user)
 # - 'playground' user: runs the server binary (owns the binary exclusively)

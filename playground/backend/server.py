@@ -287,11 +287,12 @@ AVAILABLE TOOLS (organized by category):
 
 3. **Sandbox Testing** (isolated kernel for safe experimentation):
    - sandbox_execute(code) - Run code in ISOLATED kernel (doesn't affect user's work)
+   - sandbox_pip_install(packages) - Install packages in sandbox (e.g., "pandas numpy")
    - sandbox_sync_from_main(["var1", "var2"]) - Copy variables to sandbox for testing
    - sandbox_reset() - Clear sandbox state
    - sandbox_status() - Check if sandbox is running
 
-   USE FOR: Testing code before suggesting, verifying fixes work
+   USE FOR: Testing code before suggesting, installing packages for testing
 
 TOOL SELECTION GUIDE:
 - "What variables do I have?" → runtime_list_variables() (Runtime)
@@ -300,6 +301,7 @@ TOOL SELECTION GUIDE:
 - "Show me the notebook" → get_notebook_overview() (Notebook)
 - "What's in cell 3?" → get_cell_content(cell_id) (Notebook)
 - "Will this code work?" → sandbox_execute(code) (Sandbox)
+- "Install pandas to test" → sandbox_pip_install("pandas") (Sandbox)
 
 WORKFLOW:
 1. User asks about data → runtime_list_variables() or runtime_get_dataframe() (Runtime)

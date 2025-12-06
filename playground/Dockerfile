@@ -37,11 +37,11 @@ RUN useradd --create-home --shell /bin/bash playground && \
 WORKDIR /app
 
 # Copy requirements first for better caching
-COPY requirements.txt /app/
+COPY requirements.dev.txt /app/
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements.dev.txt
 
 # Copy backend code and fix permissions
 COPY --chown=playground:playground backend/ /app/backend/
