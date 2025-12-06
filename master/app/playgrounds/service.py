@@ -240,7 +240,7 @@ class PlaygroundService:
         except Exception:
             pass
 
-        await self.db.delete(playground)
+        self.db.delete(playground)  # delete() is sync, marks for deletion
         await self.db.flush()
 
 

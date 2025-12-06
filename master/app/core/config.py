@@ -4,7 +4,7 @@ Loads from environment variables with .env file support.
 """
 
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 from functools import lru_cache
 from typing import Optional, List
 
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "AI Notebook Platform"
     app_env: str = Field(default="development", alias="APP_ENV")
-    debug: bool = Field(default=True, alias="APP_DEBUG")
+    debug: bool = Field(default=False, alias="APP_DEBUG")  # Default to False for security
 
     # Database
     database_url: str = Field(
@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = Field(default=7, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS")
 
     # LLM API Keys (passed to playground containers as environment variables)
+    # Note: These are visible via 'docker inspect'. For high-security deployments,
+    # consider using Docker Secrets (Swarm mode) or a secrets manager like HashiCorp Vault.
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
@@ -73,6 +75,22 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
+
+    @model_validator(mode='after')
+    def validate_production_settings(self) -> 'Settings':
+        """Validate critical settings in production environment."""
+        if self.app_env == "production":
+            # JWT secret must be explicitly set in production
+            default_secret = "dev_secret_key_change_in_production_must_be_32_chars"
+            if self.jwt_secret == default_secret:
+                raise ValueError(
+                    "JWT_SECRET must be set to a secure value in production. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+            # Ensure debug is off in production
+            if self.debug:
+                raise ValueError("APP_DEBUG must be False in production")
+        return self
 
     class Config:
         env_file = ".env"

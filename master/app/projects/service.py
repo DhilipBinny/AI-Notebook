@@ -177,7 +177,7 @@ class ProjectService:
 
     async def delete(self, project: Project) -> None:
         """Permanently delete a project (hard delete)."""
-        await self.db.delete(project)
+        self.db.delete(project)  # delete() is sync, marks for deletion
         await self.db.flush()
 
     def _generate_project_id(self) -> str:
