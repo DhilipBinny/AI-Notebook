@@ -54,6 +54,8 @@ class PlaygroundService:
         # Clean up any stopped playground
         if existing:
             await self._cleanup_playground(existing)
+            # Commit the deletion to avoid unique constraint violation
+            await self.db.commit()
 
         # Generate container info
         short_id = project.id[:8]
@@ -244,7 +246,7 @@ class PlaygroundService:
                 f"for project {playground.project_id}: {e}"
             )
 
-        self.db.delete(playground)  # delete() is sync, marks for deletion
+        await self.db.delete(playground)
         await self.db.flush()
 
 

@@ -127,7 +127,7 @@ class UserService:
 
     async def delete(self, user: User) -> None:
         """Delete user account."""
-        self.db.delete(user)  # delete() is sync, marks for deletion
+        await self.db.delete(user)
         await self.db.flush()
 
     async def count_projects(self, user_id: str) -> int:
