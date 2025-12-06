@@ -54,12 +54,27 @@ RUN pyinstaller --onefile \
     --hidden-import="anthropic" \
     --hidden-import="google.genai" \
     --hidden-import="jupyter_client" \
+    --hidden-import="jupyter_client.provisioning" \
+    --hidden-import="jupyter_client.provisioning.factory" \
+    --hidden-import="jupyter_client.provisioning.provisioner_base" \
+    --hidden-import="jupyter_client.provisioning.local_provisioner" \
+    --hidden-import="jupyter_core" \
+    --hidden-import="jupyter_core.paths" \
     --hidden-import="ipykernel" \
+    --hidden-import="ipykernel.kernelspec" \
     --hidden-import="zmq" \
+    --hidden-import="zmq.backend" \
+    --hidden-import="zmq.backend.cython" \
     --hidden-import="websockets" \
+    --hidden-import="traitlets" \
+    --hidden-import="traitlets.config" \
+    --hidden-import="platformdirs" \
     --collect-all="uvicorn" \
     --collect-all="starlette" \
     --collect-all="fastapi" \
+    --collect-all="jupyter_client" \
+    --collect-all="jupyter_core" \
+    --collect-all="traitlets" \
     main_entry.py
 
 # ============================================

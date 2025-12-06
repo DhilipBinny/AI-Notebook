@@ -12,6 +12,7 @@
 #   --master        Build master-api only
 #   --playground    Build playground only
 #   --skip-upload   Build only, don't upload to VM
+#   --no-cache      Force rebuild without cache (slower but ensures fresh build)
 #
 # Examples:
 #   ./scripts/deploy-prod.sh                          # Build all, deploy to default VM
@@ -34,6 +35,7 @@ BUILD_WEB=false
 BUILD_MASTER=false
 BUILD_PLAYGROUND=false
 SKIP_UPLOAD=false
+NO_CACHE=false
 VM_HOST="10.0.2.21"
 VM_USER="sysadmin"
 
@@ -61,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-upload)
       SKIP_UPLOAD=true
+      shift
+      ;;
+    --no-cache)
+      NO_CACHE=true
       shift
       ;;
     -*)
@@ -103,25 +109,32 @@ echo "Services to build:"
 [[ "$BUILD_WEB" == "true" ]] && echo "  ✓ web"
 [[ "$BUILD_MASTER" == "true" ]] && echo "  ✓ master-api"
 [[ "$BUILD_PLAYGROUND" == "true" ]] && echo "  ✓ playground"
-[[ "$SKIP_UPLOAD" == "true" ]] && echo ""  && echo "  (skip upload enabled)"
+[[ "$SKIP_UPLOAD" == "true" ]] && echo "" && echo "  (skip upload enabled)"
+[[ "$NO_CACHE" == "true" ]] && echo "  (no-cache enabled - full rebuild)"
 echo ""
+
+# Set cache flag for docker build
+CACHE_FLAG=""
+if [[ "$NO_CACHE" == "true" ]]; then
+  CACHE_FLAG="--no-cache"
+fi
 
 # Step 1: Build production images locally
 echo "[1/5] Building production Docker images..."
 
 if [[ "$BUILD_WEB" == "true" ]]; then
   echo "  Building web (Next.js production)..."
-  docker build --no-cache -t ${REGISTRY_PREFIX}-web:prod -f web/Dockerfile.prod ./web
+  docker build ${CACHE_FLAG} -t ${REGISTRY_PREFIX}-web:prod -f web/Dockerfile.prod ./web
 fi
 
 if [[ "$BUILD_MASTER" == "true" ]]; then
   echo "  Building master-api (FastAPI production)..."
-  docker build --no-cache -t ${REGISTRY_PREFIX}-master-api:prod -f master/Dockerfile.prod ./master
+  docker build ${CACHE_FLAG} -t ${REGISTRY_PREFIX}-master-api:prod -f master/Dockerfile.prod ./master
 fi
 
 if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
   echo "  Building playground (stealth/compiled)..."
-  docker build --no-cache -t ${REGISTRY_PREFIX}-playground:prod -f ./playground/Dockerfile.stealth ./playground
+  docker build ${CACHE_FLAG} -t ${REGISTRY_PREFIX}-playground:prod -f ./playground/Dockerfile.stealth ./playground
 fi
 
 echo ""

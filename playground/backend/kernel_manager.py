@@ -4,8 +4,28 @@ Handles starting, stopping, and communicating with IPython kernel
 """
 
 import queue
-from jupyter_client import KernelManager
 from typing import Optional, Dict, Any
+
+# Workaround for PyInstaller: Register the LocalProvisioner before importing KernelManager
+# This fixes the "'module' object is not callable" error in compiled binaries
+try:
+    from jupyter_client.provisioning.local_provisioner import LocalProvisioner
+    from jupyter_client.provisioning import factory as provisioning_factory
+
+    # Patch the factory to directly return LocalProvisioner instead of using entry points
+    _original_create = getattr(provisioning_factory, 'create_provisioner_instance', None)
+
+    async def _patched_create_provisioner_instance(kernel_id, kernel_spec, parent):
+        """Patched provisioner factory that directly uses LocalProvisioner."""
+        return LocalProvisioner(kernel_id=kernel_id, kernel_spec=kernel_spec, parent=parent)
+
+    if _original_create:
+        provisioning_factory.create_provisioner_instance = _patched_create_provisioner_instance
+        print("[Kernel] Applied PyInstaller provisioner workaround", flush=True)
+except Exception as e:
+    print(f"[Kernel] Could not apply provisioner workaround: {e}", flush=True)
+
+from jupyter_client import KernelManager
 
 
 class NotebookKernel:
@@ -20,16 +40,25 @@ class NotebookKernel:
         """Start a new kernel"""
         try:
             import os
+            import sys
+            import traceback
+
             # Set unbuffered output for real-time streaming
             env = os.environ.copy()
             env['PYTHONUNBUFFERED'] = '1'
 
+            print("[Kernel] Creating KernelManager...", flush=True)
             self.km = KernelManager(kernel_name='python3')
+
+            print("[Kernel] Starting kernel subprocess...", flush=True)
             self.km.start_kernel(env=env)
+
+            print("[Kernel] Creating client...", flush=True)
             self.kc = self.km.client()
             self.kc.start_channels()
 
             # Wait for kernel to be ready
+            print("[Kernel] Waiting for kernel to be ready...", flush=True)
             self.kc.wait_for_ready(timeout=30)
 
             # Set up auto-flush for print statements and matplotlib inline backend
@@ -63,13 +92,15 @@ user_site = site.getusersitepackages()
 if user_site and user_site not in sys.path:
     sys.path.insert(0, user_site)
 '''
+            print("[Kernel] Running setup code...", flush=True)
             self.kc.execute(setup_code, silent=True)
 
             self.execution_count = 0
-            print("[Kernel] Started successfully")
+            print("[Kernel] Started successfully", flush=True)
             return True
         except Exception as e:
-            print(f"[Kernel] Failed to start: {e}")
+            print(f"[Kernel] Failed to start: {e}", flush=True)
+            print(f"[Kernel] Traceback: {traceback.format_exc()}", flush=True)
             return False
 
     def stop(self) -> bool:
