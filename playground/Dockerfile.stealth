@@ -76,10 +76,15 @@ ENV PYTHONUNBUFFERED=1 \
     OLLAMA_MODEL=qwen3-coder:30b \
     TOOL_EXECUTION_MODE=manual
 
-# Install only runtime dependencies
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install kernel dependencies - needed for subprocess kernel spawning
+# The compiled binary runs the server, but kernel execution spawns a separate
+# Python process that requires ipykernel to be installed in the system
+RUN pip install --no-cache-dir jupyter_client ipykernel
 
 # Create shared group for workspace access (allows both playground service and terminal user)
 # - 'playground' user: runs the server binary (owns the binary exclusively)

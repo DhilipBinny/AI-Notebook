@@ -704,7 +704,7 @@ class GeminiClient(BaseLLMClient):
 
             # Create chat session with AI Cell tools (inspection + sandbox only)
             ai_cell_config = types.GenerateContentConfig(
-                system_instruction="You are an AI assistant in a notebook cell. Use kernel inspection tools to understand the notebook state and sandbox tools to test code safely. Focus on the notebook context provided.",
+                system_instruction="You are an AI assistant in a notebook cell. You can analyze images when provided. Use kernel inspection tools to understand the notebook state and sandbox tools to test code safely. Focus on the notebook context provided.",
                 tools=AI_CELL_TOOLS,  # Kernel inspection + sandbox tools only
             )
 
@@ -717,13 +717,9 @@ class GeminiClient(BaseLLMClient):
             content = self._build_content_with_images(final_prompt, images)
 
             # Send the message - tools will be auto-executed
-            # For chat.send_message with parts, we need to wrap in a Content object
+            # chat.send_message accepts either a string or a list of parts directly
             log_debug_message(f"🤖 Sending AI Cell message with auto tool execution...")
-            if isinstance(content, list):
-                # Wrap parts in a Content object for chat API
-                response = chat.send_message(message=types.Content(parts=content, role="user"))
-            else:
-                response = chat.send_message(message=content)
+            response = chat.send_message(message=content)
 
             # Extract tool call steps from chat history
             if hasattr(chat, '_curated_history') and chat._curated_history:

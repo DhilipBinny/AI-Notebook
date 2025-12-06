@@ -111,17 +111,17 @@ echo "[1/5] Building production Docker images..."
 
 if [[ "$BUILD_WEB" == "true" ]]; then
   echo "  Building web (Next.js production)..."
-  docker build -t ${REGISTRY_PREFIX}-web:prod -f web/Dockerfile.prod ./web
+  docker build --no-cache -t ${REGISTRY_PREFIX}-web:prod -f web/Dockerfile.prod ./web
 fi
 
 if [[ "$BUILD_MASTER" == "true" ]]; then
   echo "  Building master-api (FastAPI production)..."
-  docker build -t ${REGISTRY_PREFIX}-master-api:prod -f master/Dockerfile.prod ./master
+  docker build --no-cache -t ${REGISTRY_PREFIX}-master-api:prod -f master/Dockerfile.prod ./master
 fi
 
 if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
   echo "  Building playground (stealth/compiled)..."
-  docker build -t ${REGISTRY_PREFIX}-playground:prod -f ./playground/Dockerfile.stealth ./playground
+  docker build --no-cache -t ${REGISTRY_PREFIX}-playground:prod -f ./playground/Dockerfile.stealth ./playground
 fi
 
 echo ""
@@ -160,7 +160,7 @@ echo ""
 echo "[3/5] Copying files to VM..."
 
 # Create remote directory structure
-ssh ${VM_USER}@${VM_HOST} "mkdir -p ${REMOTE_DIR}/{nginx,dist}"
+ssh ${VM_USER}@${VM_HOST} "mkdir -p ${REMOTE_DIR}/{dist}"
 
 # Copy only the images that were built
 if [[ "$BUILD_WEB" == "true" ]]; then
@@ -202,25 +202,3 @@ REMOTE_SCRIPT
 echo ""
 echo "[5/5] Deployment ready!"
 echo ""
-echo "=============================================="
-echo "  Next Steps on VM (${VM_HOST}):"
-echo "=============================================="
-echo ""
-echo "  1. SSH to VM:"
-echo "     ssh ${VM_USER}@${VM_HOST}"
-echo ""
-echo "  2. Configure environment:"
-echo "     cd ${REMOTE_DIR}"
-echo "     nano .env  # Edit with your production values"
-echo ""
-echo "  3. Ensure network exists:"
-echo "     docker network create ainotebook-network 2>/dev/null || true"
-echo ""
-echo "  4. Start/restart services:"
-echo "     docker compose -f docker-compose.prod.yml up -d"
-echo ""
-echo "  5. Check status:"
-echo "     docker compose -f docker-compose.prod.yml ps"
-echo "     docker compose -f docker-compose.prod.yml logs -f"
-echo ""
-echo "=============================================="
