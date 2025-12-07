@@ -3,41 +3,188 @@ AI Notebook Playground - Headless FastAPI Server
 Container-based kernel execution and LLM chat API.
 No frontend - pure API for Master backend to proxy.
 """
+
+# =============================================================================
+# Imports
+# =============================================================================
+
 import sys
 import os
+import json
+import asyncio
+import queue
+import logging
+import contextvars
 from pathlib import Path
+from typing import Optional, List, Dict, Any
+
+from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI, HTTPException, Header, Depends
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
-
 import backend.config as cfg
 from backend.llm_clients import LLMClient
-from backend.utils.util_func import log_debug_message, log_chat_header, log_user_message, log_llm_response_box
+from backend.llm_clients.base import CancelledException
+from backend.utils.util_func import (
+    log_debug_message,
+    log_chat_header,
+    log_user_message,
+    log_llm_response_box,
+)
 from backend.notebook_state import get_notebook_updates
 from backend.context_manager import ContextManager, ContextFormat
-from backend.session_manager import get_session_manager, set_current_session, clear_current_session
-
+from backend.session_manager import (
+    get_session_manager,
+    set_current_session,
+    clear_current_session,
+)
 from backend.routes import kernel_router, session_router
 
-# Initialize FastAPI
+
+# =============================================================================
+# App Initialization & Constants
+# =============================================================================
+
 app = FastAPI(
     title="AI Notebook Playground",
     version="0.1.0",
-    description="Headless notebook execution container"
+    description="Headless notebook execution container",
 )
+
+# Track active AI Cell clients for cancellation
+# Key: session_id, Value: LLMClient instance
+_active_ai_cell_clients: Dict[str, Any] = {}
 
 # Get internal secret from environment (set by Master when spawning container)
 INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", "")
 
+# =============================================================================
+# Pydantic Models
+# =============================================================================
 
-# === Security ===
+class CellContext(BaseModel):
+    """Cell context passed from frontend."""
+    id: str
+    type: str  # "code", "markdown", or "ai"
+    content: str
+    output: Optional[str] = None
+    cellNumber: Optional[int] = None
+    # AI Cell specific fields
+    ai_prompt: Optional[str] = None  # User's question in AI cell
+    ai_response: Optional[str] = None  # LLM's response in AI cell
+
+
+class ChatMessage(BaseModel):
+    """Chat message in conversation history."""
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class ImageInput(BaseModel):
+    """Image input for visual analysis - supports base64 data or URL."""
+    data: Optional[str] = None  # Base64 encoded image data
+    mime_type: Optional[str] = "image/png"  # MIME type
+    url: Optional[str] = None  # URL-based image
+    filename: Optional[str] = None  # Original filename for display
+
+
+class LLMStep(BaseModel):
+    """A step in LLM processing (tool call, result, etc.)."""
+    type: str
+    name: Optional[str] = None
+    content: str
+    timestamp: Optional[str] = None
+
+
+class PendingToolCall(BaseModel):
+    """A tool call pending user approval."""
+    id: str
+    name: str
+    arguments: Dict[str, Any]
+
+
+# --- Chat Models ---
+
+class ChatRequest(BaseModel):
+    """Request for chat endpoint."""
+    message: str
+    context: List[CellContext] = []
+    history: List[ChatMessage] = []
+    session_id: Optional[str] = None
+    context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
+    images: Optional[List[ImageInput]] = None
+    llm_provider: Optional[str] = None  # Override LLM provider
+    tool_mode: Optional[str] = None  # "auto", "manual", "ai_decide"
+
+
+class ChatResponse(BaseModel):
+    """Response from chat endpoint."""
+    success: bool
+    response: str
+    error: Optional[str] = None
+    updates: List[Dict[str, Any]] = []
+    pending_tool_calls: List[PendingToolCall] = []
+    steps: List[LLMStep] = []
+
+
+class ExecuteToolsRequest(BaseModel):
+    """Request to execute approved tools."""
+    session_id: str
+    approved_tools: List[PendingToolCall]
+
+
+# --- AI Cell Models ---
+
+class AICellRequest(BaseModel):
+    """Request for AI Cell execution."""
+    prompt: str
+    context: List[CellContext] = []
+    images: Optional[List[ImageInput]] = None
+    ai_cell_id: Optional[str] = None  # The AI cell's own ID
+    ai_cell_index: Optional[int] = None  # The AI cell's position (0-based)
+    session_id: Optional[str] = None
+    context_format: str = "xml"
+    llm_provider: Optional[str] = None
+
+
+class AICellResponse(BaseModel):
+    """Response from AI Cell."""
+    success: bool
+    response: str
+    model: str = ""
+    error: Optional[str] = None
+    steps: List[LLMStep] = []
+
+
+class AICellCancelRequest(BaseModel):
+    """Request to cancel an AI Cell execution."""
+    session_id: str
+
+
+class AICellCancelResponse(BaseModel):
+    """Response from AI Cell cancellation."""
+    success: bool
+    message: str
+
+
+# --- LLM Complete Models ---
+
+class LLMCompleteRequest(BaseModel):
+    """Request for simple LLM completion (no tools)."""
+    prompt: str
+    max_tokens: int = 1000
+    llm_provider: Optional[str] = None
+
+
+# =============================================================================
+# Security Dependencies
+# =============================================================================
 
 async def verify_internal_secret(x_internal_secret: str = Header(None)):
-    """Verify requests come from Master API"""
+    """Verify requests come from Master API."""
     if not INTERNAL_SECRET:
         # No secret configured - development mode
         return True
@@ -48,422 +195,161 @@ async def verify_internal_secret(x_internal_secret: str = Header(None)):
     return True
 
 
-# === Pydantic Models ===
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
-class CellContext(BaseModel):
-    id: str
-    type: str  # "code" or "markdown"
-    content: str
-    output: Optional[str] = None
-    cellNumber: Optional[int] = None
+def _build_ai_cell_context(request: AICellRequest, provider: str) -> tuple:
+    """
+    Build context for AI Cell execution.
+
+    Args:
+        request: The AI cell request
+        provider: The resolved LLM provider (from request or default)
+
+    Returns:
+        Tuple of (user_message, llm_images)
+    """
+
+    # AI Cell user message template - contains dynamic context (position, notebook cells, question)
+    # The system prompt with tool instructions is in BaseLLMClient.AI_CELL_SYSTEM_PROMPT
+    AI_CELL_USER_MESSAGE = """POSITION: {position_info}
+
+    NOTEBOOK CONTEXT:
+    {notebook_context}
+
+    USER QUESTION:
+    {user_prompt}
+    """
+
+    # Build positional context with cells above and below
+    ai_cell_index = request.ai_cell_index if request.ai_cell_index is not None else -1
+    total_cells = len(request.context) + 1  # +1 for the AI cell itself
+
+    # Build position info
+    if ai_cell_index >= 0:
+        position_info = f"You are in Cell #{ai_cell_index + 1} of {total_cells} total cells."
+        if ai_cell_index > 0:
+            position_info += f" There are {ai_cell_index} cell(s) ABOVE you."
+        if ai_cell_index < total_cells - 1:
+            position_info += f" There are {total_cells - ai_cell_index - 1} cell(s) BELOW you."
+    else:
+        position_info = "Position unknown."
+
+    # Build notebook context with positional sections using ContextManager
+    context_manager = ContextManager()
+    ctx_format = ContextFormat.XML if request.context_format == "xml" else ContextFormat.PLAIN
+
+    # Convert request context to cell dicts (including AI cell data)
+    cells_data = []
+    for cell in request.context or []:
+        cell_dict = {
+            "id": cell.id,
+            "type": cell.type,
+            "content": cell.content,
+            "output": cell.output,
+            "cellNumber": cell.cellNumber,
+        }
+        # Include AI cell specific fields if present
+        if cell.ai_prompt:
+            cell_dict["ai_prompt"] = cell.ai_prompt
+        if cell.ai_response:
+            cell_dict["ai_response"] = cell.ai_response
+        cells_data.append(cell_dict)
+
+    notebook_context = context_manager.process_positional_context(
+        cells_data,
+        ai_cell_index,
+        format=ctx_format,
+    )
+
+    # Build the user message with context (system prompt is in LLM client)
+    user_message = AI_CELL_USER_MESSAGE.format(
+        position_info=position_info,
+        notebook_context=notebook_context,
+        user_prompt=request.prompt,
+    )
+
+    # Log the user message being sent to LLM for AI Cell
+    print(f"\n{'='*80}")
+    print(f"AI CELL USER MESSAGE TO LLM [{provider.upper()}] (format: {request.context_format})")
+    print(f"{'='*80}")
+    print(user_message)
+    print(f"{'='*80}")
+    print(f"Stats: {len(user_message)} chars total, position: {ai_cell_index + 1}/{total_cells}")
+    print(f"{'='*80}\n")
+
+    # Convert images to LLM format if provided
+    llm_images = None
+    if request.images:
+        llm_images = []
+        for img in request.images:
+            if img.data:
+                llm_images.append({
+                    "data": img.data,
+                    "mime_type": img.mime_type or "image/png",
+                })
+            elif img.url:
+                llm_images.append({"url": img.url})
+
+        if llm_images:
+            log_debug_message(f"AI Cell: {len(llm_images)} image(s) attached")
+
+    return user_message, llm_images
 
 
-class ChatMessage(BaseModel):
-    role: str  # "user" or "assistant"
-    content: str
-
-
-class ImageInput(BaseModel):
-    """Image input for visual analysis."""
-    data: Optional[str] = None  # Base64 encoded image data
-    mime_type: Optional[str] = "image/png"  # MIME type
-    url: Optional[str] = None  # URL-based image
-    filename: Optional[str] = None  # Original filename for display
-
-
-class ChatRequest(BaseModel):
-    message: str
-    context: List[CellContext] = []
-    history: List[ChatMessage] = []
-    session_id: Optional[str] = None
-    context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
-    images: Optional[List[ImageInput]] = None  # Attached images for visual analysis
-    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
-    # Note: all_cells removed - LLM tools now fetch from Master API directly
-
-
-class PendingToolCall(BaseModel):
-    id: str
-    name: str
-    arguments: Dict[str, Any]
-
-
-class LLMStep(BaseModel):
-    type: str
-    name: Optional[str] = None
-    content: str
-    timestamp: Optional[str] = None
-
-
-class ChatResponse(BaseModel):
-    success: bool
-    response: str
-    error: Optional[str] = None
-    updates: List[Dict[str, Any]] = []
-    pending_tool_calls: List[PendingToolCall] = []
-    steps: List[LLMStep] = []
-
-
-# Note: NotebookSyncRequest removed - LLM tools now fetch from Master API directly
-
-
-# === Include Routers ===
+# =============================================================================
+# Include Sub-Routers
+# =============================================================================
 
 app.include_router(kernel_router)
 app.include_router(session_router)
 
 
-# === Health & Status ===
+# =============================================================================
+# Health & Status Routes
+# =============================================================================
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint (no auth required)"""
+    """Health check endpoint (no auth required)."""
     return {
         "status": "ok",
         "service": "playground",
-        "provider": cfg.LLM_PROVIDER
+        "provider": cfg.LLM_PROVIDER,
     }
 
 
 @app.get("/status")
 async def status(authorized: bool = Depends(verify_internal_secret)):
-    """Detailed status (auth required)"""
+    """Detailed status (auth required)."""
     session_manager = get_session_manager()
     return {
         "status": "ok",
         "llm_provider": cfg.LLM_PROVIDER,
         "tool_mode": cfg.TOOL_EXECUTION_MODE,
-        "active_sessions": len(session_manager.sessions)
+        "active_sessions": session_manager.session_count,
     }
 
 
-# === LLM Configuration ===
-
-@app.get("/llm/provider")
-async def get_llm_provider(authorized: bool = Depends(verify_internal_secret)):
-    """Get current LLM provider configuration"""
-    return cfg.get_provider_info()
-
-
-class SetProviderRequest(BaseModel):
-    provider: str
-
-
-@app.post("/llm/provider")
-async def set_llm_provider(
-    request: SetProviderRequest,
-    authorized: bool = Depends(verify_internal_secret)
-):
-    """Switch LLM provider at runtime"""
-    provider = request.provider.lower()
-
-    if provider not in ["ollama", "gemini", "openai", "anthropic"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid provider: {provider}"
-        )
-
-    # Check API keys
-    if provider == "gemini" and not cfg.GEMINI_API_KEY:
-        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured")
-    if provider == "openai" and not cfg.OPENAI_API_KEY:
-        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured")
-    if provider == "anthropic" and not cfg.ANTHROPIC_API_KEY:
-        raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not configured")
-
-    cfg.LLM_PROVIDER = provider
-
-    return {
-        "success": True,
-        "provider": provider,
-        "message": f"LLM provider switched to {provider}"
-    }
-
-
-class SetToolModeRequest(BaseModel):
-    mode: str
-
-
-@app.post("/llm/tool-mode")
-async def set_tool_mode(
-    request: SetToolModeRequest,
-    authorized: bool = Depends(verify_internal_secret)
-):
-    """Set tool execution mode"""
-    mode = request.mode.lower()
-
-    if mode not in ["auto", "manual", "ai_decide"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid mode: {mode}"
-        )
-
-    cfg.TOOL_EXECUTION_MODE = mode
-    cfg.AUTO_FUNCTION_CALLING = (mode == "auto")
-
-    log_debug_message(f"Tool mode set to: {mode}, AUTO_FUNCTION_CALLING: {cfg.AUTO_FUNCTION_CALLING}")
-
-    return {
-        "success": True,
-        "mode": cfg.TOOL_EXECUTION_MODE
-    }
-
-
-@app.get("/llm/tool-mode")
-async def get_tool_mode(authorized: bool = Depends(verify_internal_secret)):
-    """Get current tool execution mode"""
-    return {
-        "mode": cfg.TOOL_EXECUTION_MODE,
-        "auto_function_calling": cfg.AUTO_FUNCTION_CALLING
-    }
-
-
-class LLMCompleteRequest(BaseModel):
-    prompt: str
-    max_tokens: int = 1000
-    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
-
-
-class ImageInput(BaseModel):
-    """Image input for AI Cell - supports base64 data or URL"""
-    data: Optional[str] = None  # Base64 encoded image data
-    mime_type: Optional[str] = "image/png"  # MIME type (image/png, image/jpeg, etc.)
-    url: Optional[str] = None  # URL to image (alternative to base64)
-    filename: Optional[str] = None  # Original filename for display
-
-
-class AICellRequest(BaseModel):
-    """Request for AI Cell execution"""
-    prompt: str
-    context: List[CellContext] = []  # Full notebook context
-    images: Optional[List[ImageInput]] = None  # Pasted/uploaded images
-    ai_cell_id: Optional[str] = None  # The AI cell's own ID for positional awareness
-    ai_cell_index: Optional[int] = None  # The AI cell's position (0-based)
-    session_id: Optional[str] = None
-    context_format: str = "xml"  # "plain" or "xml" - XML recommended for Claude
-    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
-
-
-class AICellResponse(BaseModel):
-    """Response from AI Cell"""
-    success: bool
-    response: str
-    model: str = ""
-    error: Optional[str] = None
-    steps: List[LLMStep] = []  # Tool call steps for UI display
-
-
-# AI Cell system prompt - focused on notebook analysis with tools for inspection and experimentation
-AI_CELL_SYSTEM_PROMPT = """You are an AI assistant embedded in a notebook cell. You can INSPECT and TEST but NOT modify the notebook directly.
-
-POSITION: {position_info}
-
-CRITICAL - RUNTIME vs STATIC DATA:
-- The NOTEBOOK CONTEXT below shows STATIC cell previews (code text, not executed results)
-- For RUNTIME data (actual variable values, types, errors), you MUST use Runtime Inspection tools
-- ALWAYS use runtime_list_variables() for "what variables?" questions - don't just read cell text!
-
-CELL REFERENCES:
-- Cells shown as @cell-xxx or `cell-xxx` (e.g., @cell-abc123 or `cell-abc123`)
-- "above" = cells BEFORE your position, "below" = cells AFTER
-- Use these formats in your responses so users can click to navigate
-
-AVAILABLE TOOLS (organized by category):
-
-1. **Runtime Inspection** (live kernel state - requires running kernel):
-   - runtime_list_variables() - List all variables with types, shapes, values
-   - runtime_get_variable(name) - Detailed variable info (value, attributes)
-   - runtime_get_dataframe(name) - DataFrame columns, dtypes, stats, sample rows
-   - runtime_list_functions() - User-defined functions with signatures
-   - runtime_list_imports() - Actually imported modules with versions
-   - runtime_kernel_status() - Memory usage, execution count
-   - runtime_get_last_error() - Most recent exception with traceback
-
-   USE FOR: "what variables?", "show my data", "what type is x?", "why error?"
-
-2. **Notebook Inspection** (fetches from saved notebook in S3):
-   - get_notebook_overview() - List all cells with IDs, types, and previews
-   - get_notebook_overview(detail="full") - Full cell contents and outputs
-   - get_cell_content(cell_id) - Get specific cell's source code and outputs
-
-   USE FOR: "show me the notebook", "what's in cell 3?", "list all cells"
-
-3. **Sandbox Testing** (isolated kernel for safe experimentation):
-   - sandbox_execute(code) - Run code in ISOLATED kernel (doesn't affect user's work)
-   - sandbox_pip_install(packages) - Install packages in sandbox (e.g., "pandas numpy")
-   - sandbox_sync_from_main(["var1", "var2"]) - Copy variables to sandbox for testing
-   - sandbox_reset() - Clear sandbox state
-   - sandbox_status() - Check if sandbox is running
-
-   USE FOR: Testing code before suggesting, installing packages for testing
-
-TOOL SELECTION GUIDE:
-- "What variables do I have?" → runtime_list_variables() (Runtime)
-- "What's in my DataFrame?" → runtime_get_dataframe("df") (Runtime)
-- "Why did this error?" → runtime_get_last_error() (Runtime)
-- "Show me the notebook" → get_notebook_overview() (Notebook)
-- "What's in cell 3?" → get_cell_content(cell_id) (Notebook)
-- "Will this code work?" → sandbox_execute(code) (Sandbox)
-- "Install pandas to test" → sandbox_pip_install("pandas") (Sandbox)
-
-WORKFLOW:
-1. User asks about data → runtime_list_variables() or runtime_get_dataframe() (Runtime)
-2. Need notebook structure → get_notebook_overview() (Notebook)
-3. Suggesting code → sandbox_execute() to verify it works (Sandbox)
-4. Reference cells as @cell-xxx or `cell-xxx` (clickable in UI)
-
-OUTPUT FORMAT:
-- Wrap code in ```python blocks
-- Show sandbox output when helpful
-- Reference cells as @cell-xxx or `cell-xxx`
-- Be concise
-
-{notebook_context}
-
-USER QUESTION:
-{user_prompt}
-"""
-
-
-@app.post("/ai-cell/run", response_model=AICellResponse)
-async def run_ai_cell(
-    request: AICellRequest,
-    authorized: bool = Depends(verify_internal_secret)
-):
-    """
-    Run an AI Cell - inline Q&A with notebook context and web search.
-    No tool calling for cell modification - just analysis and suggestions.
-    """
-    try:
-        log_debug_message(f"🤖 AI Cell request: {request.prompt[:100]}...")
-
-        # Build positional context with cells above and below
-        ai_cell_index = request.ai_cell_index if request.ai_cell_index is not None else -1
-        total_cells = len(request.context) + 1  # +1 for the AI cell itself
-
-        # Build position info
-        if ai_cell_index >= 0:
-            position_info = f"You are in Cell #{ai_cell_index + 1} of {total_cells} total cells."
-            if ai_cell_index > 0:
-                position_info += f" There are {ai_cell_index} cell(s) ABOVE you."
-            if ai_cell_index < total_cells - 1:
-                position_info += f" There are {total_cells - ai_cell_index - 1} cell(s) BELOW you."
-        else:
-            position_info = "Position unknown."
-
-        # Build notebook context with positional sections using ContextManager
-        # Supports both plain text and XML formats
-        context_manager = ContextManager()
-        ctx_format = ContextFormat.XML if request.context_format == "xml" else ContextFormat.PLAIN
-
-        # Convert request context to cell dicts
-        cells_data = [
-            {
-                "id": cell.id,
-                "type": cell.type,
-                "content": cell.content,
-                "output": cell.output,
-                "cellNumber": cell.cellNumber
-            }
-            for cell in request.context
-        ] if request.context else []
-
-        notebook_context = context_manager.process_positional_context(
-            cells_data,
-            ai_cell_index,
-            format=ctx_format
-        )
-
-        # Build the prompt with context
-        full_prompt = AI_CELL_SYSTEM_PROMPT.format(
-            position_info=position_info,
-            notebook_context=notebook_context,
-            user_prompt=request.prompt
-        )
-
-        # Log the FULL prompt being sent to LLM for AI Cell
-        print(f"\n{'='*80}")
-        print(f"🤖 AI CELL FULL PROMPT TO LLM [{cfg.LLM_PROVIDER.upper()}] (format: {request.context_format})")
-        print(f"{'='*80}")
-        print(full_prompt)
-        print(f"{'='*80}")
-        print(f"📊 Stats: {len(full_prompt)} chars total, position: {ai_cell_index + 1}/{total_cells}")
-        print(f"{'='*80}\n")
-
-        # Set up session for AI cell tools to access main kernel
-        from backend.session_manager import get_session_manager, set_current_session
-        session_id = request.session_id or "ai-cell-default"
-        session = get_session_manager().get_or_create_session(session_id, "ai-cell")
-        set_current_session(session_id)
-
-        # Use LLM client with AI cell tools (inspection + sandbox)
-        from backend.llm_clients import LLMClient
-        client = LLMClient(provider=request.provider)
-
-        # Convert images to LLM format if provided
-        llm_images = None
-        if request.images:
-            llm_images = []
-            for img in request.images:
-                if img.data:
-                    llm_images.append({
-                        "data": img.data,
-                        "mime_type": img.mime_type or "image/png"
-                    })
-                elif img.url:
-                    llm_images.append({"url": img.url})
-
-            if llm_images:
-                log_debug_message(f"📷 AI Cell: {len(llm_images)} image(s) attached")
-
-        # AI cells now have access to kernel inspection and sandbox tools
-        result = client.ai_cell_with_tools(full_prompt, images=llm_images)
-        response_text = result.get("response", "")
-        llm_steps = result.get("steps", [])
-
-        log_debug_message(f"🤖 AI Cell response: {len(response_text)} chars, {len(llm_steps)} steps")
-
-        return AICellResponse(
-            success=True,
-            response=response_text,
-            model=cfg.LLM_PROVIDER,
-            steps=[LLMStep(**step) for step in llm_steps]
-        )
-
-    except Exception as e:
-        # Log error with full traceback for debugging
-        import traceback
-        error_traceback = traceback.format_exc()
-        log_debug_message(f"🤖 AI Cell error: {e}\n{error_traceback}")
-
-        # Return user-friendly error message
-        error_msg = str(e)
-        if "API" in error_msg or "key" in error_msg.lower():
-            error_msg = "LLM API error. Please check your API key configuration."
-        elif "timeout" in error_msg.lower():
-            error_msg = "Request timed out. Please try again."
-
-        return AICellResponse(
-            success=False,
-            response="",
-            error=error_msg
-        )
-
+# =============================================================================
+# LLM Complete Route (Simple completion without tools)
+# =============================================================================
 
 @app.post("/llm/complete")
 async def llm_complete(
     request: LLMCompleteRequest,
-    authorized: bool = Depends(verify_internal_secret)
+    authorized: bool = Depends(verify_internal_secret),
 ):
     """
     Simple text completion without tools.
     Used for summarization and other simple LLM tasks.
     """
     try:
-        log_debug_message(f"LLM complete request: {request.prompt[:200]}...")
+        provider = request.llm_provider or cfg.LLM_PROVIDER
+        log_debug_message(f"LLM complete request (provider={provider}): {request.prompt[:200]}...")
 
-        # Use LLMClient's chat_completion method
-        client = LLMClient(provider=request.provider)
+        client = LLMClient(provider=provider)
         response_text = client.chat_completion(request.prompt, request.max_tokens)
 
         log_debug_message(f"LLM complete response: {response_text[:200]}...")
@@ -482,33 +368,257 @@ async def llm_complete(
         }
 
 
-# === Chat Endpoints ===
-# Note: Notebook sync endpoint removed - LLM tools now fetch from Master API directly
+# =============================================================================
+# AI Cell Routes
+# =============================================================================
+
+@app.post("/ai-cell/run")
+async def run_ai_cell(
+    request: AICellRequest,
+    authorized: bool = Depends(verify_internal_secret),
+):
+    """
+    Run an AI Cell with unified SSE response.
+
+    Always returns Server-Sent Events (SSE) stream.
+    When AI_CELL_STREAMING_ENABLED=true: sends real-time progress events
+    When AI_CELL_STREAMING_ENABLED=false: only sends final 'done' event
+
+    SSE Events:
+    - event: thinking - LLM is processing
+    - event: llm_thinking - LLM reasoning/thinking content
+    - event: tool_call - Tool is being called with args
+    - event: tool_result - Tool execution result
+    - event: done - Final response with all steps
+    - event: error - Error occurred
+    """
+    session_id = request.session_id
+
+    # Validate session_id - required for AI cell
+    if not session_id:
+        async def error_generator():
+            yield f"event: error\ndata: {json.dumps({'error': 'session_id is required for AI cell execution'})}\n\n"
+        return StreamingResponse(error_generator(), media_type="text/event-stream")
+
+    # Thread-safe queue for progress events (only used in streaming mode)
+    progress_queue: queue.Queue = queue.Queue()
+
+    def progress_callback(event_type: str, data: Any = None):
+        """Callback that puts progress events into the queue."""
+        progress_queue.put({"event": event_type, "data": data})
+
+    async def event_generator():
+        """Generate SSE events - unified for both streaming and non-streaming modes."""
+        provider = request.llm_provider or cfg.LLM_PROVIDER
+        client = LLMClient(provider=provider)
+        _active_ai_cell_clients[session_id] = client
+
+        streaming_enabled = cfg.AI_CELL_STREAMING_ENABLED
+        log_debug_message(f"AI Cell: session={session_id}, provider={provider}, streaming={streaming_enabled}")
+
+        try:
+            # Build context
+            user_message, llm_images = _build_ai_cell_context(request, provider)
+
+            # Set up session for AI cell tools to access main kernel
+            # The session ensures kernel is ready and set_current_session allows LLM tools to access it
+            try:
+                session = get_session_manager().get_or_create_session(session_id)
+                set_current_session(session_id)
+                log_debug_message(f"Session ready: {session_id}, kernel_alive: {session.kernel.is_alive()}")
+            except RuntimeError as e:
+                log_debug_message(f"AI Cell session error: {e}")
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                return
+
+            if streaming_enabled:
+                # === STREAMING MODE: Send real-time progress events ===
+                client.set_progress_callback(progress_callback)
+
+                # Send initial "thinking" event
+                yield f"event: thinking\ndata: {json.dumps({'message': 'Starting AI analysis...'})}\n\n"
+
+                # Run LLM in thread pool (allows progress events to be sent)
+                # Copy context to thread so session is available for LLM tools (sandbox, etc.)
+                ctx = contextvars.copy_context()
+                def run_llm():
+                    return ctx.run(client.ai_cell_with_tools, user_message, images=llm_images)
+
+                loop = asyncio.get_event_loop()
+                llm_future = loop.run_in_executor(None, run_llm)
+
+                # Poll for progress events while LLM is running
+                while not llm_future.done():
+                    try:
+                        try:
+                            event = progress_queue.get_nowait()
+                            event_type = event["event"]
+                            event_data = event["data"] or {}
+
+                            if event_type == "thinking":
+                                thinking_content = event_data.get("content", "")
+                                thinking_iteration = event_data.get("iteration", 1)
+                                if thinking_content:
+                                    log_debug_message(f"SSE sending llm_thinking: {len(thinking_content)} chars, iteration {thinking_iteration}")
+                                    yield f"event: llm_thinking\ndata: {json.dumps({'content': thinking_content, 'iteration': thinking_iteration})}\n\n"
+                            elif event_type == "tool_call":
+                                yield f"event: tool_call\ndata: {json.dumps(event_data)}\n\n"
+                            elif event_type == "tool_result":
+                                yield f"event: tool_result\ndata: {json.dumps(event_data)}\n\n"
+                            elif event_type == "iteration_start":
+                                iteration_num = event_data.get("iteration", 1)
+                                yield f"event: thinking\ndata: {json.dumps({'message': f'Iteration {iteration_num}...'})}\n\n"
+                            elif event_type == "iteration_end":
+                                if event_data.get("final"):
+                                    yield f"event: thinking\ndata: {json.dumps({'message': 'Finalizing response...'})}\n\n"
+                        except queue.Empty:
+                            pass
+
+                        await asyncio.sleep(0.05)
+                    except Exception as e:
+                        log_debug_message(f"Error in progress polling: {e}")
+
+                # Get final result
+                result = await llm_future
+
+                # Drain any remaining events from the queue
+                while True:
+                    try:
+                        event = progress_queue.get_nowait()
+                        event_type = event["event"]
+                        event_data = event["data"] or {}
+
+                        if event_type == "thinking":
+                            thinking_content = event_data.get("content", "")
+                            thinking_iteration = event_data.get("iteration", 1)
+                            if thinking_content:
+                                log_debug_message(f"SSE sending llm_thinking (drain): {len(thinking_content)} chars")
+                                yield f"event: llm_thinking\ndata: {json.dumps({'content': thinking_content, 'iteration': thinking_iteration})}\n\n"
+                        elif event_type == "tool_call":
+                            yield f"event: tool_call\ndata: {json.dumps(event_data)}\n\n"
+                        elif event_type == "tool_result":
+                            yield f"event: tool_result\ndata: {json.dumps(event_data)}\n\n"
+                    except queue.Empty:
+                        break
+
+            else:
+                # === NON-STREAMING MODE: Just run and return final result ===
+                log_debug_message("AI Cell running in non-streaming mode")
+                result = await asyncio.to_thread(client.ai_cell_with_tools, user_message, images=llm_images)
+
+            # Send final 'done' event (both modes)
+            response_text = result.get("response", "")
+            llm_steps = result.get("steps", [])
+            was_cancelled = result.get("cancelled", False)
+            thinking_content = result.get("thinking", "")
+
+            final_data = {
+                "success": not was_cancelled,
+                "response": response_text,
+                "model": provider,  # Use actual provider used, not config default
+                "steps": llm_steps,
+                "cancelled": was_cancelled,
+                "thinking": thinking_content if thinking_content else None,
+            }
+            log_debug_message(f"SSE sending done event (thinking: {len(thinking_content)} chars)")
+            yield f"event: done\ndata: {json.dumps(final_data)}\n\n"
+
+        except CancelledException:
+            yield f"event: done\ndata: {json.dumps({'success': False, 'response': '[Cancelled by user]', 'cancelled': True, 'steps': []})}\n\n"
+        except Exception as e:
+            import traceback
+            log_debug_message(f"AI Cell error: {e}\n{traceback.format_exc()}")
+            error_msg = str(e)
+            if "API" in error_msg or "key" in error_msg.lower():
+                error_msg = "LLM API error. Please check your API key configuration."
+            elif "timeout" in error_msg.lower():
+                error_msg = "Request timed out. Please try again."
+            yield f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n"
+        finally:
+            # Clean up
+            if session_id in _active_ai_cell_clients:
+                del _active_ai_cell_clients[session_id]
+                log_debug_message(f"AI Cell: Unregistered client for session {session_id}")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
+
+@app.post("/ai-cell/cancel", response_model=AICellCancelResponse)
+async def cancel_ai_cell(
+    request: AICellCancelRequest,
+    authorized: bool = Depends(verify_internal_secret),
+):
+    """
+    Cancel a running AI Cell execution.
+    This will stop the current tool execution loop at the next cancellation check point.
+    """
+    try:
+        session_id = request.session_id
+
+        if session_id not in _active_ai_cell_clients:
+            log_debug_message(f"Cancel request: No active AI Cell for session {session_id}")
+            return AICellCancelResponse(
+                success=False,
+                message="No active AI Cell execution found for this session",
+            )
+
+        client = _active_ai_cell_clients[session_id]
+        client.cancel()
+
+        log_debug_message(f"Cancel request: Sent cancellation signal for session {session_id}")
+
+        return AICellCancelResponse(
+            success=True,
+            message="Cancellation signal sent. The AI Cell will stop at the next check point.",
+        )
+
+    except Exception as e:
+        log_debug_message(f"Cancel request error: {e}")
+        return AICellCancelResponse(
+            success=False,
+            message=f"Failed to cancel: {str(e)}",
+        )
+
+
+# =============================================================================
+# Chat Routes
+# =============================================================================
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_llm(
     request: ChatRequest,
-    authorized: bool = Depends(verify_internal_secret)
+    authorized: bool = Depends(verify_internal_secret),
 ):
-    """Chat with the LLM assistant"""
+    """Chat with the LLM assistant."""
     try:
-        from datetime import datetime
+        # Use provider and tool_mode from request body if specified
+        provider = request.llm_provider or cfg.LLM_PROVIDER
+        tool_mode = request.tool_mode or cfg.TOOL_EXECUTION_MODE
 
-        # Pretty print chat request header (use request.provider if provided, else default)
-        provider_display = (request.provider or cfg.LLM_PROVIDER).upper()
-        log_chat_header(provider_display, cfg.TOOL_EXECUTION_MODE, len(request.context) if request.context else 0)
+        # Pretty print chat request header
+        log_chat_header(provider.upper(), tool_mode, len(request.context) if request.context else 0)
         log_user_message(request.message)
 
-        # Get or create session - this ensures the session exists for tool execution
-        # Note: LLM tools now fetch notebook data from Master API (no local sync needed)
+        # Get or create session - ensures session exists for tool execution
+        # The session ensures kernel is ready and set_current_session allows LLM tools to access it
         if request.session_id:
-            session_manager = get_session_manager()
-            session = session_manager.get_or_create_session(request.session_id, "notebook")
-            log_debug_message(f"Session ready: {request.session_id}, kernel_alive: {session.kernel.is_alive()}")
-            set_current_session(request.session_id)
+            try:
+                session = get_session_manager().get_or_create_session(request.session_id)
+                set_current_session(request.session_id)
+                log_debug_message(f"Session ready: {request.session_id}, kernel_alive: {session.kernel.is_alive()}")
+            except RuntimeError as e:
+                log_debug_message(f"Chat session error: {e}")
+                return ChatResponse(success=False, response="", error=str(e))
 
         # Build context string using ContextManager (with fallback to simple format)
-        # Use XML format for Claude (recommended), plain for others or as configured
         context_str = ""
         if request.context:
             try:
@@ -519,16 +629,15 @@ async def chat_with_llm(
                         "type": cell.type,
                         "content": cell.content,
                         "output": cell.output,
-                        "cellNumber": cell.cellNumber
+                        "cellNumber": cell.cellNumber,
                     }
                     for cell in request.context
                 ]
-                # Parse context format from request
                 ctx_format = ContextFormat.XML if request.context_format == "xml" else ContextFormat.PLAIN
                 context_str = context_manager.process_context(cells_data, format=ctx_format)
             except Exception as e:
                 # Fallback to simple format if context manager fails
-                log_debug_message(f"⚠️ Context manager error, using simple format: {e}")
+                log_debug_message(f"Context manager error, using simple format: {e}")
                 context_str = "\n\n--- NOTEBOOK CONTEXT ---\n"
                 for cell in request.context:
                     cell_num = cell.cellNumber if cell.cellNumber else "?"
@@ -537,9 +646,9 @@ async def chat_with_llm(
                         context_str += f"\nOutput:\n```\n{cell.output}\n```"
                 context_str += "\n--- END CONTEXT ---\n"
 
-        # Initialize LLM client
+        # Initialize LLM client with provider from request
         try:
-            client = LLMClient(provider=request.provider)
+            client = LLMClient(provider=provider)
         except Exception as e:
             return ChatResponse(success=False, response="", error=str(e))
 
@@ -548,7 +657,7 @@ async def chat_with_llm(
         for msg in request.history:
             llm_history.append({
                 "role": "user" if msg.role == "user" else "model",
-                "parts": [msg.content]
+                "parts": [msg.content],
             })
         client.set_history(llm_history)
 
@@ -557,18 +666,17 @@ async def chat_with_llm(
         if context_str:
             full_message = f"=== NOTEBOOK CONTEXT ===\n\n{context_str}\n\n[MESSAGE]\n{request.message}"
 
-        # Log the FULL message being sent to LLM (context + user message)
+        # Log the FULL message being sent to LLM
         print(f"\n{'='*80}")
-        print(f"🚀 FULL MESSAGE TO LLM [{cfg.LLM_PROVIDER.upper()}] (format: {request.context_format})")
+        print(f"FULL MESSAGE TO LLM [{provider.upper()}] (format: {request.context_format})")
         print(f"{'='*80}")
         print(full_message)
         print(f"{'='*80}")
-        print(f"📊 Stats: {len(full_message)} chars total, {len(context_str)} context, {len(request.message)} user message")
+        print(f"Stats: {len(full_message)} chars total, {len(context_str)} context, {len(request.message)} user message")
         print(f"{'='*80}\n")
 
-        log_debug_message(f"📤 Sending to {client.provider_name}...")
-        # Pass user_message separately for web search keyword detection
-        # This prevents false triggers from notebook context containing keywords like "find", "search", etc.
+        log_debug_message(f"Sending to {client.provider_name}...")
+
         # Convert images to dict format if present
         images_data = None
         if request.images:
@@ -583,7 +691,7 @@ async def chat_with_llm(
                 if img.data or img.url
             ]
             if images_data:
-                log_debug_message(f"📷 Chat: {len(images_data)} image(s) attached")
+                log_debug_message(f"Chat: {len(images_data)} image(s) attached")
 
         llm_response = client.send_message(full_message, user_message=request.message, images=images_data)
 
@@ -598,23 +706,24 @@ async def chat_with_llm(
                 session_for_steps.clear_llm_steps()
 
         if isinstance(llm_response, dict) and "pending_tool_calls" in llm_response:
-            tools_list = [t.get('name') for t in llm_response.get('pending_tool_calls', [])]
-            log_debug_message(f"🔧 TOOLS CALLED: {', '.join(tools_list)}")
+            tools_list = [t.get("name") for t in llm_response.get("pending_tool_calls", [])]
+            log_debug_message(f"TOOLS CALLED: {', '.join(tools_list)}")
             response_text = llm_response.get("response_text", "")
             all_pending_tools = llm_response.get("pending_tool_calls", [])
 
             # Record tool call steps
             for tool in all_pending_tools:
-                import json
                 args_str = json.dumps(tool.get("arguments", {}), indent=2)
                 if session_for_steps:
                     session_for_steps.add_llm_step("tool_call", args_str, tool.get("name"))
 
             # Handle based on tool mode
-            if cfg.TOOL_EXECUTION_MODE == "auto":
+            if tool_mode == "auto":
                 # Auto-execute all tools
-                tool_calls = [{"id": t["id"], "name": t["name"], "arguments": t["arguments"]}
-                             for t in all_pending_tools]
+                tool_calls = [
+                    {"id": t["id"], "name": t["name"], "arguments": t["arguments"]}
+                    for t in all_pending_tools
+                ]
                 exec_response = client.execute_approved_tools(tool_calls)
 
                 if isinstance(exec_response, dict):
@@ -624,16 +733,18 @@ async def chat_with_llm(
 
                 llm_steps = session_for_steps.get_llm_steps() if session_for_steps else []
 
-            elif cfg.TOOL_EXECUTION_MODE == "ai_decide":
+            elif tool_mode == "ai_decide":
                 # AI decides which tools need approval
                 from backend.agent_roles import validate_tool_calls
-                validation_result = validate_tool_calls(all_pending_tools, provider=cfg.LLM_PROVIDER)
+                validation_result = validate_tool_calls(all_pending_tools, provider=provider)
                 safe_tools = validation_result["safe_tools"]
                 unsafe_tools = validation_result["unsafe_tools"]
 
                 if safe_tools:
-                    safe_tool_calls = [{"id": t["id"], "name": t["name"], "arguments": t["arguments"]}
-                                      for t in safe_tools]
+                    safe_tool_calls = [
+                        {"id": t["id"], "name": t["name"], "arguments": t["arguments"]}
+                        for t in safe_tools
+                    ]
                     exec_response = client.execute_approved_tools(safe_tool_calls)
 
                     if isinstance(exec_response, dict) and "pending_tool_calls" in exec_response:
@@ -641,8 +752,10 @@ async def chat_with_llm(
                         response_text = exec_response.get("response_text", "")
                         for t in additional_tools:
                             unsafe_tools.append({
-                                "id": t["id"], "name": t["name"], "arguments": t["arguments"],
-                                "validation": {"reason": "Additional tool requested"}
+                                "id": t["id"],
+                                "name": t["name"],
+                                "arguments": t["arguments"],
+                                "validation": {"reason": "Additional tool requested"},
                             })
 
                     if isinstance(exec_response, dict):
@@ -651,10 +764,15 @@ async def chat_with_llm(
                         response_text = exec_response
 
                 if unsafe_tools:
-                    pending_tools = [{
-                        "id": t["id"], "name": t["name"], "arguments": t["arguments"],
-                        "validation_reason": t.get("validation", {}).get("reason", "Requires approval")
-                    } for t in unsafe_tools]
+                    pending_tools = [
+                        {
+                            "id": t["id"],
+                            "name": t["name"],
+                            "arguments": t["arguments"],
+                            "validation_reason": t.get("validation", {}).get("reason", "Requires approval"),
+                        }
+                        for t in unsafe_tools
+                    ]
 
                     # Store client state
                     if request.session_id:
@@ -663,6 +781,7 @@ async def chat_with_llm(
                             session.pending_client = client
                 else:
                     llm_steps = session_for_steps.get_llm_steps() if session_for_steps else []
+
             else:
                 # Manual mode - all tools need approval
                 log_debug_message(f"Manual mode - returning {len(all_pending_tools)} tools for approval")
@@ -679,7 +798,7 @@ async def chat_with_llm(
         else:
             response_text = llm_response if isinstance(llm_response, str) else str(llm_response)
             llm_steps = session_for_steps.get_llm_steps() if session_for_steps else []
-            log_debug_message(f"💭 NO TOOLS - Direct response")
+            log_debug_message("NO TOOLS - Direct response")
 
         # Get notebook updates
         updates = get_notebook_updates(session_id=request.session_id)
@@ -698,7 +817,7 @@ async def chat_with_llm(
             response=response_text,
             updates=updates,
             pending_tool_calls=pending_tools,
-            steps=[LLMStep(**step) for step in llm_steps]
+            steps=[LLMStep(**step) for step in llm_steps],
         )
 
     except Exception as e:
@@ -706,33 +825,24 @@ async def chat_with_llm(
         return ChatResponse(success=False, response="", error=str(e))
 
 
-class ExecuteToolsRequest(BaseModel):
-    session_id: str
-    approved_tools: List[PendingToolCall]
-    provider: Optional[str] = None  # LLM provider override (gemini, openai, anthropic, ollama)
-
-
 @app.post("/chat/execute-tools", response_model=ChatResponse)
 async def execute_approved_tools(
     request: ExecuteToolsRequest,
-    authorized: bool = Depends(verify_internal_secret)
+    authorized: bool = Depends(verify_internal_secret),
 ):
-    """Execute approved tool calls"""
+    """Execute approved tool calls."""
     try:
-        from datetime import datetime
-        import json
-
         log_debug_message(f"Execute-tools request: session_id={request.session_id}, tools={[t.name for t in request.approved_tools]}")
 
-        session_manager = get_session_manager()
-        session = session_manager.get_session(request.session_id)
+        session = get_session_manager().get_session(request.session_id)
 
         if not session:
             log_debug_message(f"Session not found: {request.session_id}")
             return ChatResponse(success=False, response="", error="Session not found")
 
+        log_debug_message(f"Session ready: {request.session_id}, kernel_alive: {session.kernel.is_alive()}")
+
         client = session.pending_client
-        log_debug_message(f"Pending client: {client}, type: {type(client)}")
         if not client:
             log_debug_message("No pending client found!")
             return ChatResponse(success=False, response="", error="No pending tool calls")
@@ -770,7 +880,7 @@ async def execute_approved_tools(
                     {"id": t["id"], "name": t["name"], "arguments": t["arguments"]}
                     for t in pending_tools
                 ],
-                steps=[LLMStep(**step) for step in llm_steps]
+                steps=[LLMStep(**step) for step in llm_steps],
             )
 
         if isinstance(exec_result, dict):
@@ -789,7 +899,10 @@ async def execute_approved_tools(
         log_debug_message(f"Final response_text: {response_text[:200] if response_text else 'EMPTY'}...")
 
         if response_text and response_text != "Tool executed successfully.":
-            session.add_llm_step("text", response_text[:200] + "..." if len(response_text) > 200 else response_text)
+            session.add_llm_step(
+                "text",
+                response_text[:200] + "..." if len(response_text) > 200 else response_text,
+            )
 
         llm_steps = session.get_llm_steps()
         updates = get_notebook_updates(session_id=request.session_id)
@@ -803,7 +916,7 @@ async def execute_approved_tools(
             success=True,
             response=response_text,
             updates=updates,
-            steps=[LLMStep(**step) for step in llm_steps]
+            steps=[LLMStep(**step) for step in llm_steps],
         )
 
     except Exception as e:
@@ -811,24 +924,27 @@ async def execute_approved_tools(
         return ChatResponse(success=False, response="", error=str(e))
 
 
-# === Logging Filter ===
-
-import logging
+# =============================================================================
+# Logging Configuration
+# =============================================================================
 
 class HealthCheckFilter(logging.Filter):
-    """Filter out health check request logs to reduce noise"""
+    """Filter out health check request logs to reduce noise."""
+
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        # Skip health check logs
-        if 'GET /health' in message:
+        if "GET /health" in message:
             return False
         return True
+
 
 # Apply filter at module load time (works with uvicorn)
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 
-# === Run Server ===
+# =============================================================================
+# Main Entry Point
+# =============================================================================
 
 if __name__ == "__main__":
     import uvicorn
@@ -847,5 +963,5 @@ if __name__ == "__main__":
         "backend.server:app",
         host=HOST,
         port=PORT,
-        log_level="info"
+        log_level="info",
     )

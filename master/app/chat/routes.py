@@ -6,9 +6,12 @@ Uses JSON-based chat history stored in MinIO with the new folder structure:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
+import httpx
+import json
 
 from app.db.session import get_db
 from app.auth.dependencies import get_current_active_user
@@ -480,7 +483,7 @@ async def clear_chat_history(
     }
 
 
-@router.post("/ai-cell/run", response_model=AICellResponse)
+@router.post("/ai-cell/run")
 async def run_ai_cell(
     project_id: str,
     request: AICellRunRequest,
@@ -584,67 +587,65 @@ async def run_ai_cell(
                         "ai_response": ai_response,
                     })
 
-    try:
-        async with httpx.AsyncClient() as client:
-            # Prepare images for forwarding (convert Pydantic models to dicts)
+    # Prepare images for forwarding (convert Pydantic models to dicts)
+    images_data = None
+    if request.images:
+        images_data = [
+            {
+                "data": img.data,
+                "mime_type": img.mime_type,
+                "url": img.url,
+                "filename": img.filename,
+            }
+            for img in request.images
+            if img.data or img.url  # Only include images with actual content
+        ]
+        if not images_data:
             images_data = None
-            if request.images:
-                images_data = [
-                    {
-                        "data": img.data,
-                        "mime_type": img.mime_type,
-                        "url": img.url,
-                        "filename": img.filename,
-                    }
-                    for img in request.images
-                    if img.data or img.url  # Only include images with actual content
-                ]
-                if not images_data:
-                    images_data = None
 
-            # Call AI Cell endpoint with provider in request body (multi-user safe)
-            response = await client.post(
-                f"{playground.internal_url}/ai-cell/run",
-                headers={"X-Internal-Secret": playground.internal_secret},
-                json={
-                    "prompt": request.prompt,
-                    "context": context_list,
-                    "ai_cell_id": request.ai_cell_id,
-                    "ai_cell_index": request.ai_cell_index,
-                    "session_id": project_id,
-                    "context_format": context_format,
-                    "images": images_data,
-                    "provider": llm_provider,  # Pass provider per-request for multi-user safety
-                },
-                timeout=120,  # LLM can take a while
-            )
+    # Stream SSE response from playground to frontend
+    async def stream_sse():
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{playground.internal_url}/ai-cell/run",
+                    headers={"X-Internal-Secret": playground.internal_secret},
+                    json={
+                        "prompt": request.prompt,
+                        "context": context_list,
+                        "ai_cell_id": request.ai_cell_id,
+                        "ai_cell_index": request.ai_cell_index,
+                        "session_id": project_id,
+                        "context_format": context_format,
+                        "images": images_data,
+                        "llm_provider": llm_provider,
+                    },
+                    timeout=120,
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_text.decode()}'})}\n\n"
+                        return
 
-            if response.status_code != 200:
-                return AICellResponse(
-                    success=False,
-                    response="",
-                    error=f"Playground returned error: {response.text}",
-                )
+                    # Stream SSE events from playground to frontend
+                    async for line in response.aiter_lines():
+                        if line:
+                            yield f"{line}\n"
+                        else:
+                            yield "\n"
 
-            data = response.json()
+        except httpx.TimeoutException:
+            yield f"event: error\ndata: {json.dumps({'error': 'Request timed out'})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 
-            return AICellResponse(
-                success=data.get("success", False),
-                response=data.get("response", ""),
-                model=data.get("model", llm_provider),
-                error=data.get("error"),
-                steps=data.get("steps", []),
-            )
-
-    except httpx.TimeoutException:
-        return AICellResponse(
-            success=False,
-            response="",
-            error="Request timed out. The AI is taking too long to respond.",
-        )
-    except Exception as e:
-        return AICellResponse(
-            success=False,
-            response="",
-            error=f"Error: {str(e)}",
-        )
+    return StreamingResponse(
+        stream_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
