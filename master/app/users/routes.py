@@ -53,20 +53,3 @@ async def delete_me(
     await user_service.delete(current_user)
 
 
-@router.get("/me/quota")
-async def get_quota(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Get current user's project quota info.
-    """
-    user_service = UserService(db)
-    current_count = await user_service.count_projects(current_user.id)
-
-    return {
-        "max_projects": current_user.max_projects,
-        "current_projects": current_count,
-        "remaining": current_user.max_projects - current_count,
-        "can_create": current_count < current_user.max_projects,
-    }

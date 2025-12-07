@@ -57,6 +57,13 @@ ENABLE_WEB_SEARCH = os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true
 # Note: Container default is "xml", but UI can override on each call
 CONTEXT_FORMAT = os.environ.get("CONTEXT_FORMAT", "xml")
 
+# === AI Cell Streaming ===
+# Enable real-time SSE progress events for AI Cell execution
+# When enabled: sends thinking, tool_call, tool_result events during execution
+# When disabled: only sends final 'done' event with complete result
+# Both modes use SSE (unified interface), just different verbosity
+AI_CELL_STREAMING_ENABLED = os.environ.get("AI_CELL_STREAMING_ENABLED", "true").lower() == "true"
+
 # === Provider Selection ===
 # Auto-detect default based on availability
 # User can switch via UI dropdown at runtime

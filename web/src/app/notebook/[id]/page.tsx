@@ -10,8 +10,9 @@ import NotebookToolbar from '@/components/notebook/NotebookToolbar'
 import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
 import { useKernel } from '@/hooks/useKernel'
+import { useNotebookUpdates } from '@/hooks/useNotebookUpdates'
 import { ThemeProvider } from '@/contexts/ThemeContext'
-import type { Cell as CellType, Playground, ChatMessage, ImageInput } from '@/types'
+import type { Cell as CellType, CellOutput, Playground, ChatMessage, ImageInput } from '@/types'
 
 // ANSI color code to CSS color mapping
 const ansiColors: Record<number, string> = {
@@ -136,7 +137,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
   const { setUser } = useAuthStore()
   const { currentProject, setCurrentProject } = useProjectsStore()
-  const { cells, setCells, addCell, updateCell, deleteCell, moveCell, isDirty, setDirty } = useNotebookStore()
+  const { cells, setCells, addCell, updateCell, updateCellAiData, updateCellFromServer, deleteCell, deleteCellFromServer, moveCell, isDirty, setDirty } = useNotebookStore()
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -190,33 +191,109 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   // Pass projectId as sessionId so frontend kernel and AI Cell tools use the same kernel
   const kernel = useKernel(playgroundUrl, projectId)
 
-  // Helper to save notebook (for auto-save before chat)
-  const saveNotebook = useCallback(async () => {
+  // Notebook updates hook - receive real-time cell updates from LLM tools via Master API
+  // Uses server-specific update functions that don't overwrite local dirty cells
+  const notebookUpdates = useNotebookUpdates(projectId, {
+    onCellCreated: useCallback((cellId: string, cellIndex: number, content: string, cellType: string) => {
+      console.log(`[NotebookPage] Cell created from server: ${cellId} at index ${cellIndex}`)
+      // Check if cell already exists (avoid duplicates)
+      const existingCell = cells.find(c => c.id === cellId)
+      if (existingCell) {
+        console.log(`[NotebookPage] Cell ${cellId} already exists, skipping creation`)
+        return
+      }
+      // Create a new cell and insert it at the specified index
+      // Note: This uses addCell which marks as dirty, but since this is from server,
+      // we immediately mark the cell as clean after adding
+      const newCell: CellType = {
+        id: cellId,
+        type: cellType as 'code' | 'markdown' | 'raw' | 'ai',
+        source: content,
+        outputs: [],
+        metadata: { cell_id: cellId },
+      }
+      // Use setCells to add without marking dirty (server is source of truth)
+      const newCells = [...cells]
+      const insertIndex = Math.min(cellIndex, newCells.length)
+      newCells.splice(insertIndex, 0, newCell)
+      setCells(newCells)
+    }, [cells, setCells]),
+
+    onCellUpdated: useCallback((cellId: string, cellIndex: number, content: string, cellType?: string) => {
+      console.log(`[NotebookPage] Cell updated from server: ${cellId}`)
+      // Check if cell exists
+      const existingCell = cells.find(c => c.id === cellId)
+      if (!existingCell) {
+        console.log(`[NotebookPage] Cell ${cellId} not found, skipping update`)
+        return
+      }
+      // Use updateCellFromServer which respects local dirty state
+      updateCellFromServer(cellId, {
+        source: content,
+        ...(cellType && { type: cellType as 'code' | 'markdown' | 'raw' | 'ai' }),
+      })
+    }, [cells, updateCellFromServer]),
+
+    onCellDeleted: useCallback((cellId: string, cellIndex: number) => {
+      console.log(`[NotebookPage] Cell deleted from server: ${cellId}`)
+      // Check if cell exists
+      const existingCell = cells.find(c => c.id === cellId)
+      if (!existingCell) {
+        console.log(`[NotebookPage] Cell ${cellId} not found, skipping delete`)
+        return
+      }
+      // Use deleteCellFromServer which doesn't mark notebook as dirty
+      deleteCellFromServer(cellId)
+    }, [cells, deleteCellFromServer]),
+
+    onCellExecuted: useCallback((cellId: string, cellIndex: number, outputs: CellOutput[], executionCount?: number) => {
+      console.log(`[NotebookPage] Cell executed from server: ${cellId}, outputs:`, outputs.length)
+      // Check if cell exists
+      const existingCell = cells.find(c => c.id === cellId)
+      if (!existingCell) {
+        console.log(`[NotebookPage] Cell ${cellId} not found, skipping execution update`)
+        return
+      }
+      // Use updateCellFromServer - outputs don't conflict with local source edits
+      updateCellFromServer(cellId, {
+        outputs,
+        execution_count: executionCount,
+      })
+    }, [cells, updateCellFromServer]),
+  })
+
+  // Core save function - shared by handleSave (manual) and saveNotebook (auto)
+  const saveNotebookCore = useCallback(async (): Promise<boolean> => {
     if (!currentProject) return false
 
-    try {
-      // Save in Jupyter .ipynb standard format
-      const cellsToSave = cells.map((cell) => {
-        const cellToSave = {
-          cell_type: cell.type,  // Jupyter standard field name
-          source: cell.source,
-          outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
-          execution_count: cell.execution_count,
-          metadata: { ...cell.metadata, cell_id: cell.id } as Record<string, unknown>,  // cell_id in metadata only
-          ai_data: cell.type === 'ai' && cell.ai_data ? cell.ai_data : undefined,
-        }
-        return cellToSave
-      })
+    // Build cells in Jupyter .ipynb standard format
+    const cellsToSave = cells.map((cell) => ({
+      cell_type: cell.type,
+      source: cell.source,
+      outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
+      execution_count: cell.execution_count,
+      metadata: { ...cell.metadata, cell_id: cell.id } as Record<string, unknown>,
+      ai_data: cell.type === 'ai' && cell.ai_data ? cell.ai_data : undefined,
+    }))
 
-      await notebooks.save(projectId, cellsToSave as Parameters<typeof notebooks.save>[1])
-      setDirty(false)
-      console.log('Notebook auto-saved before chat')
-      return true
+    await notebooks.save(projectId, cellsToSave as Parameters<typeof notebooks.save>[1])
+    setDirty(false)
+    return true
+  }, [currentProject, projectId, cells, setDirty])
+
+  // Auto-save helper (for chat, AI cell, etc.) - silent, returns success/failure
+  const saveNotebook = useCallback(async (): Promise<boolean> => {
+    try {
+      const success = await saveNotebookCore()
+      if (success) {
+        console.log('Notebook auto-saved')
+      }
+      return success
     } catch (err) {
       console.error('Failed to auto-save notebook:', err)
       return false
     }
-  }, [currentProject, projectId, cells, setDirty])
+  }, [saveNotebookCore])
 
   // Helper to reload notebook from S3 (after LLM tools modify it)
   const reloadNotebook = useCallback(async () => {
@@ -522,7 +599,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     deleteCell(cellId)
   }, [deleteCell])
 
-  // Run AI cell - send prompt to LLM with notebook context
+  // Run AI cell - send prompt to LLM with notebook context (streaming version)
   const handleRunAICell = useCallback(async (
     cellId: string,
     prompt: string,
@@ -544,53 +621,202 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     // Save notebook first to ensure context is up to date
     await saveNotebook()
 
-    // Get all cell IDs for context (excluding the AI cell itself)
+    // Get all cell IDs for context (excluding the AI cell itself, but including other AI cells)
+    // Other AI cells' user_ask_ai and ai_response will be included in context by the backend
     const contextCellIds = cells
-      .filter(c => c.id !== cellId && c.type !== 'ai')
+      .filter(c => c.id !== cellId)
       .map(c => c.id)
 
     // Get AI cell's position for positional awareness
     const aiCellIndex = cells.findIndex(c => c.id === cellId)
 
-    try {
-      const response = await chat.runAICell(
-        projectId,
-        prompt,
-        contextCellIds,
-        llmProvider,
-        cellId,
-        aiCellIndex,
-        contextFormat,
-        images
-      )
-
-      updateCell(cellId, {
-        ai_data: {
-          user_prompt: prompt,
-          llm_response: response.response,
-          status: response.success ? 'completed' : 'error',
-          model: response.model,
-          error: response.error,
-          timestamp: new Date().toISOString(),
-          images: images,
-          steps: response.steps,
+    // Initialize streaming state - clear previous response, steps, thinking, and errors
+    updateCell(cellId, {
+      ai_data: {
+        user_prompt: prompt,
+        llm_response: '',
+        status: 'running',
+        images: images,
+        steps: undefined,  // Clear previous tool steps
+        thinking: undefined,  // Clear previous thinking
+        error: undefined,  // Clear previous error
+        streamState: {
+          thinkingMessage: 'Starting AI analysis...',
+          thinkingSteps: [],
+          streamingSteps: [],
         },
-      })
+      },
+    })
 
-      // Auto-save after AI cell completion to persist the response
-      await saveNotebook()
-    } catch (err) {
-      updateCell(cellId, {
-        ai_data: {
+    // Use unified API (always SSE, real-time progress depends on playground config)
+    chat.runAICell(
+      projectId,
+      prompt,
+      contextCellIds,
+      llmProvider,
+      cellId,
+      aiCellIndex,
+      contextFormat,
+      images,
+      // onEvent - handle streaming progress events
+      // Uses updateCellAiData with functional updater to get FRESH cell state
+      // This avoids stale closure issues where previous event's data gets overwritten
+      (event) => {
+        if (event.type === 'thinking') {
+          // Status message (e.g., "Iteration 1...")
+          const message = (event.data.message as string) || 'Thinking...'
+          const iterMatch = message.match(/Iteration (\d+)/)
+
+          updateCellAiData(cellId, (cell) => {
+            const currentStreamState = cell.ai_data?.streamState || { streamingSteps: [], thinkingSteps: [] }
+            const iteration = iterMatch ? parseInt(iterMatch[1]) : (currentStreamState.currentIteration || 1)
+            return {
+              user_prompt: prompt,
+              llm_response: '',
+              status: 'running',
+              images: images,
+              streamState: {
+                ...currentStreamState,
+                thinkingMessage: message,
+                currentIteration: iteration,
+              },
+            }
+          })
+        } else if (event.type === 'llm_thinking') {
+          // LLM's internal reasoning/thinking process (from extended thinking)
+          const thinkingContent = (event.data.content as string) || ''
+          const iteration = (event.data.iteration as number) || 1
+          console.log('[AICell] Received llm_thinking event, iteration:', iteration, 'content length:', thinkingContent.length)
+
+          const newThinkingStep = {
+            iteration,
+            content: thinkingContent,
+            timestamp: new Date().toISOString(),
+          }
+
+          updateCellAiData(cellId, (cell) => {
+            const currentStreamState = cell.ai_data?.streamState || { streamingSteps: [], thinkingSteps: [] }
+            return {
+              user_prompt: prompt,
+              llm_response: '',
+              status: 'running',
+              images: images,
+              streamState: {
+                ...currentStreamState,
+                thinkingMessage: `Reasoning (Iteration ${iteration})...`,
+                currentIteration: iteration,
+                thinkingSteps: [...(currentStreamState.thinkingSteps || []), newThinkingStep],
+              },
+            }
+          })
+        } else if (event.type === 'tool_call') {
+          const newStep = {
+            type: 'tool_call' as const,
+            name: (event.data.name as string) || '',
+            content: JSON.stringify(event.data.args || {}),
+          }
+
+          updateCellAiData(cellId, (cell) => {
+            const currentStreamState = cell.ai_data?.streamState || { streamingSteps: [], thinkingSteps: [] }
+            return {
+              user_prompt: prompt,
+              llm_response: '',
+              status: 'running',
+              images: images,
+              streamState: {
+                ...currentStreamState,
+                thinkingMessage: `Calling ${event.data.name}...`,
+                currentToolCall: { name: event.data.name as string, args: event.data.args as Record<string, unknown> },
+                streamingSteps: [...currentStreamState.streamingSteps, newStep],
+              },
+            }
+          })
+        } else if (event.type === 'tool_result') {
+          const newStep = {
+            type: 'tool_result' as const,
+            name: (event.data.name as string) || '',
+            content: ((event.data.result as string) || '').slice(0, 500),
+          }
+
+          updateCellAiData(cellId, (cell) => {
+            const currentStreamState = cell.ai_data?.streamState || { streamingSteps: [], thinkingSteps: [] }
+            return {
+              user_prompt: prompt,
+              llm_response: '',
+              status: 'running',
+              images: images,
+              streamState: {
+                ...currentStreamState,
+                thinkingMessage: 'Processing result...',
+                currentToolCall: undefined,
+                streamingSteps: [...currentStreamState.streamingSteps, newStep],
+              },
+            }
+          })
+        }
+      },
+      // onDone - handle final response
+      async (result) => {
+        // Use updateCellAiData to get FRESH thinkingSteps from current cell state
+        // This avoids stale closure issues
+        updateCellAiData(cellId, (cell) => {
+          const thinkingSteps = cell.ai_data?.streamState?.thinkingSteps || []
+
+          // Also check if thinking came in the result (backup method)
+          let finalThinking = thinkingSteps
+          if (thinkingSteps.length === 0 && result.thinking) {
+            // Thinking was included in the done event, create a step from it
+            finalThinking = [{
+              iteration: 1,
+              content: result.thinking as string,
+              timestamp: new Date().toISOString(),
+            }]
+            console.log('[AICell] Using thinking from done event:', (result.thinking as string).length, 'chars')
+          } else if (thinkingSteps.length > 0) {
+            console.log('[AICell] Using accumulated thinkingSteps:', thinkingSteps.length, 'steps')
+          }
+
+          return {
+            user_prompt: prompt,
+            llm_response: result.response,
+            status: result.success ? 'completed' : 'error',
+            model: result.model,
+            error: result.cancelled ? 'Cancelled by user' : undefined,
+            timestamp: new Date().toISOString(),
+            images: images,
+            steps: result.steps,
+            thinking: finalThinking.length > 0 ? finalThinking : undefined, // Persist thinking to ipynb
+            streamState: undefined, // Clear streaming state
+          }
+        })
+
+        // Auto-save after completion
+        await saveNotebook()
+      },
+      // onError - handle errors
+      (error) => {
+        updateCellAiData(cellId, () => ({
           user_prompt: prompt,
           llm_response: '',
           status: 'error',
-          error: err instanceof Error ? err.message : 'Unknown error',
+          error: error,
           images: images,
-        },
-      })
+          streamState: undefined,
+        }))
+      }
+    )
+  }, [playground, projectId, llmProvider, contextFormat, updateCellAiData, saveNotebook])
+
+  // Cancel running AI cell
+  const handleCancelAICell = useCallback(async (cellId: string) => {
+    // Send cancel to backend - it will interrupt the running operation
+    try {
+      const response = await chat.cancelAICell(projectId)
+      console.log('Cancel response:', response)
+    } catch (err) {
+      console.error('Failed to cancel AI cell:', err)
     }
-  }, [cells, playground, projectId, llmProvider, contextFormat, updateCell, saveNotebook])
+  }, [projectId])
 
   // Insert code cells from AI cell suggestion (supports multiple code blocks)
   const handleInsertCodeFromAICell = useCallback((afterCellId: string, codeBlocks: string[]) => {
@@ -725,34 +951,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   }, [cells.length])
 
 
+  // Manual save handler - shows loading state and error popup on failure
   const handleSave = useCallback(async () => {
     if (!currentProject) return
     setIsSaving(true)
     try {
-      // Save notebook to S3 via API (Jupyter .ipynb standard format)
-      const cellsToSave = cells.map((cell) => {
-        const cellToSave = {
-          cell_type: cell.type,  // Jupyter standard field name
-          source: cell.source,
-          outputs: (cell.outputs || []) as unknown as Record<string, unknown>[],
-          execution_count: cell.execution_count,
-          metadata: { ...cell.metadata, cell_id: cell.id } as Record<string, unknown>,  // cell_id in metadata only
-          ai_data: cell.type === 'ai' && cell.ai_data ? cell.ai_data : undefined,
-        }
-        return cellToSave
-      })
-
-      const result = await notebooks.save(projectId, cellsToSave as Parameters<typeof notebooks.save>[1])
-      console.log('Notebook saved:', result)
-      setDirty(false)
-      // Note: No sync needed - LLM tools fetch from Master API directly
+      await saveNotebookCore()
+      console.log('Notebook saved')
     } catch (err) {
       console.error('Failed to save:', err)
       setErrorPopup('Failed to save notebook. Please try again.')
     } finally {
       setIsSaving(false)
     }
-  }, [currentProject, projectId, cells, setDirty])
+  }, [currentProject, saveNotebookCore])
 
   const handleExport = useCallback(async () => {
     if (!currentProject) return
@@ -952,6 +1164,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
           return  // Let the textarea handle normal typing
         }
+        // Also skip Ctrl+A to allow select-all in textarea
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+          return  // Let the textarea handle select-all
+        }
       }
 
       // Escape - exit edit mode and move in last navigation direction
@@ -1012,13 +1228,39 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             console.log('[Page Global] Shift+Enter already handled by cell - skipping')
             return
           }
-          // Do nothing if any cell is already running
+
+          const selectedCell = cells.find(c => c.id === selectedCellId)
+          if (!selectedCell) return
+
+          // Handle AI cells differently - they don't use kernel
+          if (selectedCell.type === 'ai') {
+            // Don't run if AI cell is already running
+            if (selectedCell.ai_data?.status === 'running') {
+              console.log('[Page Global] Shift+Enter ignored - AI cell is already running')
+              return
+            }
+            e.preventDefault()
+            console.log('[Page Global] Shift+Enter in COMMAND mode - running AI cell')
+            // Run AI cell with existing prompt
+            const prompt = selectedCell.ai_data?.user_prompt || ''
+            const images = selectedCell.ai_data?.images
+            if (prompt.trim() || (images && images.length > 0)) {
+              handleRunAICell(selectedCellId, prompt, images)
+            }
+            const currentIndex = getSelectedCellIndex()
+            if (currentIndex < cells.length - 1) {
+              navigateToCell(currentIndex + 1)
+            }
+            return
+          }
+
+          // For code cells, check if kernel is busy
           if (kernel.runningCellId !== null) {
             console.log('[Page Global] Shift+Enter ignored - a cell is already running')
             return
           }
           e.preventDefault()
-          console.log('[Page Global] Shift+Enter in COMMAND mode - running cell and moving to next')
+          console.log('[Page Global] Shift+Enter in COMMAND mode - running code cell and moving to next')
           handleRunCell(selectedCellId)
           const currentIndex = getSelectedCellIndex()
           if (currentIndex < cells.length - 1) {
@@ -1180,7 +1422,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells, selectedCellId, enterEditMode, exitEditMode, handleRunCell, lastNavDirection, clipboardCell, deletedCells, addCell, deleteCell, updateCell])
+  }, [handleSave, isEditMode, getSelectedCellIndex, navigateToCell, cells, selectedCellId, enterEditMode, exitEditMode, handleRunCell, handleRunAICell, lastNavDirection, clipboardCell, deletedCells, addCell, deleteCell, updateCell, kernel.runningCellId])
 
   const handleStartKernel = useCallback(async () => {
     // Check if playground is running first
@@ -1334,9 +1576,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           ])
         }
 
-        // Reload notebook from S3 to get LLM tool changes
-        // LLM tools modify S3 directly, so we need to refresh UI
-        await reloadNotebook()
+        // Only reload from S3 if WebSocket is not connected (fallback)
+        // When WebSocket is connected, we get real-time updates automatically
+        if (notebookUpdates.status !== 'connected') {
+          console.log('[Chat] WebSocket not connected, reloading notebook from S3')
+          await reloadNotebook()
+        }
       } else {
         // Check if it's a playground/kernel error - show popup instead of saving to chat
         const errorMsg = response.error || 'Unknown error'
@@ -1361,7 +1606,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, cells, toolMode, llmProvider, contextFormat, playground, isDirty, saveNotebook, reloadNotebook])
+  }, [projectId, cells, toolMode, llmProvider, contextFormat, playground, isDirty, saveNotebook, reloadNotebook, notebookUpdates.status])
 
   const handleApproveTools = useCallback(async (tools: PendingToolCall[]) => {
     setChatLoading(true)
@@ -1429,8 +1674,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           }
         }
 
-        // Reload notebook from S3 to get LLM tool changes
-        await reloadNotebook()
+        // Only reload from S3 if WebSocket is not connected (fallback)
+        // When WebSocket is connected, we get real-time updates automatically
+        if (notebookUpdates.status !== 'connected') {
+          console.log('[Chat] WebSocket not connected, reloading notebook from S3')
+          await reloadNotebook()
+        }
       } else {
         const errorMsg = response.error || 'Tool execution failed'
         if (errorMsg.includes('playground') || errorMsg.includes('kernel') ||
@@ -1452,7 +1701,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     } finally {
       setChatLoading(false)
     }
-  }, [projectId, toolMode, llmProvider, contextFormat, reloadNotebook])
+  }, [projectId, toolMode, llmProvider, contextFormat, reloadNotebook, notebookUpdates.status])
 
   const handleRejectTools = useCallback(() => {
     setPendingTools([])
@@ -1728,6 +1977,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                         onMoveDown={() => moveCell(cell.id, 'down')}
                         onUpdate={(updates) => updateCell(cell.id, updates)}
                         onRunAICell={handleRunAICell}
+                        onCancelAICell={handleCancelAICell}
                         onInsertCodeCells={handleInsertCodeFromAICell}
                         onScrollToCell={handleScrollToCell}
                       />

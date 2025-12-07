@@ -10,11 +10,11 @@ Models like llama3.1, mistral, and qwen2.5 support tools.
 
 import json
 import copy
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable
 from openai import OpenAI
 
 from backend.llm_clients.openai import OpenAIClient, _build_openai_tools, TOOL_MAP, _safe_json_loads
-from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import AI_CELL_TOOLS
 import backend.config as cfg
@@ -32,6 +32,8 @@ class OllamaClient(BaseLLMClient):
             model_name: Model to use (default: qwen2.5-coder:7b)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
         """
+        super().__init__()  # Initialize base class (cancellation support)
+
         # Initialize OpenAI client with Ollama endpoint
         self.client = OpenAI(
             base_url=base_url,
@@ -48,6 +50,10 @@ class OllamaClient(BaseLLMClient):
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
         self._pending_tool_calls: List[Dict[str, Any]] = []
+
+        # Cache AI Cell tools (built once)
+        self._ai_cell_tools_cache: Optional[List[Dict[str, Any]]] = None
+        self._ai_cell_tool_map_cache: Optional[Dict[str, Callable]] = None
 
         log_debug_message(f"Ollama client initialized: {base_url} with model {model_name}")
         log_debug_message(f"Auto function calling: {self.auto_function_calling}")
@@ -252,8 +258,21 @@ class OllamaClient(BaseLLMClient):
             log_debug_message(f"✅ Ollama response (no tools) - {len(final_response)} chars")
             return final_response
 
-    def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
-        """Execute approved tool calls and get the final response."""
+    def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
+        """
+        Execute approved tool calls and get the response.
+
+        In manual mode, if the model wants more tools after execution,
+        returns them for user approval instead of auto-executing.
+
+        Args:
+            approved_tool_calls: List of approved tools to execute
+                                [{"id": "...", "name": "...", "arguments": {...}}, ...]
+
+        Returns:
+            str: Final response text if no more tools needed
+            dict: {"pending_tool_calls": [...], "response_text": "..."} if more tools needed
+        """
         try:
             if not self._pending_messages:
                 return "Error: No pending tool calls to execute"
@@ -274,14 +293,75 @@ class OllamaClient(BaseLLMClient):
                     "content": result
                 })
 
-            # Continue with auto execution from here
-            final_response = self._auto_execute_tools(messages)
+            # Check if auto mode or manual mode
+            if self.auto_function_calling:
+                # Auto mode: loop until final response
+                final_response = self._auto_execute_tools(messages)
+                self._pending_messages = []
+                self._pending_tool_calls = []
+                return final_response
+            else:
+                # Manual mode: make ONE call and check if more tools are needed
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "system", "content": self.SYSTEM_PROMPT}] + messages,
+                    tools=self.tools
+                )
 
-            # Clear pending state
-            self._pending_messages = []
-            self._pending_tool_calls = []
+                choice = response.choices[0]
 
-            return final_response
+                if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+                    # Model wants more tools - return them for approval
+                    # First, add the assistant's tool call message to pending
+                    self._pending_messages = messages
+                    self._pending_messages.append({
+                        "role": "assistant",
+                        "content": choice.message.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            } for tc in choice.message.tool_calls
+                        ]
+                    })
+                    self._pending_tool_calls = []
+
+                    pending_tools = []
+                    for tc in choice.message.tool_calls:
+                        tool_info = {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": _safe_json_loads(tc.function.arguments)
+                        }
+                        pending_tools.append(tool_info)
+                        self._pending_tool_calls.append(tool_info)
+
+                    tools_names = [t["name"] for t in pending_tools]
+                    log_debug_message(f"🔧 Ollama wants more tools (manual mode): {', '.join(tools_names)}")
+
+                    return {
+                        "pending_tool_calls": pending_tools,
+                        "response_text": choice.message.content or ""
+                    }
+                else:
+                    # Final response - no more tools
+                    final_response = choice.message.content or ""
+
+                    self.history.append({
+                        "role": "assistant",
+                        "content": final_response
+                    })
+
+                    # Clear pending state
+                    self._pending_messages = []
+                    self._pending_tool_calls = []
+
+                    log_debug_message(f"✅ Ollama execute_approved_tools final response - {len(final_response)} chars")
+                    return final_response
 
         except Exception as e:
             log_debug_message(f"Error executing approved tools: {e}")
@@ -417,113 +497,139 @@ class OllamaClient(BaseLLMClient):
             log_debug_message(f"Ollama ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
-        """
-        AI Cell completion with tool calling support.
-        Uses automatic function calling for kernel inspection and sandbox tools.
-        Supports image inputs for visual analysis.
+    # =========================================================================
+    # Unified tool execution - Abstract method implementations
+    # =========================================================================
 
-        Note: Tool support depends on the Ollama model (llama3.1, mistral, qwen2.5 support tools).
-              Image support requires a vision model (llava, bakllava).
+    def _get_ai_cell_tools(self) -> List[Dict[str, Any]]:
+        """
+        Get AI Cell tools in OpenAI format (Ollama uses OpenAI-compatible API).
+        Uses cached tools to avoid rebuilding on each call.
+        """
+        if self._ai_cell_tools_cache is None:
+            self._ai_cell_tools_cache = self._build_ai_cell_tools_internal()
+        return self._ai_cell_tools_cache
+
+    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+        """Get mapping of tool names to callable functions for AI Cell."""
+        if self._ai_cell_tool_map_cache is None:
+            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
+        return self._ai_cell_tool_map_cache
+
+    def _prepare_ai_cell_messages(self, prompt: str, images: Optional[List[ImageData]] = None) -> List[Dict[str, Any]]:
+        """Prepare initial messages for AI Cell in OpenAI format."""
+        content = self._build_content_with_images(prompt, images)
+
+        # Debug logging
+        if images:
+            log_debug_message(f"📷 Sending {len(images)} image(s) to Ollama - requires vision model")
+        else:
+            log_debug_message(f"📷 Sending text-only content to Ollama")
+
+        # Include system prompt as first message
+        return [
+            {"role": "system", "content": self.AI_CELL_SYSTEM_PROMPT},
+            {"role": "user", "content": content}
+        ]
+
+    def _call_llm_for_ai_cell(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> LLMResponse:
+        """
+        Make an LLM API call for AI Cell tool execution.
 
         Args:
-            prompt: The full prompt including notebook context and user question
-            images: Optional list of images to analyze
-            max_iterations: Maximum number of tool-calling iterations
+            messages: OpenAI message format
+            tools: OpenAI tool format
 
         Returns:
-            Dict with "response" (str) and "steps" (list of tool call info)
+            LLMResponse with text, tool_calls, and is_final flag
         """
-        steps = []
         try:
-            log_debug_message(f"🤖 Ollama AI Cell with tools starting...")
-            if images:
-                log_debug_message(f"📷 Including {len(images)} image(s) - requires vision model")
-
-            # Build AI Cell tool schemas
-            ai_cell_tools = self._build_ai_cell_tools()
-            ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
-
-            # Build content with optional images
-            content = self._build_content_with_images(prompt, images)
-            messages = [{"role": "user", "content": content}]
-
-            for iteration in range(max_iterations):
-                log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
-
-                try:
-                    response = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=messages,
-                        tools=ai_cell_tools,
-                        max_tokens=4096,
-                    )
-                except Exception as e:
-                    # If model doesn't support tools, fall back to simple completion
-                    if "tools" in str(e).lower() or "function" in str(e).lower():
-                        log_debug_message(f"⚠️ Ollama model doesn't support tools, falling back to simple completion")
-                        result = self.ai_cell_completion(prompt)
-                        return {"response": result, "steps": []}
-                    raise
-
-                message = response.choices[0].message
-
-                # If no tool calls, return the response
-                if not message.tool_calls:
-                    result = message.content or ""
-                    log_debug_message(f"🤖 Ollama AI Cell response: {len(result)} chars, {len(steps)} steps")
-                    return {"response": result, "steps": steps}
-
-                # Execute tool calls
-                messages.append(message.model_dump())
-
-                for tool_call in message.tool_calls:
-                    tool_name = tool_call.function.name
-                    tool_args = _safe_json_loads(tool_call.function.arguments)
-
-                    log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
-
-                    # Record tool call step
-                    steps.append({
-                        "type": "tool_call",
-                        "name": tool_name,
-                        "content": json.dumps(tool_args, indent=2)
-                    })
-
-                    if tool_name in ai_cell_tool_map:
-                        try:
-                            result = ai_cell_tool_map[tool_name](**tool_args)
-                            tool_result = json.dumps(result)
-                        except Exception as e:
-                            tool_result = json.dumps({"error": str(e)})
-                    else:
-                        tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
-
-                    # Record tool result step
-                    result_preview = tool_result[:1000] + "..." if len(tool_result) > 1000 else tool_result
-                    steps.append({
-                        "type": "tool_result",
-                        "name": tool_name,
-                        "content": result_preview
-                    })
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": tool_result
-                    })
-
-            # Max iterations reached
-            return {"response": "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question.", "steps": steps}
-
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                tools=tools,
+                max_tokens=4096,
+            )
         except Exception as e:
-            log_debug_message(f"Ollama ai_cell_with_tools error: {e}")
-            import traceback
-            log_debug_message(f"Traceback: {traceback.format_exc()}")
+            # If model doesn't support tools, return as final response
+            if "tools" in str(e).lower() or "function" in str(e).lower():
+                log_debug_message(f"⚠️ Ollama model doesn't support tools, falling back to simple completion")
+                # Make a simple completion without tools
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    max_tokens=4096,
+                )
+                return LLMResponse(
+                    text=response.choices[0].message.content or "",
+                    tool_calls=[],
+                    is_final=True
+                )
             raise
 
-    def _build_ai_cell_tools(self) -> List[Dict[str, Any]]:
-        """Build tool schemas for AI Cell tools only"""
+        message = response.choices[0].message
+
+        # Extract text and tool calls
+        text = message.content or ""
+        tool_calls = []
+
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append(ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=_safe_json_loads(tc.function.arguments)
+                ))
+
+        # is_final when there are no tool calls
+        is_final = len(tool_calls) == 0
+
+        return LLMResponse(
+            text=text,
+            tool_calls=tool_calls,
+            is_final=is_final
+        )
+
+    def _add_tool_results_to_messages(self, messages: List[Dict[str, Any]], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[Dict[str, Any]]:
+        """
+        Add tool results to messages for the next Ollama API call.
+
+        Ollama uses OpenAI-compatible format:
+        1. Assistant message with tool_calls
+        2. Tool messages with results (one per tool call)
+        """
+        from .base import LLMResponse  # Import here to avoid circular import
+
+        # Build assistant message with tool calls
+        assistant_tool_calls = []
+        for tc in response.tool_calls:
+            assistant_tool_calls.append({
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.name,
+                    "arguments": json.dumps(tc.arguments)
+                }
+            })
+
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": assistant_tool_calls
+        })
+
+        # Add tool result messages
+        for tr in tool_results:
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tr.tool_call_id,
+                "content": tr.result
+            })
+
+        return messages
+
+    def _build_ai_cell_tools_internal(self) -> List[Dict[str, Any]]:
+        """Build tool schemas for AI Cell tools only (OpenAI format for Ollama)."""
         tools = []
         for func in AI_CELL_TOOLS:
             func_name = func.__name__

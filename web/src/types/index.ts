@@ -57,6 +57,15 @@ export interface ImageInput {
   filename?: string  // Original filename for display
 }
 
+// AI Cell streaming state for real-time updates
+export interface AICellStreamState {
+  thinkingMessage?: string  // Current thinking/status message (e.g., "Iteration 1...")
+  currentIteration?: number  // Current iteration number
+  thinkingSteps: ThinkingStep[]  // Accumulated thinking from each iteration
+  currentToolCall?: { name: string; args: Record<string, unknown> }  // Tool being executed
+  streamingSteps: LLMStep[]  // Steps accumulated during streaming
+}
+
 // AI Cell data stored in metadata
 export interface AICellData {
   user_prompt: string
@@ -67,6 +76,8 @@ export interface AICellData {
   timestamp?: string
   images?: ImageInput[]  // Attached images
   steps?: LLMStep[]  // Tool call steps
+  thinking?: ThinkingStep[]  // LLM thinking/reasoning steps (persisted to ipynb)
+  streamState?: AICellStreamState  // Real-time streaming state (only during running)
 }
 
 // Frontend cell type (for React state)
@@ -113,6 +124,13 @@ export interface LLMStep {
   type: 'tool_call' | 'tool_result' | 'text'
   name?: string
   content: string
+  timestamp?: string
+}
+
+// LLM thinking step (for extended thinking / reasoning)
+export interface ThinkingStep {
+  iteration: number  // Which iteration this thinking is from
+  content: string    // The thinking/reasoning content
   timestamp?: string
 }
 

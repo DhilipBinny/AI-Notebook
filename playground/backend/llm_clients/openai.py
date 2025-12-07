@@ -8,10 +8,10 @@ Includes web search tool for real-time web information.
 
 import json
 import copy
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable
 from openai import OpenAI
 
-from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult
 from backend.utils.util_func import log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
@@ -144,6 +144,8 @@ class OpenAIClient(BaseLLMClient):
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
             enable_web_search: Enable web search tool for real-time web info (default: True)
         """
+        super().__init__()  # Initialize base class (cancellation support)
+
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name
         self.enable_web_search = enable_web_search
@@ -166,6 +168,10 @@ class OpenAIClient(BaseLLMClient):
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
         self._pending_tool_calls: List[Dict[str, Any]] = []
+
+        # Cache AI Cell tools (built once)
+        self._ai_cell_tools_cache: Optional[List[Dict[str, Any]]] = None
+        self._ai_cell_tool_map_cache: Optional[Dict[str, Callable]] = None
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool and return the result as a string."""
@@ -362,16 +368,20 @@ class OpenAIClient(BaseLLMClient):
             log_debug_message(f"✅ OpenAI response (no tools) - {len(final_response)} chars")
             return final_response
 
-    def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> str:
+    def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
         """
-        Execute approved tool calls and get the final response.
+        Execute approved tool calls and get the response.
+
+        In manual mode, if the model wants more tools after execution,
+        returns them for user approval instead of auto-executing.
 
         Args:
             approved_tool_calls: List of approved tools to execute
                                 [{"id": "...", "name": "...", "arguments": {...}}, ...]
 
         Returns:
-            The final response text after tool execution
+            str: Final response text if no more tools needed
+            dict: {"pending_tool_calls": [...], "response_text": "..."} if more tools needed
         """
         try:
             if not self._pending_messages:
@@ -393,14 +403,75 @@ class OpenAIClient(BaseLLMClient):
                     "content": result
                 })
 
-            # Continue with auto execution from here
-            final_response = self._auto_execute_tools(messages)
+            # Check if auto mode or manual mode
+            if self.auto_function_calling:
+                # Auto mode: loop until final response
+                final_response = self._auto_execute_tools(messages)
+                self._pending_messages = []
+                self._pending_tool_calls = []
+                return final_response
+            else:
+                # Manual mode: make ONE call and check if more tools are needed
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=[{"role": "system", "content": self.SYSTEM_PROMPT}] + messages,
+                    tools=self.tools
+                )
 
-            # Clear pending state
-            self._pending_messages = []
-            self._pending_tool_calls = []
+                choice = response.choices[0]
 
-            return final_response
+                if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+                    # Model wants more tools - return them for approval
+                    # First, add the assistant's tool call message to pending
+                    self._pending_messages = messages
+                    self._pending_messages.append({
+                        "role": "assistant",
+                        "content": choice.message.content or "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments
+                                }
+                            } for tc in choice.message.tool_calls
+                        ]
+                    })
+                    self._pending_tool_calls = []
+
+                    pending_tools = []
+                    for tc in choice.message.tool_calls:
+                        tool_info = {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "arguments": _safe_json_loads(tc.function.arguments)
+                        }
+                        pending_tools.append(tool_info)
+                        self._pending_tool_calls.append(tool_info)
+
+                    tools_names = [t["name"] for t in pending_tools]
+                    log_debug_message(f"🔧 OpenAI wants more tools (manual mode): {', '.join(tools_names)}")
+
+                    return {
+                        "pending_tool_calls": pending_tools,
+                        "response_text": choice.message.content or ""
+                    }
+                else:
+                    # Final response - no more tools
+                    final_response = choice.message.content or ""
+
+                    self.history.append({
+                        "role": "assistant",
+                        "content": final_response
+                    })
+
+                    # Clear pending state
+                    self._pending_messages = []
+                    self._pending_tool_calls = []
+
+                    log_debug_message(f"✅ OpenAI execute_approved_tools final response - {len(final_response)} chars")
+                    return final_response
 
         except Exception as e:
             log_debug_message(f"Error executing approved tools: {e}")
@@ -544,103 +615,123 @@ class OpenAIClient(BaseLLMClient):
             log_debug_message(f"OpenAI ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
+    # =========================================================================
+    # Unified tool execution - Abstract method implementations
+    # =========================================================================
+
+    def _get_ai_cell_tools(self) -> List[Dict[str, Any]]:
         """
-        AI Cell completion with tool calling support.
-        Uses automatic function calling for kernel inspection and sandbox tools.
-        Supports image inputs for visual analysis.
+        Get AI Cell tools in OpenAI format.
+        Uses cached tools to avoid rebuilding on each call.
+        """
+        if self._ai_cell_tools_cache is None:
+            self._ai_cell_tools_cache = self._build_ai_cell_tools_internal()
+        return self._ai_cell_tools_cache
+
+    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+        """Get mapping of tool names to callable functions for AI Cell."""
+        if self._ai_cell_tool_map_cache is None:
+            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
+        return self._ai_cell_tool_map_cache
+
+    def _prepare_ai_cell_messages(self, prompt: str, images: Optional[List[ImageData]] = None) -> List[Dict[str, Any]]:
+        """Prepare initial messages for AI Cell in OpenAI format."""
+        content = self._build_content_with_images(prompt, images)
+
+        # Debug logging
+        if images:
+            log_debug_message(f"📷 Sending {len(images)} image(s) to OpenAI")
+        else:
+            log_debug_message(f"📷 Sending text-only content to OpenAI")
+
+        # Include system prompt as first message
+        return [
+            {"role": "system", "content": self.AI_CELL_SYSTEM_PROMPT},
+            {"role": "user", "content": content}
+        ]
+
+    def _call_llm_for_ai_cell(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> LLMResponse:
+        """
+        Make an LLM API call for AI Cell tool execution.
 
         Args:
-            prompt: The full prompt including notebook context and user question
-            images: Optional list of images to analyze
-            max_iterations: Maximum number of tool-calling iterations
+            messages: OpenAI message format
+            tools: OpenAI tool format
 
         Returns:
-            Dict with "response" (str) and "steps" (list of tool call info)
+            LLMResponse with text, tool_calls, and is_final flag
         """
-        steps = []
-        try:
-            log_debug_message(f"🤖 OpenAI AI Cell with tools starting...")
-            if images:
-                log_debug_message(f"📷 Including {len(images)} image(s)")
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            max_tokens=4096,
+        )
 
-            # Build AI Cell tool schemas
-            ai_cell_tools = self._build_ai_cell_tools()
-            ai_cell_tool_map = {func.__name__: func for func in AI_CELL_TOOLS}
+        message = response.choices[0].message
 
-            # Build content with optional images
-            content = self._build_content_with_images(prompt, images)
-            messages = [{"role": "user", "content": content}]
+        # Extract text and tool calls
+        text = message.content or ""
+        tool_calls = []
 
-            for iteration in range(max_iterations):
-                log_debug_message(f"🔄 AI Cell iteration {iteration + 1}/{max_iterations}")
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append(ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=_safe_json_loads(tc.function.arguments)
+                ))
 
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    tools=ai_cell_tools,
-                    tool_choice="auto",
-                    max_tokens=4096,
-                )
+        # is_final when there are no tool calls
+        is_final = len(tool_calls) == 0
 
-                message = response.choices[0].message
+        return LLMResponse(
+            text=text,
+            tool_calls=tool_calls,
+            is_final=is_final
+        )
 
-                # If no tool calls, return the response
-                if not message.tool_calls:
-                    result = message.content or ""
-                    log_debug_message(f"🤖 OpenAI AI Cell response: {len(result)} chars, {len(steps)} steps")
-                    return {"response": result, "steps": steps}
+    def _add_tool_results_to_messages(self, messages: List[Dict[str, Any]], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[Dict[str, Any]]:
+        """
+        Add tool results to messages for the next OpenAI API call.
 
-                # Execute tool calls
-                messages.append(message.model_dump())
+        OpenAI requires:
+        1. Assistant message with tool_calls
+        2. Tool messages with results (one per tool call)
+        """
+        from .base import LLMResponse  # Import here to avoid circular import
 
-                for tool_call in message.tool_calls:
-                    tool_name = tool_call.function.name
-                    tool_args = _safe_json_loads(tool_call.function.arguments)
+        # Build assistant message with tool calls
+        assistant_tool_calls = []
+        for tc in response.tool_calls:
+            assistant_tool_calls.append({
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.name,
+                    "arguments": json.dumps(tc.arguments)
+                }
+            })
 
-                    log_debug_message(f"🔧 AI Cell executing: {tool_name}({tool_args})")
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": assistant_tool_calls
+        })
 
-                    # Record tool call step
-                    steps.append({
-                        "type": "tool_call",
-                        "name": tool_name,
-                        "content": json.dumps(tool_args, indent=2)
-                    })
+        # Add tool result messages
+        for tr in tool_results:
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tr.tool_call_id,
+                "content": tr.result
+            })
 
-                    if tool_name in ai_cell_tool_map:
-                        try:
-                            result = ai_cell_tool_map[tool_name](**tool_args)
-                            tool_result = json.dumps(result)
-                        except Exception as e:
-                            tool_result = json.dumps({"error": str(e)})
-                    else:
-                        tool_result = json.dumps({"error": f"Unknown tool: {tool_name}"})
+        return messages
 
-                    # Record tool result step
-                    result_preview = tool_result[:1000] + "..." if len(tool_result) > 1000 else tool_result
-                    steps.append({
-                        "type": "tool_result",
-                        "name": tool_name,
-                        "content": result_preview
-                    })
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": tool_result
-                    })
-
-            # Max iterations reached
-            return {"response": "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question.", "steps": steps}
-
-        except Exception as e:
-            log_debug_message(f"OpenAI ai_cell_with_tools error: {e}")
-            import traceback
-            log_debug_message(f"Traceback: {traceback.format_exc()}")
-            raise
-
-    def _build_ai_cell_tools(self) -> List[Dict[str, Any]]:
-        """Build tool schemas for AI Cell tools only"""
+    def _build_ai_cell_tools_internal(self) -> List[Dict[str, Any]]:
+        """Build tool schemas for AI Cell tools only (OpenAI format)."""
         tools = []
         for func in AI_CELL_TOOLS:
             func_name = func.__name__

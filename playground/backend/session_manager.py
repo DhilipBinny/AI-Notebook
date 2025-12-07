@@ -6,10 +6,15 @@ Each session has:
 - Its own Jupyter kernel (isolated Python environment)
 - Its own notebook state (for LLM tools)
 - Associated notebook name
+
+Thread Safety:
+- Uses contextvars for current session to support concurrent requests
+- Each async request gets its own context, preventing race conditions
 """
 
 import uuid
 import threading
+import contextvars
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
@@ -243,6 +248,12 @@ class SessionManager:
                 return True
             return False
 
+    @property
+    def session_count(self) -> int:
+        """Get the number of active sessions."""
+        with self._lock:
+            return len(self._sessions)
+
     def get_all_sessions(self) -> List[Dict[str, Any]]:
         """
         Get info about all active sessions.
@@ -301,24 +312,35 @@ def get_session_manager() -> SessionManager:
 
 
 # Convenience functions for LLM tools (session-aware)
-_current_session_id: Optional[str] = None
+# Uses contextvars for thread/async safety - each request gets its own context
+_current_session_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    'current_session_id', default=None
+)
 
 
 def set_current_session(session_id: str):
-    """Set the current session ID for LLM tools"""
-    global _current_session_id
-    _current_session_id = session_id
+    """
+    Set the current session ID for LLM tools.
+
+    Uses contextvars for thread safety - safe for concurrent requests
+    with different sessions.
+    """
+    _current_session_id.set(session_id)
 
 
 def get_current_session() -> Optional[Session]:
-    """Get the current session for LLM tools"""
-    global _current_session_id
-    if _current_session_id is None:
+    """
+    Get the current session for LLM tools.
+
+    Returns the session associated with the current request context.
+    Thread-safe for concurrent requests.
+    """
+    session_id = _current_session_id.get()
+    if session_id is None:
         return None
-    return get_session_manager().get_session(_current_session_id)
+    return get_session_manager().get_session(session_id)
 
 
 def clear_current_session():
-    """Clear the current session ID"""
-    global _current_session_id
-    _current_session_id = None
+    """Clear the current session ID for this context"""
+    _current_session_id.set(None)

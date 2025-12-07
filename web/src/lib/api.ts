@@ -333,7 +333,9 @@ export const chat = {
     await api.delete(`/projects/${projectId}/chat`)
   },
 
-  runAICell: async (
+  // Run AI Cell with unified SSE streaming response
+  // The backend always returns SSE events - real-time progress depends on playground config
+  runAICell: (
     projectId: string,
     prompt: string,
     contextCellIds: string[],
@@ -341,15 +343,105 @@ export const chat = {
     aiCellId?: string,
     aiCellIndex?: number,
     contextFormat: 'xml' | 'plain' = 'xml',
-    images?: { data: string; mime_type: string; filename?: string }[]
-  ): Promise<{ success: boolean; response: string; model: string; error?: string; steps?: LLMStep[] }> => {
-    const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+    images?: { data: string; mime_type: string; filename?: string }[],
+    onEvent?: (event: { type: string; data: Record<string, unknown> }) => void,
+    onDone?: (result: { success: boolean; response: string; model: string; steps: LLMStep[]; cancelled?: boolean; thinking?: string }) => void,
+    onError?: (error: string) => void
+  ): AbortController => {
+    const controller = new AbortController()
+    const token = localStorage.getItem('access_token')
+
+    // Build request body
+    const body = JSON.stringify({
       prompt,
       context_cell_ids: contextCellIds,
       ai_cell_id: aiCellId,
       ai_cell_index: aiCellIndex,
       images: images || undefined,
     })
+
+    // Use fetch with streaming response (unified endpoint - always returns SSE)
+    fetch(`/api/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body,
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('No response body')
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        // Track current event and data across read() chunks
+        let currentEvent = ''
+        let currentData = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+
+          // Parse SSE events from buffer
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7)
+            } else if (line.startsWith('data: ')) {
+              currentData = line.slice(6)
+            } else if (line === '' && currentEvent && currentData) {
+              // End of event, process it
+              try {
+                const data = JSON.parse(currentData)
+
+                if (currentEvent === 'done') {
+                  onDone?.({
+                    success: data.success ?? true,
+                    response: data.response || '',
+                    model: data.model || llmProvider,
+                    steps: data.steps || [],
+                    cancelled: data.cancelled,
+                    thinking: data.thinking || undefined,
+                  })
+                } else if (currentEvent === 'error') {
+                  onError?.(data.error || 'Unknown error')
+                } else {
+                  console.log('[API] SSE event received:', currentEvent, data)
+                  onEvent?.({ type: currentEvent, data })
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE data:', currentData, e)
+              }
+
+              currentEvent = ''
+              currentData = ''
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError?.(err.message || 'Connection failed')
+        }
+      })
+
+    return controller
+  },
+
+  cancelAICell: async (projectId: string): Promise<{ success: boolean; message: string }> => {
+    const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/cancel`)
     return data
   },
 }

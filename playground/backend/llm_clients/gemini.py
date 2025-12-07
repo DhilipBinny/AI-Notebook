@@ -9,11 +9,12 @@ Uses a two-phase approach for web search:
 """
 
 import json
+import base64
 from google import genai
 from google.genai import types
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable
 
-from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult, CancelledException
 from backend.utils.util_func import log_response_details, log_debug_message
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
@@ -50,6 +51,8 @@ class GeminiClient(BaseLLMClient):
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
             enable_web_search: Enable Google Search grounding for real-time web info (default: True)
         """
+        super().__init__()  # Initialize base class (cancellation support)
+
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
         self.enable_web_search = enable_web_search
@@ -66,6 +69,10 @@ class GeminiClient(BaseLLMClient):
         # Initialize chat history
         self.history: List[Dict[str, Any]] = []
         self._start_chat()
+
+        # Cache AI Cell tools (built once)
+        self._ai_cell_tools_cache: Optional[List[types.Tool]] = None
+        self._ai_cell_tool_map_cache: Optional[Dict[str, Callable]] = None
 
     def _build_config(self) -> types.GenerateContentConfig:
         """Build the GenerateContentConfig with tools and system instruction (NO search tool)"""
@@ -452,7 +459,7 @@ class GeminiClient(BaseLLMClient):
                             result_str = str(result)
 
                         function_responses.append(
-                            types.FunctionResponse(
+                            types.Part.from_function_response(
                                 name=tool_name,
                                 response={"result": result_str}
                             )
@@ -464,7 +471,7 @@ class GeminiClient(BaseLLMClient):
                             "result": error_result
                         })
                         function_responses.append(
-                            types.FunctionResponse(
+                            types.Part.from_function_response(
                                 name=tool_name,
                                 response={"error": str(e)}
                             )
@@ -476,7 +483,7 @@ class GeminiClient(BaseLLMClient):
                         "result": error_result
                     })
                     function_responses.append(
-                        types.FunctionResponse(
+                        types.Part.from_function_response(
                             name=tool_name,
                             response={"error": f"Unknown tool: {tool_name}"}
                         )
@@ -599,8 +606,6 @@ class GeminiClient(BaseLLMClient):
         Returns:
             String (text only) or list of content parts (with images)
         """
-        import base64
-
         if not images:
             return text
 
@@ -677,98 +682,213 @@ class GeminiClient(BaseLLMClient):
             log_debug_message(f"Gemini ai_cell_completion error: {e}")
             raise
 
-    def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
+    # =========================================================================
+    # Unified tool execution - Abstract method implementations
+    # =========================================================================
+
+    def _get_ai_cell_tools(self) -> List[types.Tool]:
         """
-        AI Cell completion with tool calling support.
-        Focuses on kernel inspection and sandbox tools only (no web search).
-        Supports image inputs for visual analysis.
+        Get AI Cell tools in Gemini format (FunctionDeclarations for manual execution).
+        Uses cached tools to avoid rebuilding on each call.
+        """
+        if self._ai_cell_tools_cache is None:
+            # Build FunctionDeclarations for manual tool execution
+            declarations = [self._func_to_declaration(func) for func in AI_CELL_TOOLS]
+            self._ai_cell_tools_cache = [types.Tool(function_declarations=declarations)]
+        return self._ai_cell_tools_cache
+
+    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+        """Get mapping of tool names to callable functions for AI Cell."""
+        if self._ai_cell_tool_map_cache is None:
+            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
+        return self._ai_cell_tool_map_cache
+
+    def _prepare_ai_cell_messages(self, prompt: str, images: Optional[List[ImageData]] = None) -> List[types.Content]:
+        """Prepare initial messages for AI Cell in Gemini format."""
+        content = self._build_content_with_images(prompt, images)
+
+        # Debug logging
+        if images:
+            log_debug_message(f"📷 Sending {len(images)} image(s) to Gemini")
+        else:
+            log_debug_message(f"📷 Sending text-only content to Gemini")
+
+        # Convert content to Gemini Content format
+        if isinstance(content, str):
+            parts = [types.Part.from_text(text=content)]
+        else:
+            parts = content  # Already a list of Parts
+
+        return [types.Content(role="user", parts=parts)]
+
+    def _call_llm_for_ai_cell(self, messages: List[types.Content], tools: List[types.Tool]) -> LLMResponse:
+        """
+        Make an LLM API call for AI Cell tool execution.
+
+        Uses generate_content_stream for cancellation support during LLM response.
+        Checks for cancellation between chunks to allow early termination.
+        Enables thinking mode for Gemini 2.5 models to show reasoning process.
 
         Args:
-            prompt: The full prompt including notebook context and user question
-            images: Optional list of images to analyze
-            max_iterations: Maximum number of tool-calling iterations
+            messages: Gemini Content format
+            tools: Gemini Tool format (FunctionDeclarations)
 
         Returns:
-            Dict with "response" (str) and "steps" (list of tool call info)
+            LLMResponse with text, tool_calls, thinking, and is_final flag
         """
-        steps = []
+        # Enable thinking for Gemini 2.5 models
+        thinking_config = None
+        if "2.5" in self.model_name or "2.0" in self.model_name:
+            thinking_config = types.ThinkingConfig(
+                thinking_budget=8192,  # Allow up to 8K tokens for thinking
+                include_thoughts=True  # Include thought summaries in response
+            )
+            log_debug_message(f"💭 Gemini thinking mode enabled (budget: 8192 tokens)")
+
+        config = types.GenerateContentConfig(
+            system_instruction=self.AI_CELL_SYSTEM_PROMPT,
+            tools=tools,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=thinking_config
+        )
+
+        # Use streaming to allow cancellation during LLM response
+        text = ""
+        thinking = ""
+        tool_calls = []
+        last_finish_reason = None
+
         try:
-            log_debug_message(f"🤖 Gemini AI Cell with tools starting...")
-            log_debug_message(f"🔧 Available tools: {list(AI_CELL_TOOL_MAP.keys())}")
-            if images:
-                log_debug_message(f"📷 Including {len(images)} image(s)")
-
-            # AI Cell focuses on notebook context and tools - no web search
-            # This ensures the LLM uses kernel inspection and sandbox tools effectively
-            final_prompt = prompt
-
-            # Create chat session with AI Cell tools (inspection + sandbox only)
-            ai_cell_config = types.GenerateContentConfig(
-                system_instruction="You are an AI assistant in a notebook cell. You can analyze images when provided. Use kernel inspection tools to understand the notebook state and sandbox tools to test code safely. Focus on the notebook context provided.",
-                tools=AI_CELL_TOOLS,  # Kernel inspection + sandbox tools only
-            )
-
-            chat = self.client.chats.create(
+            response_stream = self.client.models.generate_content_stream(
                 model=self.model_name,
-                config=ai_cell_config,
+                contents=messages,
+                config=config
             )
 
-            # Build content with optional images
-            content = self._build_content_with_images(final_prompt, images)
+            for chunk in response_stream:
+                # ✅ CANCELLATION CHECK - between each chunk
+                self._check_cancelled()
 
-            # Send the message - tools will be auto-executed
-            # chat.send_message accepts either a string or a list of parts directly
-            log_debug_message(f"🤖 Sending AI Cell message with auto tool execution...")
-            response = chat.send_message(message=content)
+                if chunk.candidates and len(chunk.candidates) > 0:
+                    candidate = chunk.candidates[0]
 
-            # Extract tool call steps from chat history
-            if hasattr(chat, '_curated_history') and chat._curated_history:
-                for msg in chat._curated_history:
-                    if hasattr(msg, 'parts'):
-                        for part in msg.parts:
-                            # Tool call (function_call)
-                            if hasattr(part, 'function_call') and part.function_call:
+                    # Track finish reason
+                    if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
+                        last_finish_reason = candidate.finish_reason
+
+                    # FIRST: Extract any thinking/text/tool_calls from this chunk (even before error check)
+                    if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            # Check if this is a thinking/thought part
+                            if hasattr(part, 'thought') and part.thought and hasattr(part, 'text') and part.text:
+                                thinking += part.text
+                                log_debug_message(f"💭 Gemini thought chunk: {len(part.text)} chars")
+                            elif hasattr(part, 'text') and part.text:
+                                text += part.text
+                            elif hasattr(part, 'function_call') and part.function_call:
                                 fc = part.function_call
-                                args_str = json.dumps(dict(fc.args) if hasattr(fc, 'args') and fc.args else {}, indent=2)
-                                steps.append({
-                                    "type": "tool_call",
-                                    "name": fc.name if hasattr(fc, 'name') else "unknown",
-                                    "content": args_str
-                                })
-                            # Tool result (function_response)
-                            if hasattr(part, 'function_response') and part.function_response:
-                                fr = part.function_response
-                                result_str = str(fr.response) if hasattr(fr, 'response') else str(fr)
-                                # Truncate long results
-                                if len(result_str) > 1000:
-                                    result_str = result_str[:1000] + "..."
-                                steps.append({
-                                    "type": "tool_result",
-                                    "name": fr.name if hasattr(fr, 'name') else "unknown",
-                                    "content": result_str
-                                })
+                                tool_calls.append(ToolCall(
+                                    id=f"{fc.name}_{len(tool_calls)}",  # Gemini doesn't provide IDs
+                                    name=fc.name,
+                                    arguments=dict(fc.args) if fc.args else {}
+                                ))
 
-            # In auto mode, tools are already executed - just return text
-            result = response.text or ""
+                    # Check for malformed function call (after extracting any content from this chunk)
+                    if str(last_finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
+                        log_debug_message(f"⚠️ Gemini AI Cell: MALFORMED_FUNCTION_CALL detected")
+                        log_debug_message(f"⚠️ Full candidate: {candidate}")
+                        log_debug_message(f"⚠️ Candidate type: {type(candidate)}")
+                        log_debug_message(f"⚠️ Candidate attributes: {dir(candidate)}")
 
-            # Handle edge cases
-            if not result:
-                # Check for malformed function calls or other issues
-                if hasattr(response, 'candidates') and response.candidates:
-                    candidate = response.candidates[0]
-                    finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
-                    if str(finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
-                        log_debug_message(f"⚠️ AI Cell: MALFORMED_FUNCTION_CALL detected")
-                        result = "I encountered an error while trying to analyze your notebook. Please try a more specific question."
+                        # Try to extract which function was malformed
+                        if hasattr(candidate, 'content') and candidate.content:
+                            log_debug_message(f"⚠️ Content: {candidate.content}")
+                            log_debug_message(f"⚠️ Content type: {type(candidate.content)}")
+                            if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                log_debug_message(f"⚠️ Parts count: {len(candidate.content.parts)}")
+                                for i, part in enumerate(candidate.content.parts):
+                                    log_debug_message(f"⚠️ Part {i}: {part}")
+                                    log_debug_message(f"⚠️ Part {i} type: {type(part)}")
+                                    log_debug_message(f"⚠️ Part {i} attributes: {dir(part)}")
+                                    if hasattr(part, 'function_call') and part.function_call:
+                                        fc = part.function_call
+                                        log_debug_message(f"⚠️ Malformed function: {fc.name}")
+                                        log_debug_message(f"⚠️ Malformed args: {fc.args}")
+                                    if hasattr(part, 'text') and part.text:
+                                        log_debug_message(f"⚠️ Partial text: {part.text[:500]}")
+                            else:
+                                log_debug_message(f"⚠️ No parts in content")
+                        else:
+                            log_debug_message(f"⚠️ No content in candidate")
 
-                if not result:
-                    result = "I've analyzed your notebook using the available tools. Please let me know if you need more specific information."
+                        # Also check for any error message
+                        if hasattr(candidate, 'safety_ratings'):
+                            log_debug_message(f"⚠️ Safety ratings: {candidate.safety_ratings}")
+                        if hasattr(candidate, 'citation_metadata'):
+                            log_debug_message(f"⚠️ Citation metadata: {candidate.citation_metadata}")
 
-            log_debug_message(f"🤖 Gemini AI Cell with tools response: {len(result)} chars, {len(steps)} steps")
-            return {"response": result, "steps": steps}
+                        # Include any thinking that was captured before the error
+                        if thinking:
+                            log_debug_message(f"💭 Gemini thinking before error: {len(thinking)} chars")
 
-        except Exception as e:
-            log_debug_message(f"Gemini ai_cell_with_tools error: {e}")
-            import traceback
-            log_debug_message(f"Traceback: {traceback.format_exc()}")
+                        return LLMResponse(
+                            text="I encountered an error while trying to analyze your notebook. Please try a more specific question.",
+                            tool_calls=[],
+                            is_final=True,
+                            thinking=thinking  # Include thinking even on error
+                        )
+
+        except CancelledException:
+            # Re-raise to be handled by the caller
             raise
+
+        # is_final when there are no tool calls
+        is_final = len(tool_calls) == 0
+
+        if thinking:
+            log_debug_message(f"💭 Gemini total thinking: {len(thinking)} chars")
+
+        return LLMResponse(
+            text=text,
+            tool_calls=tool_calls,
+            is_final=is_final,
+            thinking=thinking
+        )
+
+    def _add_tool_results_to_messages(self, messages: List[types.Content], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[types.Content]:
+        """
+        Add tool results to messages for the next Gemini API call.
+
+        Gemini requires:
+        1. Model message with function_call parts
+        2. User message with function_response parts
+        """
+        from .base import LLMResponse  # Import here to avoid circular import
+
+        # Build model message with function calls
+        function_call_parts = []
+        for tc in response.tool_calls:
+            function_call_parts.append(types.Part.from_function_call(
+                name=tc.name,
+                args=tc.arguments
+            ))
+
+        messages.append(types.Content(role="model", parts=function_call_parts))
+
+        # Build user message with function responses
+        function_response_parts = []
+        for tr in tool_results:
+            # Parse result JSON back to dict for Gemini
+            try:
+                result_dict = json.loads(tr.result)
+            except json.JSONDecodeError:
+                result_dict = {"result": tr.result}
+
+            function_response_parts.append(types.Part.from_function_response(
+                name=tr.name,
+                response=result_dict
+            ))
+
+        messages.append(types.Content(role="user", parts=function_response_parts))
+
+        return messages

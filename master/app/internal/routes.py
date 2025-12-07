@@ -5,19 +5,25 @@ These endpoints allow the playground container's LLM tools to
 read/write notebook data directly from S3 (single source of truth).
 
 Authentication: X-Internal-Secret header (validated against playground's secret in database)
+
+WebSocket: /internal/ws/notebook for real-time cell updates to frontend
 """
 
-from fastapi import APIRouter, HTTPException, status, Header, Depends
+from fastapi import APIRouter, HTTPException, status, Header, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+import logging
 
 from app.notebooks.s3_client import s3_client
 from app.db.session import get_db
 from app.playgrounds.models import Playground
 from app.projects.models import Project
+from app.internal.notebook_broadcaster import get_notebook_broadcaster, NotebookUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal", tags=["Internal"])
 
@@ -213,142 +219,6 @@ async def get_all_cells(
         )
 
 
-@router.get("/notebook/{project_id}/cell/{cell_index}")
-async def get_cell(
-    project_id: str,
-    cell_index: int,
-    x_internal_secret: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Get a specific cell by index.
-
-    Used by LLM tools: get_cell_content()
-    """
-    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
-
-    try:
-        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
-
-        if notebook_data is None:
-            return {
-                "success": False,
-                "error": "Notebook not found",
-            }
-
-        cells = notebook_data.get("cells", [])
-
-        if cell_index < 0 or cell_index >= len(cells):
-            return {
-                "success": False,
-                "error": f"Cell index {cell_index} out of range. Notebook has {len(cells)} cells (valid indices: 0-{len(cells)-1})",
-            }
-
-        cell = cells[cell_index]
-
-        # Format output
-        output_text = None
-        if cell.get("outputs"):
-            output_parts = []
-            for output in cell.get("outputs", []):
-                if output.get("output_type") == "stream":
-                    text = output.get("text", "")
-                    if isinstance(text, list):
-                        text = "".join(text)
-                    output_parts.append(text)
-                elif output.get("output_type") == "execute_result":
-                    data = output.get("data", {})
-                    output_parts.append(data.get("text/plain", ""))
-                elif output.get("output_type") == "error":
-                    output_parts.append(f"{output.get('ename')}: {output.get('evalue')}")
-            output_text = "\n".join(output_parts) if output_parts else None
-
-        return {
-            "success": True,
-            "cell_index": cell_index,
-            "cell_number": cell_index + 1,
-            "cell_id": get_cell_id(cell) or f"cell-{cell_index}",
-            "type": get_cell_type(cell),
-            "content": cell.get("source", ""),
-            "output": output_text,
-            "execution_count": cell.get("execution_count"),
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
-
-
-@router.put("/notebook/{project_id}/cell/{cell_index}")
-async def update_cell(
-    project_id: str,
-    cell_index: int,
-    request: CellUpdateRequest,
-    x_internal_secret: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Update a specific cell's content.
-
-    Used by LLM tools: update_cell_content()
-    """
-    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
-
-    try:
-        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
-
-        if notebook_data is None:
-            return {
-                "success": False,
-                "error": "Notebook not found",
-            }
-
-        cells = notebook_data.get("cells", [])
-
-        if cell_index < 0 or cell_index >= len(cells):
-            return {
-                "success": False,
-                "error": f"Cell index {cell_index} out of range. Notebook has {len(cells)} cells",
-            }
-
-        # Store old content for response
-        old_content = cells[cell_index].get("source", "")
-
-        # Update cell
-        cells[cell_index]["source"] = request.content
-
-        # Update type if specified (use Jupyter standard field name)
-        if request.cell_type and request.cell_type in ["code", "markdown"]:
-            cells[cell_index]["cell_type"] = request.cell_type
-
-        # Clear outputs since content changed
-        cells[cell_index]["outputs"] = []
-        cells[cell_index]["execution_count"] = None
-
-        # Save back to S3
-        notebook_data["cells"] = cells
-        await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
-
-        return {
-            "success": True,
-            "cell_index": cell_index,
-            "cell_number": cell_index + 1,
-            "cell_id": get_cell_id(cells[cell_index]),
-            "old_content": old_content,
-            "new_content": request.content,
-            "type": get_cell_type(cells[cell_index]),
-            "message": f"Cell {cell_index} updated successfully",
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
-
-
 @router.post("/notebook/{project_id}/cell/{position}")
 async def insert_cell(
     project_id: str,
@@ -408,6 +278,19 @@ async def insert_cell(
         notebook_data["cells"] = cells
         await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
 
+        # Broadcast new cell to connected frontends
+        broadcaster = get_notebook_broadcaster()
+        await broadcaster.broadcast_update(
+            project_id,
+            NotebookUpdate(
+                update_type="cell_created",
+                cell_id=cell_id,
+                cell_index=position,
+                content=request.content,
+                cell_type=request.cell_type,
+            )
+        )
+
         return {
             "success": True,
             "inserted_at": position,
@@ -416,69 +299,6 @@ async def insert_cell(
             "type": request.cell_type,
             "total_cells": len(cells),
             "message": f"New {request.cell_type} cell inserted at position {position}",
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
-
-
-@router.put("/notebook/{project_id}/cell/{cell_index}/output")
-async def update_cell_output(
-    project_id: str,
-    cell_index: int,
-    request: CellOutputRequest,
-    x_internal_secret: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Update a cell's output after execution.
-
-    Used by LLM tools: execute_cell() (after kernel execution)
-    """
-    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
-
-    try:
-        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
-
-        if notebook_data is None:
-            return {"success": False, "error": "Notebook not found"}
-
-        cells = notebook_data.get("cells", [])
-
-        if cell_index < 0 or cell_index >= len(cells):
-            return {"success": False, "error": f"Cell index {cell_index} out of range"}
-
-        # Update output - prefer full outputs array if provided
-        if request.outputs is not None:
-            # Full outputs array with images, display_data, etc.
-            cells[cell_index]["outputs"] = request.outputs
-        elif request.output:
-            # Legacy: simple text output
-            cells[cell_index]["outputs"] = [
-                {
-                    "output_type": "stream",
-                    "name": "stdout",
-                    "text": request.output,
-                }
-            ]
-        else:
-            cells[cell_index]["outputs"] = []
-
-        if request.execution_count is not None:
-            cells[cell_index]["execution_count"] = request.execution_count
-
-        # Save back to S3
-        notebook_data["cells"] = cells
-        await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
-
-        return {
-            "success": True,
-            "cell_index": cell_index,
-            "output": request.output,
-            "execution_count": request.execution_count,
         }
 
     except Exception as e:
@@ -605,6 +425,19 @@ async def update_cell_by_id(
         notebook_data["cells"] = cells
         await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
 
+        # Broadcast update to connected frontends
+        broadcaster = get_notebook_broadcaster()
+        await broadcaster.broadcast_update(
+            project_id,
+            NotebookUpdate(
+                update_type="cell_updated",
+                cell_id=cell_id,
+                cell_index=cell_index,
+                content=request.content,
+                cell_type=get_cell_type(cells[cell_index]),
+            )
+        )
+
         return {
             "success": True,
             "cell_id": cell_id,
@@ -680,10 +513,24 @@ async def insert_cell_after_id(
         notebook_data["cells"] = cells
         await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
 
+        # Broadcast new cell to connected frontends
+        broadcaster = get_notebook_broadcaster()
+        await broadcaster.broadcast_update(
+            project_id,
+            NotebookUpdate(
+                update_type="cell_created",
+                cell_id=new_cell_id,
+                cell_index=insert_position,
+                content=request.content,
+                cell_type=request.cell_type,
+            )
+        )
+
         return {
             "success": True,
             "inserted_after": cell_id,  # Reference cell ID
             "new_cell_id": new_cell_id,
+            "inserted_at_index": insert_position,  # 0-based for frontend
             "cell_number": insert_position + 1,  # 1-based (human-friendly)
             "content": request.content,
             "type": request.cell_type,
@@ -751,6 +598,17 @@ async def delete_cell_by_id(
         # Save back to S3
         notebook_data["cells"] = cells
         await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
+
+        # Broadcast deletion to connected frontends
+        broadcaster = get_notebook_broadcaster()
+        await broadcaster.broadcast_update(
+            project_id,
+            NotebookUpdate(
+                update_type="cell_deleted",
+                cell_id=cell_id,
+                cell_index=cell_index,
+            )
+        )
 
         return {
             "success": True,
@@ -991,6 +849,19 @@ async def update_cell_output_by_id(
         notebook_data["cells"] = cells
         await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
 
+        # Broadcast execution result to connected frontends
+        broadcaster = get_notebook_broadcaster()
+        await broadcaster.broadcast_update(
+            project_id,
+            NotebookUpdate(
+                update_type="cell_executed",
+                cell_id=cell_id,
+                cell_index=cell_index,
+                outputs=cells[cell_index]["outputs"],
+                execution_count=request.execution_count,
+            )
+        )
+
         return {
             "success": True,
             "cell_id": cell_id,
@@ -1004,3 +875,50 @@ async def update_cell_output_by_id(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+
+# =============================================================================
+# WebSocket endpoint for real-time notebook updates
+# =============================================================================
+
+@router.websocket("/ws/notebook/{project_id}")
+async def websocket_notebook_updates(websocket: WebSocket, project_id: str):
+    """
+    WebSocket endpoint for real-time notebook updates.
+
+    Frontend clients connect and receive updates when LLM tools modify cells.
+    No authentication required (project_id is validated when cell updates happen).
+
+    Message format from client:
+        {"type": "ping"}  (keep-alive)
+
+    Message format to client:
+        {
+            "type": "notebook_update",
+            "update_type": "cell_created" | "cell_updated" | "cell_deleted" | "cell_executed",
+            "cell_id": "cell-xxx",
+            "cell_index": 0,
+            "content": "...",
+            "cell_type": "code" | "markdown",
+            "outputs": [...],
+            "execution_count": 1
+        }
+    """
+    await websocket.accept()
+
+    broadcaster = get_notebook_broadcaster()
+    await broadcaster.connect(websocket, project_id)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket notebook error: {e}")
+    finally:
+        await broadcaster.disconnect(websocket, project_id)

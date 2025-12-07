@@ -82,3 +82,9 @@ class AICellResponse(BaseModel):
     model: str = ""
     error: Optional[str] = None
     steps: List[LLMStep] = []  # Tool call steps
+
+
+class AICellCancelResponse(BaseModel):
+    """Response from AI Cell cancellation."""
+    success: bool
+    message: str

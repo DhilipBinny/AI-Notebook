@@ -334,7 +334,10 @@ class ContextManager:
                 "content": cell.get("content", "") or "",
                 "output": output[:max_output_chars] if output else "",
                 "position": cell_position,
-                "is_immediate": False
+                "is_immediate": False,
+                # AI cell specific fields
+                "ai_prompt": cell.get("ai_prompt", ""),
+                "ai_response": cell.get("ai_response", ""),
             }
 
             if ai_cell_index >= 0 and cell_position < ai_cell_index:
@@ -362,27 +365,41 @@ class ContextManager:
         """Format positional context in plain text"""
         parts = []
 
-        if cells_above:
-            parts.append("=== CELLS ABOVE YOU ===")
-            for cell in cells_above:
-                cell_type = "Code" if cell["type"] == "code" else cell["type"].capitalize()
-                prefix = "[IMMEDIATELY ABOVE] " if cell["is_immediate"] else ""
+        def format_cell(cell: Dict) -> str:
+            """Format a single cell for plain text output"""
+            cell_type = "Code" if cell["type"] == "code" else cell["type"].capitalize()
+            prefix = "[IMMEDIATELY ABOVE] " if cell["is_immediate"] else ("[IMMEDIATELY BELOW] " if cell.get("is_immediate_below") else "")
+
+            # For AI cells, show user prompt and response
+            if cell["type"] == "ai":
+                ai_prompt = cell.get("ai_prompt", "")
+                ai_response = cell.get("ai_response", "")
+                cell_info = f"{prefix}[@{cell['id']}] (AI Cell):"
+                if ai_prompt:
+                    cell_info += f"\n[User Question]: {ai_prompt}"
+                if ai_response:
+                    # Truncate long responses
+                    response_preview = ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
+                    cell_info += f"\n[AI Response]: {response_preview}"
+                return cell_info
+            else:
                 cell_info = f"{prefix}[@{cell['id']}] ({cell_type}):\n{cell['content']}"
                 if cell["output"]:
                     cell_info += f"\n[Output]: {cell['output']}"
-                parts.append(cell_info)
+                return cell_info
+
+        if cells_above:
+            parts.append("=== CELLS ABOVE YOU ===")
+            for cell in cells_above:
+                parts.append(format_cell(cell))
 
         parts.append(f"\n=== YOUR POSITION (AI Cell #{ai_cell_index + 1}) ===")
 
         if cells_below:
             parts.append("\n=== CELLS BELOW YOU ===")
             for cell in cells_below:
-                cell_type = "Code" if cell["type"] == "code" else cell["type"].capitalize()
-                prefix = "[IMMEDIATELY BELOW] " if cell["is_immediate"] else ""
-                cell_info = f"{prefix}[@{cell['id']}] ({cell_type}):\n{cell['content']}"
-                if cell["output"]:
-                    cell_info += f"\n[Output]: {cell['output']}"
-                parts.append(cell_info)
+                cell["is_immediate_below"] = cell["is_immediate"]  # Mark for formatting
+                parts.append(format_cell(cell))
 
         return "\n".join(parts)
 
@@ -392,26 +409,41 @@ class ContextManager:
         parts.append('<notebook_context>')
         parts.append(f'  <your_position cell_number="{ai_cell_index + 1}"/>')
 
+        def format_cell_xml(cell: Dict, immediate_attr: str) -> List[str]:
+            """Format a single cell for XML output"""
+            cell_parts = []
+            cell_parts.append(f'    <cell id="{self._escape_xml(cell["id"])}" type="{cell["type"]}"{immediate_attr}>')
+
+            # For AI cells, include user_prompt and ai_response
+            if cell["type"] == "ai":
+                ai_prompt = cell.get("ai_prompt", "")
+                ai_response = cell.get("ai_response", "")
+                if ai_prompt:
+                    cell_parts.append(f'      <user_question>{self._escape_xml(ai_prompt)}</user_question>')
+                if ai_response:
+                    # Truncate long responses
+                    response_preview = ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
+                    cell_parts.append(f'      <ai_response>{self._escape_xml(response_preview)}</ai_response>')
+            else:
+                cell_parts.append(f'      <content>{self._escape_xml(cell["content"])}</content>')
+                if cell["output"]:
+                    cell_parts.append(f'      <output>{self._escape_xml(cell["output"])}</output>')
+
+            cell_parts.append('    </cell>')
+            return cell_parts
+
         if cells_above:
             parts.append('  <cells_above>')
             for cell in cells_above:
                 immediate = ' immediate="true"' if cell["is_immediate"] else ''
-                parts.append(f'    <cell id="{self._escape_xml(cell["id"])}" type="{cell["type"]}"{immediate}>')
-                parts.append(f'      <content>{self._escape_xml(cell["content"])}</content>')
-                if cell["output"]:
-                    parts.append(f'      <output>{self._escape_xml(cell["output"])}</output>')
-                parts.append('    </cell>')
+                parts.extend(format_cell_xml(cell, immediate))
             parts.append('  </cells_above>')
 
         if cells_below:
             parts.append('  <cells_below>')
             for cell in cells_below:
                 immediate = ' immediate="true"' if cell["is_immediate"] else ''
-                parts.append(f'    <cell id="{self._escape_xml(cell["id"])}" type="{cell["type"]}"{immediate}>')
-                parts.append(f'      <content>{self._escape_xml(cell["content"])}</content>')
-                if cell["output"]:
-                    parts.append(f'      <output>{self._escape_xml(cell["output"])}</output>')
-                parts.append('    </cell>')
+                parts.extend(format_cell_xml(cell, immediate))
             parts.append('  </cells_below>')
 
         parts.append('</notebook_context>')

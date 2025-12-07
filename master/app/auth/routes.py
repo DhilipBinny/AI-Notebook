@@ -134,20 +134,6 @@ async def logout(
     return MessageResponse(message="Logged out successfully")
 
 
-@router.post("/logout-all", response_model=MessageResponse)
-async def logout_all(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Logout from all sessions.
-
-    Requires authentication.
-    """
-    auth_service = AuthService(db)
-    await auth_service.logout_all(current_user.id)
-
-    return MessageResponse(message="Logged out from all sessions")
 
 
 @router.get("/me", response_model=UserResponse)
@@ -160,29 +146,3 @@ async def get_current_user_info(
     return current_user
 
 
-@router.post("/change-password", response_model=MessageResponse)
-async def change_password(
-    request: PasswordChangeRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Change current user's password.
-
-    This will logout all other sessions.
-    """
-    auth_service = AuthService(db)
-
-    try:
-        await auth_service.change_password(
-            user=current_user,
-            current_password=request.current_password,
-            new_password=request.new_password,
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-
-    return MessageResponse(message="Password changed successfully")

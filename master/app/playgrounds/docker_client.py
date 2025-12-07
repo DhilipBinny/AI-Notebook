@@ -99,6 +99,17 @@ class DockerClient:
             if settings.ollama_model:
                 env["OLLAMA_MODEL"] = settings.ollama_model
 
+            # Add optional LLM settings if configured in master env
+            # If not set, playground container uses its own defaults
+            if settings.default_llm_provider:
+                env["LLM_PROVIDER"] = settings.default_llm_provider
+            if settings.default_tool_mode:
+                env["TOOL_EXECUTION_MODE"] = settings.default_tool_mode
+            if settings.default_context_format:
+                env["CONTEXT_FORMAT"] = settings.default_context_format
+            if settings.ai_cell_streaming_enabled:
+                env["AI_CELL_STREAMING_ENABLED"] = settings.ai_cell_streaming_enabled
+
             container = self.client.containers.run(
                 image=settings.playground_image,
                 name=container_name,

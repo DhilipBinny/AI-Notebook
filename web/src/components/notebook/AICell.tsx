@@ -21,7 +21,7 @@ function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
 }
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import type { Cell as CellType, AICellData, ImageInput, LLMStep } from '@/types'
+import type { Cell as CellType, AICellData, ImageInput, LLMStep, ThinkingStep } from '@/types'
 
 // Configure marked
 marked.setOptions({
@@ -39,6 +39,7 @@ interface AICellProps {
   onMoveDown: () => void
   onUpdate: (updates: Partial<CellType>) => void
   onRunAICell: (cellId: string, prompt: string, images?: ImageInput[]) => Promise<void>
+  onCancelAICell?: (cellId: string) => Promise<void>
   onInsertCodeCells: (afterCellId: string, codeBlocks: string[]) => void
   onScrollToCell?: (cellId: string) => void
 }
@@ -53,6 +54,7 @@ export default function AICell({
   onMoveDown,
   onUpdate,
   onRunAICell,
+  onCancelAICell,
   onInsertCodeCells,
   onScrollToCell,
 }: AICellProps) {
@@ -97,6 +99,13 @@ export default function AICell({
   useEffect(() => {
     setImages(cell.ai_data?.images || [])
   }, [cell.ai_data?.images])
+
+  // Debug: log thinkingSteps changes during streaming
+  useEffect(() => {
+    if (aiData.status === 'running' && aiData.streamState?.thinkingSteps) {
+      console.log('[AICell UI] thinkingSteps count:', aiData.streamState.thinkingSteps.length)
+    }
+  }, [aiData.status, aiData.streamState?.thinkingSteps])
 
   // Auto-resize textarea
   const adjustTextareaHeight = useCallback(() => {
@@ -279,6 +288,13 @@ export default function AICell({
     await onRunAICell(cell.id, localPrompt, images.length > 0 ? images : undefined)
   }
 
+  // Handle cancel
+  const handleCancel = async () => {
+    if (onCancelAICell && aiData.status === 'running') {
+      await onCancelAICell(cell.id)
+    }
+  }
+
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.shiftKey) {
@@ -368,6 +384,49 @@ export default function AICell({
               </pre>
             </div>
           ))}
+        </div>
+      </details>
+    )
+  }
+
+  // Render LLM thinking/reasoning steps (collapsible)
+  const renderThinking = (thinkingSteps: ThinkingStep[]) => {
+    if (!thinkingSteps || thinkingSteps.length === 0) return null
+
+    // Group by iteration and create summary
+    const iterations = [...new Set(thinkingSteps.map(s => s.iteration))].sort((a, b) => a - b)
+    const totalChars = thinkingSteps.reduce((sum, s) => sum + s.content.length, 0)
+    const summaryText = `Thinking: ${iterations.length} iteration${iterations.length > 1 ? 's' : ''} (${Math.round(totalChars / 1000)}k chars)`
+
+    return (
+      <details className="mt-3 text-xs">
+        <summary className="cursor-pointer flex items-center gap-1.5 transition-colors" style={{ color: 'var(--nb-text-muted)' }}>
+          <span className="w-4 h-4 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: '#9333ea' }}>💭</span>
+          {summaryText}
+        </summary>
+        <div className="mt-2 space-y-3 ml-2 pl-3" style={{ borderLeft: '2px solid rgba(147, 51, 234, 0.3)' }}>
+          {iterations.map(iteration => {
+            const iterSteps = thinkingSteps.filter(s => s.iteration === iteration)
+            const combinedContent = iterSteps.map(s => s.content).join('\n\n')
+            return (
+              <div key={iteration}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: '#9333ea', color: '#fff' }}>
+                    {iteration}
+                  </span>
+                  <span className="font-medium" style={{ color: '#9333ea' }}>Iteration {iteration}</span>
+                  <span style={{ color: 'var(--nb-text-muted)' }}>({Math.round(combinedContent.length / 1000)}k chars)</span>
+                </div>
+                <div
+                  className="text-[11px] rounded-md p-2 whitespace-pre-wrap break-words overflow-hidden font-mono max-h-[300px] overflow-y-auto"
+                  style={{ backgroundColor: 'rgba(147, 51, 234, 0.05)', color: 'var(--nb-text-secondary)', border: '1px solid rgba(147, 51, 234, 0.2)' }}
+                >
+                  {combinedContent.slice(0, 5000)}
+                  {combinedContent.length > 5000 && '\n\n... (truncated)'}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </details>
     )
@@ -777,12 +836,132 @@ export default function AICell({
           </div>
 
           {aiData.status === 'running' && (
-            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--nb-text-muted)' }}>
-              <div
-                className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
-                style={{ borderColor: '#a855f7', borderTopColor: 'transparent' }}
-              />
-              Thinking...
+            <div className="space-y-3">
+              {/* Status header with cancel button */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--nb-text-muted)' }}>
+                  <div
+                    className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
+                    style={{ borderColor: '#a855f7', borderTopColor: 'transparent' }}
+                  />
+                  {aiData.streamState?.thinkingMessage || 'Thinking...'}
+                </div>
+                {onCancelAICell && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCancel() }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded hover:opacity-80 transition-opacity font-medium"
+                    style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                      color: 'var(--nb-accent-error)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                    }}
+                    title="Cancel AI Cell execution"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Cancel
+                  </button>
+                )}
+              </div>
+
+              {/* LLM Thinking/Reasoning display - collapsible with live updates */}
+              {aiData.streamState?.thinkingSteps && aiData.streamState.thinkingSteps.length > 0 && (
+                <details open className="text-xs">
+                  <summary
+                    className="cursor-pointer flex items-center gap-2 px-3 py-2 rounded-md transition-colors"
+                    style={{
+                      backgroundColor: 'rgba(147, 51, 234, 0.1)',
+                      border: '1px solid rgba(147, 51, 234, 0.3)',
+                    }}
+                  >
+                    <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: '#9333ea' }}>💭</span>
+                    <span style={{ color: '#9333ea' }} className="font-medium">Thinking...</span>
+                    {/* Iteration badges */}
+                    <span className="flex items-center gap-1 ml-1">
+                      {[...new Set(aiData.streamState.thinkingSteps.map(s => s.iteration))].sort((a, b) => a - b).map(iter => (
+                        <span
+                          key={iter}
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
+                          style={{ backgroundColor: '#9333ea', color: '#fff' }}
+                        >
+                          {iter}
+                        </span>
+                      ))}
+                    </span>
+                    <span style={{ color: 'var(--nb-text-muted)' }} className="ml-1">
+                      ({Math.round(aiData.streamState.thinkingSteps.reduce((sum, s) => sum + s.content.length, 0) / 1000)}k chars)
+                    </span>
+                    {/* Live indicator */}
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                      <span style={{ color: 'var(--nb-accent-success)' }}>Live</span>
+                    </span>
+                  </summary>
+                  <div className="mt-2 space-y-2 ml-2 pl-3" style={{ borderLeft: '2px solid rgba(147, 51, 234, 0.3)' }}>
+                    {[...new Set(aiData.streamState.thinkingSteps.map(s => s.iteration))].sort((a, b) => a - b).map(iteration => {
+                      const iterSteps = aiData.streamState!.thinkingSteps.filter(s => s.iteration === iteration)
+                      const combinedContent = iterSteps.map(s => s.content).join('\n\n')
+                      return (
+                        <div key={iteration}>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: '#9333ea', color: '#fff' }}>
+                              {iteration}
+                            </span>
+                            <span className="font-medium" style={{ color: '#9333ea' }}>Iteration {iteration}</span>
+                            <span style={{ color: 'var(--nb-text-muted)' }}>({Math.round(combinedContent.length / 1000)}k chars)</span>
+                          </div>
+                          <div
+                            className="text-[11px] rounded-md p-2 whitespace-pre-wrap break-words overflow-hidden font-mono max-h-[200px] overflow-y-auto"
+                            style={{ backgroundColor: 'rgba(147, 51, 234, 0.05)', color: 'var(--nb-text-secondary)', border: '1px solid rgba(147, 51, 234, 0.2)' }}
+                          >
+                            {combinedContent.slice(0, 3000)}
+                            {combinedContent.length > 3000 && '\n\n... (truncated)'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </details>
+              )}
+
+              {/* Current tool call indicator */}
+              {aiData.streamState?.currentToolCall && (
+                <div
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-xs animate-pulse"
+                  style={{ backgroundColor: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)' }}
+                >
+                  <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7' }}>⚡</span>
+                  <span style={{ color: '#a855f7' }} className="font-medium">{aiData.streamState.currentToolCall.name}</span>
+                  <span style={{ color: 'var(--nb-text-muted)' }} className="truncate max-w-[300px]">
+                    {JSON.stringify(aiData.streamState.currentToolCall.args).slice(0, 100)}
+                    {JSON.stringify(aiData.streamState.currentToolCall.args).length > 100 && '...'}
+                  </span>
+                </div>
+              )}
+
+              {/* Streaming steps (live updates) */}
+              {aiData.streamState?.streamingSteps && aiData.streamState.streamingSteps.length > 0 && (
+                <div className="space-y-1.5 ml-2 pl-3" style={{ borderLeft: '2px solid var(--nb-border-default)' }}>
+                  {aiData.streamState.streamingSteps.map((step, idx) => (
+                    <div key={idx} className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
+                      <span className="flex items-center gap-1.5" style={{ color: 'var(--nb-text-secondary)' }}>
+                        {step.type === 'tool_call' && (
+                          <span className="w-4 h-4 rounded flex items-center justify-center text-[9px]" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7' }}>⚡</span>
+                        )}
+                        {step.type === 'tool_result' && (
+                          <span className="w-4 h-4 rounded flex items-center justify-center text-[9px]" style={{ backgroundColor: 'rgba(166, 227, 161, 0.2)', color: 'var(--nb-accent-success)' }}>✓</span>
+                        )}
+                        <span className="font-medium">{step.name}</span>
+                      </span>
+                      <pre className="mt-0.5 text-[10px] rounded p-1.5 whitespace-pre-wrap break-words overflow-hidden font-mono" style={{ backgroundColor: 'var(--nb-bg-ai-cell)', color: 'var(--nb-text-secondary)' }}>
+                        {step.content.slice(0, 200)}
+                        {step.content.length > 200 && '...'}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -792,10 +971,15 @@ export default function AICell({
             </div>
           )}
 
-          {aiData.llm_response && renderResponse()}
+          {/* Completed state: Thinking → Tools → Response (chronological order) */}
+          {/* Thinking steps (persisted from ipynb) - collapsed by default */}
+          {aiData.status !== 'running' && aiData.thinking && aiData.thinking.length > 0 && renderThinking(aiData.thinking)}
 
-          {/* Tool call steps */}
-          {aiData.steps && aiData.steps.length > 0 && renderSteps(aiData.steps)}
+          {/* Tool call steps - collapsed by default */}
+          {aiData.status !== 'running' && aiData.steps && aiData.steps.length > 0 && renderSteps(aiData.steps)}
+
+          {/* Final response (main content) */}
+          {aiData.llm_response && renderResponse()}
         </div>
       )}
 

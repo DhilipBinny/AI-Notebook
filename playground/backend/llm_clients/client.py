@@ -78,11 +78,12 @@ def get_llm_client(provider: Optional[str] = None) -> BaseLLMClient:
 
 
 # Backward compatibility: LLMClient class that wraps the factory
-class LLMClient(BaseLLMClient):
+class LLMClient:
     """
     Wrapper class for backward compatibility.
 
     Creates the appropriate client based on configuration and delegates all calls.
+    Note: This is a proxy class, not a BaseLLMClient subclass.
     """
 
     def __init__(self, provider: Optional[str] = None):
@@ -121,3 +122,15 @@ class LLMClient(BaseLLMClient):
 
     def ai_cell_with_tools(self, prompt: str, images: Optional[List[ImageData]] = None, max_iterations: int = 10) -> Dict[str, Any]:
         return self._client.ai_cell_with_tools(prompt, images, max_iterations)
+
+    def cancel(self) -> None:
+        """Cancel any ongoing AI Cell operation."""
+        self._client.cancel()
+
+    def reset_cancellation(self) -> None:
+        """Reset the cancellation flag."""
+        self._client.reset_cancellation()
+
+    def set_progress_callback(self, callback) -> None:
+        """Set a callback for progress updates during tool execution."""
+        self._client.set_progress_callback(callback)

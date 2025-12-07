@@ -39,21 +39,30 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=30, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
     jwt_refresh_token_expire_days: int = Field(default=7, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS")
 
+    #---------------------------------------------------------------------------------------
     # LLM API Keys (passed to playground containers as environment variables)
+    #---------------------------------------------------------------------------------------
     # Note: These are visible via 'docker inspect'. For high-security deployments,
     # consider using Docker Secrets (Swarm mode) or a secrets manager like HashiCorp Vault.
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
 
-    # LLM Models (passed to playground containers)
-    gemini_model: Optional[str] = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
-    openai_model: Optional[str] = Field(default="gpt-4o", alias="OPENAI_MODEL")
-    anthropic_model: Optional[str] = Field(default="claude-sonnet-4-20250514", alias="ANTHROPIC_MODEL")
+    # LLM Models (passed to playground containers if set)
+    gemini_model: Optional[str] = Field(default=None, alias="GEMINI_MODEL")
+    openai_model: Optional[str] = Field(default=None, alias="OPENAI_MODEL")
+    anthropic_model: Optional[str] = Field(default=None, alias="ANTHROPIC_MODEL")
 
-    # Ollama Configuration (passed to playground containers)
-    ollama_url: Optional[str] = Field(default="http://host.docker.internal:11434/v1", alias="OLLAMA_URL")
-    ollama_model: Optional[str] = Field(default="qwen3-coder:30b", alias="OLLAMA_MODEL")
+    # Ollama Configuration (passed to playground containers if set)
+    ollama_url: Optional[str] = Field(default=None, alias="OLLAMA_URL")
+    ollama_model: Optional[str] = Field(default=None, alias="OLLAMA_MODEL")
+
+    # Optional LLM settings for playground containers
+    # If set in env, passed to playground; otherwise playground uses its own defaults
+    default_llm_provider: Optional[str] = Field(default=None, alias="DEFAULT_LLM_PROVIDER")
+    default_tool_mode: Optional[str] = Field(default=None, alias="DEFAULT_TOOL_MODE")
+    default_context_format: Optional[str] = Field(default=None, alias="DEFAULT_CONTEXT_FORMAT")
+    ai_cell_streaming_enabled: Optional[str] = Field(default=None, alias="AI_CELL_STREAMING_ENABLED")
 
     # Playground settings
     playground_image: str = Field(default="ainotebook-playground:latest", alias="PLAYGROUND_IMAGE")
@@ -62,6 +71,9 @@ class Settings(BaseSettings):
     playground_cpu_limit: float = Field(default=4.0, alias="PLAYGROUND_CPU_LIMIT")
     playground_idle_timeout: int = Field(default=3600, alias="PLAYGROUND_IDLE_TIMEOUT")
     master_api_url: str = Field(default="http://ainotebook-master-api:8001/api", alias="MASTER_API_URL")
+    #---------------------------------------------------------------------------------------
+    # xx
+    #--------------------------------------------------------------------------------------
 
     # User limits
     default_max_projects: int = Field(default=5, alias="DEFAULT_MAX_PROJECTS")

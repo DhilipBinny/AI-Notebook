@@ -471,21 +471,15 @@ Notebook content:
 
     try:
         async with httpx.AsyncClient() as client:
-            # Set the LLM provider
-            await client.post(
-                f"{playground.internal_url}/llm/provider",
-                headers={"X-Internal-Secret": playground.internal_secret},
-                json={"provider": llm_provider},
-                timeout=10,
-            )
-
             # Call the playground's simple completion endpoint (no tools)
+            # llm_provider is passed in the request body
             response = await client.post(
                 f"{playground.internal_url}/llm/complete",
                 headers={"X-Internal-Secret": playground.internal_secret},
                 json={
                     "prompt": summarize_prompt,
                     "max_tokens": 1000,
+                    "llm_provider": llm_provider,
                 },
                 timeout=60,
             )
