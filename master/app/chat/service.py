@@ -181,15 +181,7 @@ class ChatService:
 
             # Call playground's chat endpoint
             async with httpx.AsyncClient() as client:
-                # Set tool execution mode (still global per-container, but tool mode is less critical)
-                await client.post(
-                    f"{playground.internal_url}/llm/tool-mode",
-                    headers={"X-Internal-Secret": playground.internal_secret},
-                    json={"mode": tool_mode},
-                    timeout=10,
-                )
-
-                # Send the chat message with provider in request body (multi-user safe)
+                # Send the chat message with all settings in request body (multi-user safe)
                 # Use project_id as session_id for tracking pending tools
                 # Note: LLM tools fetch notebook data on-demand from playground's notebook state
                 request_body = {
@@ -198,7 +190,8 @@ class ChatService:
                     "history": history_list,
                     "session_id": project.id,
                     "context_format": context_format,
-                    "provider": llm_provider,  # Pass provider per-request for multi-user safety
+                    "llm_provider": llm_provider,  # Pass provider per-request for multi-user safety
+                    "tool_mode": tool_mode,  # Pass tool mode per-request for multi-user safety
                 }
                 if images:
                     request_body["images"] = images
@@ -302,16 +295,8 @@ class ChatService:
 
         try:
             async with httpx.AsyncClient() as client:
-                # Set tool execution mode
-                await client.post(
-                    f"{playground.internal_url}/llm/tool-mode",
-                    headers={"X-Internal-Secret": playground.internal_secret},
-                    json={"mode": tool_mode},
-                    timeout=10,
-                )
-
                 # Execute the approved tools
-                # Note: provider is already set in the session from the initial chat request
+                # Note: provider and tool_mode are already set in the session from the initial chat request
                 response = await client.post(
                     f"{playground.internal_url}/chat/execute-tools",
                     headers={"X-Internal-Secret": playground.internal_secret},
