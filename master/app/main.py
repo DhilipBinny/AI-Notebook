@@ -5,6 +5,7 @@ Main FastAPI application entry point.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from contextlib import asynccontextmanager
 import logging
 import asyncio
@@ -23,6 +24,7 @@ from app.auth.models import Session
 
 # Import routers
 from app.auth.routes import router as auth_router
+from app.auth.oauth import router as oauth_router
 from app.users.routes import router as users_router
 from app.projects.routes import router as projects_router
 from app.workspaces.routes import router as workspaces_router
@@ -117,6 +119,13 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
 )
 
+# Add Session middleware (required for OAuth state management)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.jwt_secret,
+    max_age=3600,  # 1 hour session for OAuth flow
+)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -128,6 +137,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth_router, prefix="/api")
+app.include_router(oauth_router, prefix="/api")  # Google OAuth routes
 app.include_router(users_router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
 app.include_router(workspaces_router, prefix="/api")
