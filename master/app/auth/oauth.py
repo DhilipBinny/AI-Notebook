@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.users.models import OAuthProvider
 from app.users.service import UserService
 from app.users.schemas import UserCreateOAuth
+from app.audit import audit_log, AuditStatus
 from .jwt import create_token_pair
 from .service import AuthService
 
@@ -100,6 +101,17 @@ async def google_callback(
 
     except OAuthError as e:
         logger.error(f"Google OAuth error: {e}")
+
+        # Audit log: OAuth error
+        await audit_log(
+            db=db,
+            request=request,
+            action="auth.login_oauth",
+            metadata={"provider": "google", "error": str(e)},
+            status=AuditStatus.FAILED,
+        )
+        await db.commit()
+
         # Redirect to frontend with error
         frontend_url = settings.oauth_redirect_base_url
         return RedirectResponse(
@@ -174,7 +186,19 @@ async def google_callback(
     # Store refresh token session
     await auth_service._create_session(user.id, tokens.refresh_token)
 
-    # Commit the transaction
+    # Audit log: successful OAuth login
+    await audit_log(
+        db=db,
+        request=request,
+        action="auth.login_oauth",
+        user_id=user.id,
+        resource_type="user",
+        resource_id=user.id,
+        metadata={"provider": "google", "email": email},
+        status=AuditStatus.SUCCESS,
+    )
+
+    # Commit the transaction (user, session, and audit log)
     await db.commit()
 
     # Redirect to frontend with tokens

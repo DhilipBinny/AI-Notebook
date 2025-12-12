@@ -89,6 +89,7 @@ The AI Notebook Platform uses **MySQL 8.0** as its primary database for user, pr
 │ metadata (JSON)     │
 │ ip_address          │
 │ user_agent          │
+│ status              │
 │ created_at          │
 └─────────────────────┘
 
@@ -285,36 +286,82 @@ Stores JWT refresh tokens. Supports multiple sessions per user (devices).
 
 ### 6. `activity_logs`
 
-Audit log for tracking user actions. Optional for debugging and analytics.
+Audit trail for tracking user actions, authentication events, and system operations.
+Critical for security monitoring, debugging, and analytics.
 
 | Column | Type | Null | Key | Default | Description |
 |--------|------|------|-----|---------|-------------|
-| `id` | BIGINT UNSIGNED | NO | PK | AUTO | Log ID |
-| `user_id` | CHAR(36) | YES | FK,IDX | NULL | Actor (NULL for system) |
-| `action` | VARCHAR(100) | NO | IDX | - | Action name |
+| `id` | BIGINT UNSIGNED | NO | PK | AUTO | Log ID (auto-increment) |
+| `user_id` | CHAR(36) | YES | IDX | NULL | Actor (NULL for system/anonymous) |
+| `action` | VARCHAR(100) | NO | IDX | - | Action name (see below) |
 | `resource_type` | VARCHAR(50) | YES | IDX | NULL | Resource type |
 | `resource_id` | CHAR(36) | YES | - | NULL | Resource ID |
-| `metadata` | JSON | YES | - | NULL | Additional context |
-| `ip_address` | VARCHAR(45) | YES | - | NULL | Client IP |
-| `user_agent` | VARCHAR(500) | YES | - | NULL | Browser/device |
-| `created_at` | TIMESTAMP | NO | IDX | NOW() | Event time |
+| `metadata` | JSON | YES | - | NULL | Action-specific context |
+| `ip_address` | VARCHAR(45) | YES | - | NULL | Client IP (IPv4/IPv6) |
+| `user_agent` | VARCHAR(500) | YES | - | NULL | Browser/device info |
+| `status` | ENUM | NO | IDX | 'success' | Result status |
+| `created_at` | TIMESTAMP | NO | IDX | NOW() | Event timestamp |
 
-**Common Actions:**
+**Status Values:**
+
+| Status | Description |
+|--------|-------------|
+| `success` | Action completed successfully |
+| `failed` | Action failed (error, invalid input, etc.) |
+| `denied` | Action denied (permission, auth failure) |
+
+**Indexes:**
+
+| Name | Type | Columns | Description |
+|------|------|---------|-------------|
+| `PRIMARY` | PK | id | Primary key |
+| `idx_activity_user` | INDEX | user_id | Filter by user |
+| `idx_activity_action` | INDEX | action | Filter by action type |
+| `idx_activity_resource` | INDEX | (resource_type, resource_id) | Find resource history |
+| `idx_activity_created` | INDEX | created_at | Time-based queries |
+| `idx_activity_status` | INDEX | status | Filter failures/denials |
+| `idx_activity_user_action` | INDEX | (user_id, action, created_at) | User audit queries |
+
+**Authentication Actions (Priority: High):**
+
+| Action | Description | Status Examples |
+|--------|-------------|-----------------|
+| `auth.login` | Email/password login | success, failed (bad password), denied |
+| `auth.login_oauth` | OAuth login (Google, etc.) | success, failed |
+| `auth.logout` | User logout | success |
+| `auth.register` | New account creation | success, failed |
+| `auth.token_refresh` | JWT token refresh | success, failed (expired) |
+| `auth.password_change` | Password update | success, failed |
+
+**Resource Actions (Priority: Medium):**
 
 | Action | Description |
 |--------|-------------|
-| `user.register` | User created account |
-| `user.login` | User logged in |
-| `user.logout` | User logged out |
+| `project.create` | Project created |
+| `project.update` | Project updated |
+| `project.delete` | Project soft deleted |
+| `project.restore` | Project restored from trash |
 | `workspace.create` | Workspace created |
 | `workspace.update` | Workspace updated |
 | `workspace.delete` | Workspace deleted |
-| `project.create` | Project created |
-| `project.update` | Project updated |
-| `project.delete` | Project deleted |
-| `project.move` | Project moved to workspace |
 | `playground.start` | Container started |
 | `playground.stop` | Container stopped |
+
+**Metadata Examples:**
+
+```json
+// auth.login (success)
+{"method": "email", "email": "user@example.com"}
+
+// auth.login (failed)
+{"method": "email", "email": "user@example.com", "reason": "invalid_password"}
+
+// auth.login_oauth (success)
+{"provider": "google", "email": "user@gmail.com"}
+
+// project.create
+{"project_name": "My Notebook", "workspace_id": "abc-123"}
+```
 
 ---
 
@@ -486,6 +533,52 @@ These columns are kept for backward compatibility but are no longer used:
 ## Recent Changes
 
 ### Workspaces Feature (Added)
+- New `workspaces` table for organizing projects into groups
+- New `workspace_id` column in `projects` table (optional FK)
+- Projects can be moved between workspaces or left uncategorized
+- Workspace deletion sets project `workspace_id` to NULL (SET NULL)
+
+---
+
+## Migrations
+
+Database migrations are stored in `scripts/migrations/`. See `scripts/migrations/README.md` for details.
+
+### Running Migrations
+
+For existing databases, run the migration scripts to update the schema:
+
+```bash
+# Via Docker (recommended)
+docker exec -i ainotebook-mysql mysql -u root -p"$MYSQL_ROOT_PASSWORD" ainotebook < scripts/migrations/002_add_audit_logs_status.sql
+
+# Direct MySQL
+mysql -u root -p ainotebook < scripts/migrations/002_add_audit_logs_status.sql
+```
+
+> **Note:** Replace `$MYSQL_ROOT_PASSWORD` with your actual password or set it as an environment variable.
+
+### Migration History
+
+| Migration | Description | Date |
+|-----------|-------------|------|
+| 001 | Initial schema (init-db.sql) | 2024-12 |
+| 002 | Add status column to activity_logs | 2024-12-12 |
+
+---
+
+## Recent Changes
+
+### Audit Log Enhancement (2024-12-12)
+- Added `status` column to `activity_logs` table (success/failed/denied)
+- Added `idx_activity_status` index for filtering by status
+- Added `idx_activity_user_action` composite index for user audit queries
+
+### Google OAuth Support (2024-12-12)
+- OAuth provider and oauth_id columns already existed in users table
+- No schema changes required, just new code paths
+
+### Workspaces Feature (Added Previously)
 - New `workspaces` table for organizing projects into groups
 - New `workspace_id` column in `projects` table (optional FK)
 - Projects can be moved between workspaces or left uncategorized

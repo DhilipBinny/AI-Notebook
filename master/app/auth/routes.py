@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.users.models import User
 from app.users.schemas import UserResponse
+from app.audit import audit_log, AuditStatus
 from .service import AuthService
 from .schemas import (
     LoginRequest,
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: RegisterRequest,
+    req: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -40,7 +42,28 @@ async def register(
             password=request.password,
             name=request.name,
         )
+
+        # Audit log: successful registration
+        await audit_log(
+            db=db,
+            request=req,
+            action="auth.register",
+            user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"email": request.email},
+            status=AuditStatus.SUCCESS,
+        )
+
     except ValueError as e:
+        # Audit log: failed registration
+        await audit_log(
+            db=db,
+            request=req,
+            action="auth.register",
+            metadata={"email": request.email, "reason": str(e)},
+            status=AuditStatus.FAILED,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
@@ -78,7 +101,28 @@ async def login(
             user_agent=user_agent,
             ip_address=ip_address,
         )
+
+        # Audit log: successful login
+        await audit_log(
+            db=db,
+            request=req,
+            action="auth.login",
+            user_id=user.id,
+            resource_type="user",
+            resource_id=user.id,
+            metadata={"method": "email", "email": request.email},
+            status=AuditStatus.SUCCESS,
+        )
+
     except ValueError as e:
+        # Audit log: failed login
+        await audit_log(
+            db=db,
+            request=req,
+            action="auth.login",
+            metadata={"method": "email", "email": request.email, "reason": str(e)},
+            status=AuditStatus.FAILED,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
@@ -123,13 +167,26 @@ async def refresh_tokens(
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
     request: RefreshRequest,
+    req: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Logout by revoking refresh token.
     """
     auth_service = AuthService(db)
     await auth_service.logout(request.refresh_token)
+
+    # Audit log: logout
+    await audit_log(
+        db=db,
+        request=req,
+        action="auth.logout",
+        user_id=current_user.id,
+        resource_type="user",
+        resource_id=current_user.id,
+        status=AuditStatus.SUCCESS,
+    )
 
     return MessageResponse(message="Logged out successfully")
 

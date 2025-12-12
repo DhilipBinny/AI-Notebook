@@ -224,26 +224,30 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 
 -- =====================================================
--- TABLE: activity_logs (optional - for auditing)
+-- TABLE: activity_logs (Audit Trail)
 -- =====================================================
--- Tracks user activity for auditing and analytics
+-- Tracks user activity for security auditing and analytics
+-- Logs authentication events, resource operations, and system events
 -- =====================================================
 CREATE TABLE IF NOT EXISTS activity_logs (
-    -- Primary key (auto-increment for performance)
+    -- Primary key (auto-increment for performance on high-volume table)
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-    -- User reference (NULL for system events)
+    -- User reference (NULL for system/anonymous events)
     user_id CHAR(36) NULL,
 
     -- Activity info
-    action VARCHAR(100) NOT NULL,  -- e.g., 'project.create', 'playground.start'
-    resource_type VARCHAR(50) NULL,  -- e.g., 'project', 'playground'
-    resource_id CHAR(36) NULL,
+    action VARCHAR(100) NOT NULL,      -- e.g., 'auth.login', 'project.create'
+    resource_type VARCHAR(50) NULL,    -- e.g., 'user', 'project', 'playground'
+    resource_id CHAR(36) NULL,         -- ID of affected resource
 
     -- Additional context
-    metadata JSON NULL,
-    ip_address VARCHAR(45) NULL,
-    user_agent VARCHAR(500) NULL,
+    metadata JSON NULL,                -- Action-specific data (flexible schema)
+    ip_address VARCHAR(45) NULL,       -- IPv4 or IPv6
+    user_agent VARCHAR(500) NULL,      -- Browser/client info
+
+    -- Result status
+    status ENUM('success', 'failed', 'denied') NOT NULL DEFAULT 'success',
 
     -- Timestamp
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -253,7 +257,10 @@ CREATE TABLE IF NOT EXISTS activity_logs (
     INDEX idx_activity_user (user_id),
     INDEX idx_activity_action (action),
     INDEX idx_activity_resource (resource_type, resource_id),
-    INDEX idx_activity_created (created_at)
+    INDEX idx_activity_created (created_at),
+    INDEX idx_activity_status (status),
+    -- Composite index for common audit queries
+    INDEX idx_activity_user_action (user_id, action, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
