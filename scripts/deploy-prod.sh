@@ -119,6 +119,16 @@ if [[ "$NO_CACHE" == "true" ]]; then
   CACHE_FLAG="--no-cache"
 fi
 
+# Setup SSH ControlMaster for connection reuse (single password prompt)
+SSH_CONTROL_PATH="/tmp/ssh-deploy-$$"
+SSH_OPTS="-o ControlMaster=auto -o ControlPath=${SSH_CONTROL_PATH} -o ControlPersist=300"
+
+cleanup_ssh() {
+  # Close SSH control connection on exit
+  ssh -O exit -o ControlPath="${SSH_CONTROL_PATH}" ${VM_USER}@${VM_HOST} 2>/dev/null || true
+}
+trap cleanup_ssh EXIT
+
 # Step 1: Build production images locally
 echo "[1/5] Building production Docker images..."
 
@@ -171,25 +181,33 @@ fi
 
 echo ""
 echo "[3/5] Copying files to VM..."
+echo "  (Establishing SSH connection - enter password once)"
 
-# Create remote directory structure
-ssh ${VM_USER}@${VM_HOST} "mkdir -p ${REMOTE_DIR}/{dist}"
+# Create remote directory structure (this establishes the ControlMaster connection)
+ssh ${SSH_OPTS} ${VM_USER}@${VM_HOST} "mkdir -p ${REMOTE_DIR}/dist"
 
-# Copy only the images that were built
+# Build list of files to copy
+FILES_TO_COPY=""
 if [[ "$BUILD_WEB" == "true" ]]; then
-  scp ./dist/ainotebook-web.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
+  FILES_TO_COPY="${FILES_TO_COPY} ./dist/ainotebook-web.tar.gz"
 fi
 if [[ "$BUILD_MASTER" == "true" ]]; then
-  scp ./dist/ainotebook-master-api.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
+  FILES_TO_COPY="${FILES_TO_COPY} ./dist/ainotebook-master-api.tar.gz"
 fi
 if [[ "$BUILD_PLAYGROUND" == "true" ]]; then
-  scp ./dist/ainotebook-playground.tar.gz ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
+  FILES_TO_COPY="${FILES_TO_COPY} ./dist/ainotebook-playground.tar.gz"
+fi
+
+# Copy all files in single scp command (reuses existing connection)
+if [[ -n "${FILES_TO_COPY}" ]]; then
+  echo "  Copying: ${FILES_TO_COPY}"
+  scp ${SSH_OPTS} ${FILES_TO_COPY} ${VM_USER}@${VM_HOST}:${REMOTE_DIR}/dist/
 fi
 
 echo ""
 echo "[4/5] Loading Docker images on VM..."
 
-ssh ${VM_USER}@${VM_HOST} << REMOTE_SCRIPT
+ssh ${SSH_OPTS} ${VM_USER}@${VM_HOST} << REMOTE_SCRIPT
 cd ${REMOTE_DIR}
 
 if [[ -f dist/ainotebook-web.tar.gz && "$BUILD_WEB" == "true" ]]; then
