@@ -136,3 +136,4 @@ local_settings.py
 *.orig
 *.rej
 .history/
+web/tsconfig.tsbuildinfo
