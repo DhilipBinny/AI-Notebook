@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import type { ChatMessage, LLMStep, ImageInput } from '@/types'
 
 interface PendingToolCall {
@@ -395,14 +397,31 @@ export default function ChatPanel({
 
   // Render message content with clickable cell references
   const renderMessageContent = useCallback((content: string) => {
-    // Split by newlines to preserve whitespace formatting
-    const lines = content.split('\n')
-    return lines.map((line, lineIdx) => (
-      <span key={lineIdx}>
-        {processCellReferences(line)}
-        {lineIdx < lines.length - 1 && '\n'}
-      </span>
-    ))
+    // Parse markdown and sanitize HTML (same approach as AICell)
+    const html = marked.parse(content) as string
+    // Process cell references before sanitizing
+    const processedHtml = html.replace(
+      /\[cell:([a-f0-9-]+)\]/gi,
+      (match, cellId) => {
+        return `<button class="cell-ref-btn inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer transition-colors" data-cell-id="${cellId}">📍 Cell</button>`
+      }
+    )
+    const sanitizedHtml = DOMPurify.sanitize(processedHtml, {
+      ADD_TAGS: ['button'],
+      ADD_ATTR: ['data-cell-id', 'class', 'style']
+    })
+    return sanitizedHtml
+  }, [])
+
+  // Handle clicks on cell reference buttons in messages
+  const handleMessageClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (target.classList.contains('cell-ref-btn')) {
+      const cellId = target.dataset.cellId
+      if (cellId && onScrollToCell) {
+        onScrollToCell(cellId)
+      }
+    }
   }, [onScrollToCell])
 
   // Text colors based on theme - use CSS variables
@@ -594,9 +613,18 @@ export default function ChatPanel({
                     </>
                   ) : (
                     <>
-                      <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                        {msg.role === 'assistant' ? renderMessageContent(msg.content) : msg.content}
-                      </div>
+                      {msg.role === 'assistant' ? (
+                        <div
+                          className="prose prose-sm max-w-none prose-invert"
+                          style={{ color: 'var(--nb-text-primary)' }}
+                          dangerouslySetInnerHTML={{ __html: renderMessageContent(msg.content) }}
+                          onClick={handleMessageClick}
+                        />
+                      ) : (
+                        <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                          {msg.content}
+                        </div>
+                      )}
                       {/* Show images attached to user messages */}
                       {msg.role === 'user' && msg.images && msg.images.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-2">
