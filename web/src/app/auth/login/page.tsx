@@ -232,19 +232,19 @@ function LoginForm() {
               )}
             </button>
 
-            {/* Divider */}
+            {/* Divider with visible lines */}
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full" style={{ borderTop: '1px solid var(--app-border-default)' }} />
+                <div className="w-full" style={{ borderTop: '1px solid var(--app-border-divider)' }} />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-4" style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-text-muted)' }}>
+                <span className="px-4" style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-text-divider)' }}>
                   Or continue with
                 </span>
               </div>
             </div>
 
-            {/* Google Login Button */}
+            {/* Google Login Button - Standard white style for recognition */}
             <button
               type="button"
               onClick={() => {
@@ -252,22 +252,24 @@ function LoginForm() {
                 window.location.href = '/api/auth/google'
               }}
               disabled={isGoogleLoading}
-              className="w-full py-3 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 hover:opacity-90"
+              className="w-full py-3 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
               style={{
-                backgroundColor: 'var(--app-bg-input)',
-                border: '1px solid var(--app-border-default)',
-                color: 'var(--app-text-primary)',
+                backgroundColor: 'var(--app-oauth-bg)',
+                border: '1px solid var(--app-oauth-border)',
+                color: 'var(--app-oauth-text)',
               }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-oauth-hover)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-oauth-bg)'}
             >
               {isGoogleLoading ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin" />
-                  Redirecting to Google...
+                  <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                  <span style={{ color: 'var(--app-oauth-text)' }}>Redirecting to Google...</span>
                 </>
               ) : (
                 <>
                   <GoogleIcon />
-                  Sign in with Google
+                  <span style={{ color: 'var(--app-oauth-text)' }}>Sign in with Google</span>
                 </>
               )}
             </button>

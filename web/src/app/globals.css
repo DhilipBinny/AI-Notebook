@@ -42,6 +42,16 @@
   --app-gradient-button: linear-gradient(135deg, #7aa2f7 0%, #73daca 100%);
   --app-gradient-success: linear-gradient(135deg, #a6e3a1 0%, #94e2d5 100%);
 
+  /* Divider text - lighter for visibility */
+  --app-text-divider: #9ca3af;
+  --app-border-divider: rgba(255, 255, 255, 0.15);
+
+  /* OAuth buttons - standard white for recognition */
+  --app-oauth-bg: #ffffff;
+  --app-oauth-border: #dadce0;
+  --app-oauth-text: #3c4043;
+  --app-oauth-hover: #f8f9fa;
+
   /* Notebook-specific backgrounds - Softer for comfortable code reading */
   --nb-bg-primary: #1e1e2e;        /* Main notebook background */
   --nb-bg-secondary: #313244;      /* Secondary/toolbar */
@@ -127,6 +137,16 @@
   --app-gradient-primary: linear-gradient(135deg, #3b82f6 0%, #14b8a6 100%);
   --app-gradient-button: linear-gradient(135deg, #2563eb 0%, #0d9488 100%);
   --app-gradient-success: linear-gradient(135deg, #22c55e 0%, #14b8a6 100%);
+
+  /* Divider text - visible on light background */
+  --app-text-divider: #6b7280;
+  --app-border-divider: #d1d5db;
+
+  /* OAuth buttons - standard white (same in light theme) */
+  --app-oauth-bg: #ffffff;
+  --app-oauth-border: #dadce0;
+  --app-oauth-text: #3c4043;
+  --app-oauth-hover: #f8f9fa;
 
   /* Notebook-specific backgrounds - Clean and professional */
   --nb-bg-primary: #f8fafc;        /* Main notebook background */
