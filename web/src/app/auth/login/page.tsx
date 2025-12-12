@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/lib/api'
@@ -28,7 +28,22 @@ const GoogleIcon = () => (
   </svg>
 )
 
-export default function LoginPage() {
+// Loading fallback
+function LoginLoading() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ backgroundColor: 'var(--app-bg-primary)' }}
+    >
+      <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin"
+        style={{ borderColor: 'var(--app-accent-primary)', borderTopColor: 'transparent' }}
+      />
+    </div>
+  )
+}
+
+// Main login form component
+function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -279,5 +294,14 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Page component with Suspense boundary (required for useSearchParams in Next.js 15)
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginForm />
+    </Suspense>
   )
 }

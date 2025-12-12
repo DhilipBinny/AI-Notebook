@@ -1,11 +1,37 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 
-export default function OAuthCallbackPage() {
+// Loading fallback component
+function CallbackLoading() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ backgroundColor: 'var(--app-bg-primary)' }}
+    >
+      <div className="text-center">
+        <div className="w-16 h-16 mx-auto mb-4">
+          <div
+            className="w-full h-full border-4 border-t-transparent rounded-full animate-spin"
+            style={{ borderColor: 'var(--app-accent-primary)', borderTopColor: 'transparent' }}
+          />
+        </div>
+        <h2
+          className="text-xl font-semibold mb-2"
+          style={{ color: 'var(--app-text-primary)' }}
+        >
+          Loading...
+        </h2>
+      </div>
+    </div>
+  )
+}
+
+// Main callback handler component (uses useSearchParams)
+function OAuthCallbackHandler() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [error, setError] = useState('')
   const router = useRouter()
@@ -168,5 +194,14 @@ export default function OAuthCallbackPage() {
         )}
       </div>
     </div>
+  )
+}
+
+// Page component with Suspense boundary (required for useSearchParams in Next.js 15)
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense fallback={<CallbackLoading />}>
+      <OAuthCallbackHandler />
+    </Suspense>
   )
 }
