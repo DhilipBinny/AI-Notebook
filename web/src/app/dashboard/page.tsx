@@ -5,6 +5,36 @@ import { useRouter } from 'next/navigation'
 import { auth, projects, playgrounds, notebooks, workspaces } from '@/lib/api'
 import { useAuthStore, useProjectsStore } from '@/lib/store'
 import type { Project, Workspace } from '@/types'
+import {
+  Plus,
+  Upload,
+  Download,
+  Play,
+  Square,
+  Trash2,
+  Edit3,
+  FileCode,
+  Folder,
+  FolderPlus,
+  LogOut,
+  Monitor,
+  Activity,
+  MoreVertical,
+  Check,
+  X,
+  ChevronRight,
+  ChevronDown,
+  Settings,
+  RefreshCw,
+  ExternalLink,
+  BookOpen,
+  Sparkles,
+  CheckCircle,
+  CloudUpload,
+  User,
+  FileText,
+  Terminal,
+} from 'lucide-react'
 
 // Apply dark theme on mount for dashboard
 const useDashboardTheme = () => {
@@ -64,7 +94,12 @@ export default function DashboardPage() {
   const [editWorkspaceColor, setEditWorkspaceColor] = useState('')
   const [updatingWorkspace, setUpdatingWorkspace] = useState(false)
   const [deleteWorkspaceConfirm, setDeleteWorkspaceConfirm] = useState<Workspace | null>(null)
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('list')
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+
+  // Modal states for Logs and Terminal
+  const [logsModal, setLogsModal] = useState<{ projectId: string; projectName: string } | null>(null)
+  const [terminalModal, setTerminalModal] = useState<{ projectId: string; projectName: string } | null>(null)
 
   // Workspace colors
   const workspaceColors = [
@@ -465,8 +500,13 @@ export default function DashboardPage() {
   }
 
   const handleViewLogs = (project: Project) => {
-    // Open logs in new tab with xterm.js support
-    window.open(`/logs/${project.id}`, '_blank')
+    // Open logs in modal
+    setLogsModal({ projectId: project.id, projectName: project.name })
+  }
+
+  const handleOpenTerminal = (project: Project) => {
+    // Open terminal in modal
+    setTerminalModal({ projectId: project.id, projectName: project.name })
   }
 
   const handleDownloadProject = async (project: Project) => {
@@ -613,6 +653,43 @@ export default function DashboardPage() {
   const uncategorizedCount = projectList.filter(p => !p.workspace_id).length
   const activePlaygrounds = Object.values(playgroundStatuses).filter(s => s.status === 'running').length
 
+  // Helper function for relative time formatting
+  const getRelativeTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / (1000 * 60))
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+    return date.toLocaleDateString()
+  }
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!user?.email) return '?'
+    const parts = user.email.split('@')[0].split(/[._-]/)
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase()
+    }
+    return user.email.substring(0, 2).toUpperCase()
+  }
+
+  // Close profile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   if (isLoading || authLoading) {
     return (
       <div
@@ -639,7 +716,7 @@ export default function DashboardPage() {
     <div className="min-h-screen" style={{ backgroundColor: 'var(--app-bg-primary)' }}>
       {/* Notification Banner */}
       {notificationMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full mx-4 animate-in slide-in-from-top duration-300">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] max-w-lg w-full mx-4 animate-in slide-in-from-top duration-300">
           <div
             className="backdrop-blur-xl rounded-xl p-4 flex items-start gap-3 shadow-lg"
             style={{
@@ -651,9 +728,7 @@ export default function DashboardPage() {
               className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
               style={{ backgroundColor: 'rgba(16, 185, 129, 0.3)' }}
             >
-              <svg className="w-5 h-5" style={{ color: 'var(--app-accent-success)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+              <Check className="w-5 h-5" style={{ color: 'var(--app-accent-success)' }} />
             </div>
             <div className="flex-1">
               <p className="text-sm" style={{ color: 'var(--app-accent-success)' }}>{notificationMessage}</p>
@@ -663,9 +738,7 @@ export default function DashboardPage() {
               className="flex-shrink-0 transition-colors hover:opacity-80"
               style={{ color: 'var(--app-accent-success)' }}
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -683,15 +756,15 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Header */}
+      {/* Header - Full width */}
       <header
-        className="relative z-10 backdrop-blur-xl"
+        className="relative z-50 backdrop-blur-xl"
         style={{
           backgroundColor: 'var(--app-bg-secondary)',
           borderBottom: '1px solid var(--app-border-default)'
         }}
       >
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="px-6 py-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div
@@ -701,270 +774,208 @@ export default function DashboardPage() {
                   boxShadow: '0 10px 40px rgba(59, 130, 246, 0.3)'
                 }}
               >
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
+                <Monitor className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold" style={{ color: 'var(--app-text-primary)' }}>AI Notebook</h1>
+                <h1 className="text-base font-bold" style={{ color: 'var(--app-text-primary)' }}>AI Notebook</h1>
                 <p className="text-xs" style={{ color: 'var(--app-accent-primary)' }}>Intelligent Computing Environment</p>
               </div>
             </div>
-            <div className="flex items-center gap-6">
-              <div
-                className="flex items-center gap-2 px-4 py-2 rounded-full"
-                style={{
-                  backgroundColor: 'var(--app-bg-card)',
-                  border: '1px solid var(--app-border-default)'
-                }}
-              >
-                <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--app-accent-success)' }} />
-                <span className="text-sm" style={{ color: 'var(--app-text-secondary)' }}>{user?.email}</span>
-              </div>
+            {/* Profile Menu */}
+            <div className="relative z-50" ref={profileMenuRef}>
               <button
-                onClick={handleLogout}
-                className="px-4 py-2 text-sm transition-colors hover:opacity-80"
-                style={{ color: 'var(--app-text-muted)' }}
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all hover:bg-white/5"
               >
-                Sign Out
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ring-2 ring-transparent hover:ring-white/20 transition-all"
+                  style={{
+                    background: 'var(--app-gradient-primary)',
+                    color: 'white'
+                  }}
+                >
+                  {getUserInitials()}
+                </div>
+                <span className="text-sm font-medium" style={{ color: 'var(--app-text-primary)' }}>
+                  {user?.email?.split('@')[0]}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`}
+                  style={{ color: 'var(--app-text-muted)' }}
+                />
               </button>
+
+              {/* Dropdown Menu */}
+              {showProfileMenu && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
+                  style={{
+                    backgroundColor: 'var(--app-bg-secondary)',
+                    border: '1px solid var(--app-border-default)'
+                  }}
+                >
+                  {/* User Info */}
+                  <div className="p-4" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold"
+                        style={{
+                          background: 'var(--app-gradient-primary)',
+                          color: 'white'
+                        }}
+                      >
+                        {getUserInitials()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--app-text-primary)' }}>
+                          {user?.email?.split('@')[0]}
+                        </p>
+                        <p className="text-xs truncate" style={{ color: 'var(--app-text-muted)' }}>
+                          {user?.email}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sign Out */}
+                  <div className="p-2">
+                    <button
+                      onClick={() => { setShowProfileMenu(false); handleLogout() }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
+                      style={{ color: 'var(--app-accent-error)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span className="text-sm">Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="relative z-10 max-w-7xl mx-auto px-6 py-8">
-        {/* Hero Section */}
-        <div className="mb-8">
-          <div className="flex justify-between items-end">
-            <div>
-              <h2 className="text-4xl font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>
-                Welcome back<span style={{ color: 'var(--app-accent-primary)' }}>.</span>
-              </h2>
-              <p className="text-lg" style={{ color: 'var(--app-text-muted)' }}>
-                Create, explore, and run AI-powered notebooks
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="group px-5 py-3 rounded-xl font-medium transition-all duration-300 flex items-center gap-2 hover:opacity-90"
-                style={{
-                  backgroundColor: 'var(--app-bg-card)',
-                  color: 'var(--app-text-primary)',
-                  border: '1px solid var(--app-border-default)'
-                }}
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Import .ipynb
-              </button>
-              <button
-                onClick={() => setShowNewProject(true)}
-                className="group px-6 py-3 text-white rounded-xl font-medium shadow-lg transition-all duration-300 flex items-center gap-2 hover:opacity-90"
-                style={{
-                  background: 'var(--app-gradient-primary)',
-                  boxShadow: '0 4px 20px rgba(59, 130, 246, 0.3)'
-                }}
-              >
-                <svg className="w-5 h-5 transition-transform group-hover:rotate-90 duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                New Notebook
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Main Content - 3 Column Layout */}
+      <div className="relative z-10 flex h-[calc(100vh-57px)]">
+        {/* Left Sidebar - Workspaces */}
+        <aside
+          className="w-[15%] min-w-[200px] max-w-[280px] flex-shrink-0 overflow-y-auto"
+          style={{
+            backgroundColor: 'var(--app-bg-secondary)',
+            borderRight: '1px solid var(--app-border-default)'
+          }}
+        >
+          <div className="p-4">
+            {/* New Notebook Button */}
+            <button
+              onClick={() => setShowNewProject(true)}
+              className="w-full px-4 py-2.5 text-white rounded-lg font-medium text-sm shadow-lg transition-all duration-300 flex items-center justify-center gap-2 hover:opacity-90 mb-4"
+              style={{
+                background: 'var(--app-gradient-primary)',
+                boxShadow: '0 4px 20px rgba(59, 130, 246, 0.3)'
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              New Notebook
+            </button>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <div
-            className="p-6 rounded-2xl backdrop-blur-sm"
-            style={{
-              backgroundColor: 'var(--app-bg-card)',
-              border: '1px solid var(--app-border-default)'
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>Total Notebooks</p>
-                <p className="text-3xl font-bold mt-1" style={{ color: 'var(--app-text-primary)' }}>{projectList.length}</p>
-              </div>
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)' }}
-              >
-                <svg className="w-6 h-6" style={{ color: 'var(--app-accent-primary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-            </div>
-          </div>
-          <div
-            className="p-6 rounded-2xl backdrop-blur-sm"
-            style={{
-              backgroundColor: 'var(--app-bg-card)',
-              border: '1px solid var(--app-border-default)'
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>Active Playgrounds</p>
-                <p className="text-3xl font-bold mt-1" style={{ color: 'var(--app-text-primary)' }}>{activePlaygrounds}</p>
-              </div>
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)' }}
-              >
-                <svg className="w-6 h-6" style={{ color: 'var(--app-accent-success)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Workspace Sidebar + Projects Grid */}
-        <div className="flex gap-6">
-          {/* Workspace Sidebar */}
-          <div className="w-64 flex-shrink-0">
-            <div
-              className="sticky top-24 rounded-2xl backdrop-blur-sm overflow-hidden"
+            {/* Import Button */}
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="w-full px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 flex items-center justify-center gap-2 hover:opacity-90 mb-6"
               style={{
                 backgroundColor: 'var(--app-bg-card)',
+                color: 'var(--app-text-secondary)',
                 border: '1px solid var(--app-border-default)'
               }}
             >
-              <div className="p-4" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
-                <h3 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--app-text-primary)' }}>Workspaces</h3>
-              </div>
-              <div className="p-2 max-h-[60vh] overflow-y-auto">
-                {/* Workspace Items */}
-                {workspaceList.map(ws => (
-                  <div
-                    key={ws.id}
-                    className="group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all mb-1 cursor-pointer"
-                    style={{
-                      backgroundColor: selectedWorkspaceId === ws.id ? 'var(--app-bg-input)' : 'transparent',
-                      color: selectedWorkspaceId === ws.id ? 'var(--app-text-primary)' : 'var(--app-text-muted)'
-                    }}
-                    onClick={() => setSelectedWorkspaceId(ws.id)}
-                  >
-                    <div
-                      className="w-3 h-3 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: ws.color }}
-                    />
-                    <span className="flex-1 text-sm truncate">{ws.name}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEditWorkspace(ws) }}
-                      className="p-1 opacity-0 group-hover:opacity-100 transition-all"
-                      style={{ color: 'var(--app-text-muted)' }}
-                      title="Edit workspace"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: 'var(--app-bg-input)' }}
-                    >{ws.project_count}</span>
-                  </div>
-                ))}
+              <Upload className="w-4 h-4" />
+              Import .ipynb
+            </button>
 
-                {/* Uncategorized */}
-                {uncategorizedCount > 0 && (
-                  <button
-                    onClick={() => setSelectedWorkspaceId('uncategorized')}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all mb-1"
-                    style={{
-                      backgroundColor: selectedWorkspaceId === 'uncategorized' ? 'var(--app-bg-input)' : 'transparent',
-                      color: selectedWorkspaceId === 'uncategorized' ? 'var(--app-text-primary)' : 'var(--app-text-muted)'
-                    }}
-                  >
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--app-text-muted)' }} />
-                    <span className="flex-1 text-left text-sm">Uncategorized</span>
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: 'var(--app-bg-input)' }}
-                    >{uncategorizedCount}</span>
-                  </button>
-                )}
+            {/* Workspaces Section */}
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Workspaces</h3>
+              <button
+                onClick={() => setShowNewWorkspace(true)}
+                className="p-1 rounded transition-all hover:opacity-80"
+                style={{ color: 'var(--app-text-muted)' }}
+                title="New Workspace"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-                {/* New Workspace Button */}
-                <button
-                  onClick={() => setShowNewWorkspace(true)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all mt-2"
+            {/* Workspace Items */}
+            <div className="space-y-0.5">
+              {workspaceList.map(ws => (
+                <div
+                  key={ws.id}
+                  className="group flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all cursor-pointer"
                   style={{
-                    color: 'var(--app-text-muted)',
-                    border: '1px dashed var(--app-border-default)'
+                    backgroundColor: selectedWorkspaceId === ws.id ? 'var(--app-bg-input)' : 'transparent',
+                    color: selectedWorkspaceId === ws.id ? 'var(--app-text-primary)' : 'var(--app-text-muted)'
+                  }}
+                  onClick={() => setSelectedWorkspaceId(ws.id)}
+                >
+                  <div
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: ws.color }}
+                  />
+                  <span className="flex-1 text-sm truncate">{ws.name}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleEditWorkspace(ws) }}
+                    className="p-0.5 opacity-0 group-hover:opacity-100 transition-all"
+                    style={{ color: 'var(--app-text-muted)' }}
+                    title="Edit workspace"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                  </button>
+                  <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{ws.project_count}</span>
+                </div>
+              ))}
+
+              {/* Uncategorized */}
+              {uncategorizedCount > 0 && (
+                <button
+                  onClick={() => setSelectedWorkspaceId('uncategorized')}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all"
+                  style={{
+                    backgroundColor: selectedWorkspaceId === 'uncategorized' ? 'var(--app-bg-input)' : 'transparent',
+                    color: selectedWorkspaceId === 'uncategorized' ? 'var(--app-text-primary)' : 'var(--app-text-muted)'
                   }}
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span className="text-sm">New Workspace</span>
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--app-text-muted)' }} />
+                  <span className="flex-1 text-left text-sm">Uncategorized</span>
+                  <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{uncategorizedCount}</span>
                 </button>
-              </div>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* Center - Main Content */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {/* Workspace Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              {getSelectedWorkspace() && (
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: getSelectedWorkspace()?.color }}
+                />
+              )}
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--app-text-primary)' }}>{getSelectedWorkspaceName()}</h2>
+              <span className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
+                {getFilteredProjects().length} notebook{getFilteredProjects().length !== 1 ? 's' : ''}
+              </span>
             </div>
           </div>
 
-          {/* Projects Grid */}
-          <div className="flex-1">
-            {/* Workspace Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                {getSelectedWorkspace() && (
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{ backgroundColor: getSelectedWorkspace()?.color }}
-                  />
-                )}
-                <h3 className="text-xl font-semibold" style={{ color: 'var(--app-text-primary)' }}>{getSelectedWorkspaceName()}</h3>
-                <span className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
-                  {getFilteredProjects().length} notebook{getFilteredProjects().length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              {/* View Toggle */}
-              <div
-                className="flex items-center gap-1 p-1 rounded-lg"
-                style={{
-                  backgroundColor: 'var(--app-bg-card)',
-                  border: '1px solid var(--app-border-default)'
-                }}
-              >
-                <button
-                  onClick={() => setViewMode('card')}
-                  className="p-2 rounded-md transition-all"
-                  style={{
-                    backgroundColor: viewMode === 'card' ? 'var(--app-bg-input)' : 'transparent',
-                    color: viewMode === 'card' ? 'var(--app-text-primary)' : 'var(--app-text-muted)'
-                  }}
-                  title="Card view"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className="p-2 rounded-md transition-all"
-                  style={{
-                    backgroundColor: viewMode === 'list' ? 'var(--app-bg-input)' : 'transparent',
-                    color: viewMode === 'list' ? 'var(--app-text-primary)' : 'var(--app-text-muted)'
-                  }}
-                  title="List view"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {getFilteredProjects().length === 0 ? (
+          {/* Projects Content */}
+          {getFilteredProjects().length === 0 ? (
               <div
                 className="text-center py-16 rounded-2xl"
                 style={{
@@ -979,12 +990,10 @@ export default function DashboardPage() {
                     border: '1px solid var(--app-border-default)'
                   }}
                 >
-                  <svg className="w-8 h-8" style={{ color: 'var(--app-text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
+                  <BookOpen className="w-8 h-8" style={{ color: 'var(--app-text-muted)' }} strokeWidth={1.5} />
                 </div>
-                <h4 className="text-lg font-medium mb-2" style={{ color: 'var(--app-text-primary)' }}>No notebooks here</h4>
-                <p className="mb-4 text-sm" style={{ color: 'var(--app-text-muted)' }}>Create a notebook in this workspace</p>
+                <h4 className="text-base font-medium mb-2" style={{ color: 'var(--app-text-primary)' }}>No notebooks here</h4>
+                <p className="mb-4 text-xs" style={{ color: 'var(--app-text-muted)' }}>Create a notebook in this workspace</p>
                 <button
                   onClick={() => setShowNewProject(true)}
                   className="px-5 py-2.5 text-white rounded-xl font-medium text-sm shadow-lg"
@@ -995,201 +1004,6 @@ export default function DashboardPage() {
                 >
                   Create Notebook
                 </button>
-              </div>
-            ) : viewMode === 'card' ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {getFilteredProjects().map((project) => {
-                  const pgStatus = playgroundStatuses[project.id] || { status: 'stopped', loading: false }
-                  const isRunning = pgStatus.status === 'running'
-                  const isLoading = pgStatus.loading
-                  const projectWorkspace = workspaceList.find(w => w.id === project.workspace_id)
-
-                  return (
-                    <div
-                      key={project.id}
-                      className="group relative rounded-2xl backdrop-blur-sm overflow-hidden transition-all duration-300"
-                      style={{
-                        backgroundColor: 'var(--app-bg-card)',
-                        border: '1px solid var(--app-border-default)'
-                      }}
-                    >
-                      {/* Workspace color bar */}
-                      <div
-                        className="absolute top-0 left-0 right-0 h-1"
-                        style={{ backgroundColor: projectWorkspace?.color || '#6B7280' }}
-                      />
-
-                      <div className="p-5">
-                        {/* Header */}
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div
-                              className="w-10 h-10 rounded-xl flex items-center justify-center"
-                              style={{
-                                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(20, 184, 166, 0.2))',
-                                border: '1px solid var(--app-border-default)',
-                                color: 'var(--app-accent-secondary)'
-                              }}
-                            >
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                              </svg>
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="font-semibold truncate" style={{ color: 'var(--app-text-primary)' }}>{project.name}</h4>
-                              <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{new Date(project.updated_at).toLocaleDateString()}</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                            <button
-                              onClick={() => handleDownloadProject(project)}
-                              disabled={downloadingProject === project.id}
-                              className="p-1.5 rounded-lg transition-all disabled:opacity-50"
-                              style={{ color: 'var(--app-text-muted)' }}
-                              title="Download"
-                            >
-                              {downloadingProject === project.id ? (
-                                <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(20, 184, 166, 0.3)', borderTopColor: 'var(--app-accent-secondary)' }} />
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => handleEditProject(project)}
-                              className="p-1.5 rounded-lg transition-all"
-                              style={{ color: 'var(--app-text-muted)' }}
-                              title="Edit"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteProject(project)}
-                              className="p-1.5 rounded-lg transition-all"
-                              style={{ color: 'var(--app-accent-error)' }}
-                              title="Delete"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Description */}
-                        {project.description && (
-                          <p className="text-sm mb-3 line-clamp-2" style={{ color: 'var(--app-text-muted)' }}>{project.description}</p>
-                        )}
-
-                        {/* Status */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <div
-                            className={`w-2 h-2 rounded-full ${
-                              pgStatus.status === 'starting' || pgStatus.status === 'stopping' ? 'animate-pulse' : ''
-                            }`}
-                            style={{
-                              backgroundColor: pgStatus.status === 'running' ? 'var(--app-accent-success)' :
-                                pgStatus.status === 'starting' || pgStatus.status === 'stopping' ? 'var(--app-accent-warning)' :
-                                pgStatus.status === 'error' ? 'var(--app-accent-error)' : 'var(--app-text-muted)',
-                              boxShadow: pgStatus.status === 'running' ? '0 0 8px rgba(16, 185, 129, 0.5)' : 'none'
-                            }}
-                          />
-                          <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>
-                            {pgStatus.status === 'running' ? 'Running' :
-                             pgStatus.status === 'starting' ? 'Starting...' :
-                             pgStatus.status === 'stopping' ? 'Stopping...' :
-                             pgStatus.status === 'error' ? 'Error' : 'Stopped'}
-                          </span>
-                        </div>
-
-                        {/* Controls */}
-                        <div className="flex gap-2 mb-3">
-                          {!isRunning ? (
-                            <button
-                              onClick={() => handleStartPlayground(project.id)}
-                              disabled={isLoading}
-                              className="flex-1 px-3 py-2 text-sm rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                              style={{
-                                backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                                color: 'var(--app-accent-success)',
-                                border: '1px solid rgba(16, 185, 129, 0.3)'
-                              }}
-                            >
-                              {isLoading ? (
-                                <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(16, 185, 129, 0.3)', borderTopColor: 'var(--app-accent-success)' }} />
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                </svg>
-                              )}
-                              Start
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => handleStopPlayground(project.id)}
-                                disabled={isLoading}
-                                className="flex-1 px-3 py-2 text-sm rounded-xl transition-all disabled:opacity-50"
-                                style={{
-                                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                                  color: 'var(--app-accent-error)',
-                                  border: '1px solid rgba(239, 68, 68, 0.3)'
-                                }}
-                              >
-                                Stop
-                              </button>
-                              <button
-                                onClick={() => handleRestartPlayground(project.id)}
-                                disabled={isLoading}
-                                className="flex-1 px-3 py-2 text-sm rounded-xl transition-all disabled:opacity-50"
-                                style={{
-                                  backgroundColor: 'rgba(245, 158, 11, 0.2)',
-                                  color: 'var(--app-accent-warning)',
-                                  border: '1px solid rgba(245, 158, 11, 0.3)'
-                                }}
-                              >
-                                Restart
-                              </button>
-                              <button
-                                onClick={() => handleViewLogs(project)}
-                                className="flex-1 px-3 py-2 text-sm rounded-xl transition-all"
-                                style={{
-                                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                                  color: 'var(--app-accent-primary)',
-                                  border: '1px solid rgba(59, 130, 246, 0.3)'
-                                }}
-                              >
-                                Logs
-                              </button>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Open Button */}
-                        <button
-                          onClick={() => router.push(`/notebook/${project.id}`)}
-                          disabled={!isRunning}
-                          className="w-full py-2.5 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2"
-                          style={isRunning ? {
-                            background: 'var(--app-gradient-primary)',
-                            color: 'white',
-                            boxShadow: '0 4px 20px rgba(59, 130, 246, 0.3)'
-                          } : {
-                            backgroundColor: 'var(--app-bg-card)',
-                            color: 'var(--app-text-muted)',
-                            border: '1px solid var(--app-border-default)',
-                            cursor: 'not-allowed'
-                          }}
-                        >
-                          {isRunning ? 'Open Notebook' : 'Start to Open'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
               </div>
             ) : (
               /* List View */
@@ -1240,12 +1054,14 @@ export default function DashboardPage() {
                             color: 'var(--app-accent-secondary)'
                           }}
                         >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                          </svg>
+                          <BookOpen className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <h4 className="font-medium truncate text-sm" style={{ color: 'var(--app-text-primary)' }}>{project.name}</h4>
+                          <h4
+                            className={`font-medium truncate text-sm ${isRunning ? 'cursor-pointer hover:underline' : ''}`}
+                            style={{ color: 'var(--app-text-primary)' }}
+                            onClick={() => isRunning && router.push(`/notebook/${project.id}`)}
+                          >{project.name}</h4>
                           {project.description && (
                             <p className="text-xs truncate" style={{ color: 'var(--app-text-muted)' }}>{project.description}</p>
                           )}
@@ -1284,11 +1100,11 @@ export default function DashboardPage() {
 
                       {/* Updated */}
                       <div className="col-span-2 text-sm" style={{ color: 'var(--app-text-muted)' }}>
-                        {new Date(project.updated_at).toLocaleDateString()}
+                        {getRelativeTime(project.updated_at)}
                       </div>
 
                       {/* Actions */}
-                      <div className="col-span-4 flex items-center justify-end gap-2">
+                      <div className="col-span-4 flex items-center justify-end gap-1.5">
                         {/* Playground Controls */}
                         {!isRunning ? (
                           <button
@@ -1296,47 +1112,61 @@ export default function DashboardPage() {
                             disabled={isLoading}
                             className="px-3 py-1.5 text-xs rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
                             style={{
-                              backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                              color: 'var(--app-accent-success)',
-                              border: '1px solid rgba(16, 185, 129, 0.3)'
+                              backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                              color: 'var(--app-accent-primary)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)'
                             }}
                           >
                             {isLoading ? (
-                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(16, 185, 129, 0.3)', borderTopColor: 'var(--app-accent-success)' }} />
+                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }} />
                             ) : (
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                              </svg>
+                              <Play className="w-3 h-3" />
                             )}
                             Start
                           </button>
                         ) : (
                           <>
+                            {/* Stop - icon only */}
                             <button
                               onClick={() => handleStopPlayground(project.id)}
                               disabled={isLoading}
-                              className="px-2 py-1.5 text-xs rounded-lg transition-all disabled:opacity-50"
+                              className="p-1.5 rounded-lg transition-all disabled:opacity-50"
                               style={{
                                 backgroundColor: 'rgba(239, 68, 68, 0.2)',
                                 color: 'var(--app-accent-error)',
                                 border: '1px solid rgba(239, 68, 68, 0.3)'
                               }}
-                              title="Stop"
+                              title="Stop playground"
                             >
-                              Stop
+                              <Square className="w-4 h-4" fill="currentColor" />
                             </button>
+                            {/* Logs - icon only */}
                             <button
                               onClick={() => handleViewLogs(project)}
-                              className="px-2 py-1.5 text-xs rounded-lg transition-all"
+                              className="p-1.5 rounded-lg transition-all"
                               style={{
                                 backgroundColor: 'rgba(59, 130, 246, 0.2)',
                                 color: 'var(--app-accent-primary)',
                                 border: '1px solid rgba(59, 130, 246, 0.3)'
                               }}
-                              title="Logs"
+                              title="View logs"
                             >
-                              Logs
+                              <FileText className="w-4 h-4" />
                             </button>
+                            {/* Terminal - icon only */}
+                            <button
+                              onClick={() => handleOpenTerminal(project)}
+                              className="p-1.5 rounded-lg transition-all"
+                              style={{
+                                backgroundColor: 'rgba(20, 184, 166, 0.2)',
+                                color: 'var(--app-accent-secondary)',
+                                border: '1px solid rgba(20, 184, 166, 0.3)'
+                              }}
+                              title="Open Terminal"
+                            >
+                              <Terminal className="w-4 h-4" />
+                            </button>
+                            {/* Open */}
                             <button
                               onClick={() => router.push(`/notebook/${project.id}`)}
                               className="px-3 py-1.5 text-xs text-white rounded-lg transition-all shadow-lg"
@@ -1350,42 +1180,36 @@ export default function DashboardPage() {
                           </>
                         )}
 
-                        {/* More Actions */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {/* More Actions - always visible on hover */}
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all ml-1 pl-1.5" style={{ borderLeft: '1px solid var(--app-border-default)' }}>
                           <button
                             onClick={() => handleDownloadProject(project)}
                             disabled={downloadingProject === project.id}
-                            className="p-1.5 rounded-lg transition-all disabled:opacity-50"
+                            className="p-1.5 rounded-lg transition-all disabled:opacity-50 hover:bg-white/5"
                             style={{ color: 'var(--app-text-muted)' }}
-                            title="Download"
+                            title="Download notebook"
                           >
                             {downloadingProject === project.id ? (
                               <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(20, 184, 166, 0.3)', borderTopColor: 'var(--app-accent-secondary)' }} />
                             ) : (
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                              </svg>
+                              <Download className="w-4 h-4" />
                             )}
                           </button>
                           <button
                             onClick={() => handleEditProject(project)}
-                            className="p-1.5 rounded-lg transition-all"
+                            className="p-1.5 rounded-lg transition-all hover:bg-white/5"
                             style={{ color: 'var(--app-text-muted)' }}
-                            title="Edit"
+                            title="Edit notebook"
                           >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
+                            <Edit3 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDeleteProject(project)}
-                            className="p-1.5 rounded-lg transition-all"
+                            className="p-1.5 rounded-lg transition-all hover:bg-red-500/10"
                             style={{ color: 'var(--app-accent-error)' }}
-                            title="Delete"
+                            title="Delete notebook"
                           >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -1394,9 +1218,93 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
+        </main>
+
+        {/* Right Sidebar - Stats & Activity */}
+        <aside
+          className="w-[18%] min-w-[220px] max-w-[300px] flex-shrink-0 overflow-y-auto p-4"
+          style={{
+            backgroundColor: 'var(--app-bg-secondary)',
+            borderLeft: '1px solid var(--app-border-default)'
+          }}
+        >
+          {/* Stats Cards */}
+          <div className="space-y-3 mb-6">
+            <div
+              className="p-4 rounded-xl relative overflow-hidden"
+              style={{
+                backgroundColor: 'var(--app-bg-card)',
+                border: '1px solid var(--app-border-default)'
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Total Notebooks</p>
+                  <p className="text-xl font-bold mt-0.5" style={{ color: 'var(--app-text-primary)' }}>{projectList.length}</p>
+                </div>
+                <BookOpen className="w-8 h-8" style={{ color: 'var(--app-accent-primary)' }} strokeWidth={1.5} />
+              </div>
+            </div>
+            <div
+              className="p-4 rounded-xl relative overflow-hidden"
+              style={{
+                backgroundColor: 'var(--app-bg-card)',
+                border: '1px solid var(--app-border-default)'
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Active Playgrounds</p>
+                  <p className="text-xl font-bold mt-0.5" style={{ color: 'var(--app-text-primary)' }}>{activePlaygrounds}</p>
+                </div>
+                <Sparkles className="w-8 h-8" style={{ color: 'var(--app-accent-success)' }} strokeWidth={1.5} />
+              </div>
+            </div>
           </div>
-        </div>
-      </main>
+
+          {/* Recent Projects */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--app-text-muted)' }}>Recent Projects</h3>
+            <div className="space-y-1.5">
+              {[...projectList].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5).map(project => {
+                const pgStatus = playgroundStatuses[project.id]
+                const isRunning = pgStatus?.status === 'running'
+                return (
+                  <div
+                    key={project.id}
+                    onClick={() => isRunning && router.push(`/notebook/${project.id}`)}
+                    className={`p-2.5 rounded-lg text-sm transition-all ${isRunning ? 'cursor-pointer hover:opacity-80' : ''}`}
+                    style={{
+                      backgroundColor: 'var(--app-bg-card)',
+                      border: '1px solid var(--app-border-default)'
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      {/* Status indicator */}
+                      <div
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${pgStatus?.status === 'starting' || pgStatus?.status === 'stopping' ? 'animate-pulse' : ''}`}
+                        style={{
+                          backgroundColor: isRunning ? 'var(--app-accent-success)' :
+                            pgStatus?.status === 'starting' || pgStatus?.status === 'stopping' ? 'var(--app-accent-warning)' :
+                            'var(--app-text-muted)',
+                          boxShadow: isRunning ? '0 0 6px rgba(16, 185, 129, 0.5)' : 'none'
+                        }}
+                      />
+                      <p className="truncate flex-1" style={{ color: 'var(--app-text-primary)' }}>{project.name}</p>
+                    </div>
+                    <p className="text-xs pl-4" style={{ color: 'var(--app-text-muted)' }}>
+                      {getRelativeTime(project.updated_at)}
+                    </p>
+                  </div>
+                )
+              })}
+              {projectList.length === 0 && (
+                <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>No projects yet</p>
+              )}
+            </div>
+          </div>
+        </aside>
+      </div>
 
       {/* New Project Modal */}
       {showNewProject && (
@@ -1409,7 +1317,7 @@ export default function DashboardPage() {
               border: '1px solid var(--app-border-default)'
             }}
           >
-            <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>New Notebook</h3>
+            <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>New Notebook</h3>
             <form onSubmit={handleCreateProject} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
@@ -1482,7 +1390,7 @@ export default function DashboardPage() {
             className="relative w-full max-w-md rounded-2xl shadow-2xl p-6"
             style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}
           >
-            <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>Import Notebook</h3>
+            <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>Import Notebook</h3>
             <form onSubmit={handleImportProject} className="space-y-4">
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -1496,12 +1404,12 @@ export default function DashboardPage() {
                 <div className="text-center">
                   {importFile ? (
                     <>
-                      <svg className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--app-accent-primary)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <CheckCircle className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--app-accent-primary)' }} />
                       <p className="font-medium" style={{ color: 'var(--app-accent-primary)' }}>{importFile.name}</p>
                     </>
                   ) : (
                     <>
-                      <svg className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--app-text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                      <CloudUpload className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--app-text-muted)' }} />
                       <p style={{ color: 'var(--app-text-muted)' }}>Click to select .ipynb file</p>
                     </>
                   )}
@@ -1541,7 +1449,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingProject(null)} />
           <div className="relative w-full max-w-md rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}>
-            <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>Edit Notebook</h3>
+            <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>Edit Notebook</h3>
             <form onSubmit={handleUpdateProject} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
@@ -1567,9 +1475,7 @@ export default function DashboardPage() {
                     ))}
                   </select>
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <svg className="w-5 h-5" style={{ color: 'var(--app-text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
+                    <ChevronDown className="w-5 h-5" style={{ color: 'var(--app-text-muted)' }} />
                   </div>
                 </div>
               </div>
@@ -1590,7 +1496,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setDeleteConfirm(null)} />
           <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-            <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Notebook</h3>
+            <h3 className="text-base font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Notebook</h3>
             <p className="mb-4" style={{ color: 'var(--app-text-muted)' }}>Delete &quot;{deleteConfirm.name}&quot;? This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} disabled={deleting} className="flex-1 px-4 py-2.5 rounded-xl disabled:opacity-50" style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}>Cancel</button>
@@ -1608,7 +1514,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowNewWorkspace(false)} />
           <div className="relative w-full max-w-md rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}>
-            <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>New Workspace</h3>
+            <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>New Workspace</h3>
             <form onSubmit={handleCreateWorkspace} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
@@ -1639,7 +1545,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditingWorkspace(null)} />
           <div className="relative w-full max-w-md rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}>
-            <h3 className="text-xl font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>Edit Workspace</h3>
+            <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>Edit Workspace</h3>
             <form onSubmit={handleUpdateWorkspace} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
@@ -1673,7 +1579,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteWorkspaceConfirm(null)} />
           <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-            <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Workspace</h3>
+            <h3 className="text-base font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Workspace</h3>
             <p className="mb-4" style={{ color: 'var(--app-text-muted)' }}>Delete &quot;{deleteWorkspaceConfirm.name}&quot; and all its notebooks? This cannot be undone.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteWorkspaceConfirm(null)} className="flex-1 px-4 py-2.5 rounded-xl" style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}>Cancel</button>
@@ -1700,7 +1606,7 @@ export default function DashboardPage() {
               {/* Inner pulsing circle */}
               <div className="absolute inset-3 bg-gradient-to-br from-blue-500 to-teal-500 rounded-full animate-pulse" />
             </div>
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--app-text-primary)' }}>
+            <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--app-text-primary)' }}>
               Starting Playground
             </h3>
             <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
@@ -1710,6 +1616,106 @@ export default function DashboardPage() {
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logs Modal */}
+      {logsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setLogsModal(null)} />
+          <div
+            className="relative w-full max-w-6xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            style={{
+              backgroundColor: 'var(--app-bg-secondary)',
+              border: '1px solid var(--app-border-default)'
+            }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
+              <div className="flex items-center gap-3">
+                <FileText className="w-5 h-5" style={{ color: 'var(--app-accent-primary)' }} />
+                <div>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--app-text-primary)' }}>Playground Logs</h3>
+                  <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{logsModal.projectName}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.open(`/logs/${logsModal.projectId}`, '_blank')}
+                  className="p-2 rounded-lg transition-all hover:bg-white/5"
+                  style={{ color: 'var(--app-text-muted)' }}
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setLogsModal(null)}
+                  className="p-2 rounded-lg transition-all hover:bg-white/5"
+                  style={{ color: 'var(--app-text-muted)' }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            {/* Iframe */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <iframe
+                src={`/logs/${logsModal.projectId}`}
+                className="w-full h-full border-0"
+                title="Playground Logs"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Terminal Modal */}
+      {terminalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setTerminalModal(null)} />
+          <div
+            className="relative w-full max-w-6xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            style={{
+              backgroundColor: 'var(--app-bg-secondary)',
+              border: '1px solid var(--app-border-default)'
+            }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
+              <div className="flex items-center gap-3">
+                <Terminal className="w-5 h-5" style={{ color: 'var(--app-accent-secondary)' }} />
+                <div>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--app-text-primary)' }}>Container Terminal</h3>
+                  <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{terminalModal.projectName}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.open(`/terminal/${terminalModal.projectId}`, '_blank')}
+                  className="p-2 rounded-lg transition-all hover:bg-white/5"
+                  style={{ color: 'var(--app-text-muted)' }}
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setTerminalModal(null)}
+                  className="p-2 rounded-lg transition-all hover:bg-white/5"
+                  style={{ color: 'var(--app-text-muted)' }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            {/* Iframe */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <iframe
+                src={`/terminal/${terminalModal.projectId}`}
+                className="w-full h-full border-0"
+                title="Container Terminal"
+              />
             </div>
           </div>
         </div>

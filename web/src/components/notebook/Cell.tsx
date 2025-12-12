@@ -1,24 +1,18 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-
-// Copy icon component for reuse
-function CopyIcon({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-// Check icon for copy feedback
-function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-    </svg>
-  )
-}
+import {
+  Copy,
+  Check,
+  ChevronUp,
+  ChevronDown,
+  Play,
+  Square,
+  X,
+  Code,
+  FileText,
+  Edit3,
+} from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Cell as CellType, CellOutput } from '@/types'
@@ -214,7 +208,7 @@ function OutputArea({
     <div className="cell-output-wrapper">
       <div
         ref={outputRef}
-        className="cell-output p-3 space-y-2 overflow-auto"
+        className="cell-output space-y-2 overflow-auto"
         style={{
           maxHeight: isExpanded ? 'none' : `${MAX_OUTPUT_HEIGHT}px`,
         }}
@@ -232,23 +226,19 @@ function OutputArea({
           className="w-full py-1 text-xs flex items-center justify-center gap-1 hover:opacity-80 transition-opacity"
           style={{
             color: 'var(--nb-text-muted)',
-            borderTop: '1px solid var(--nb-border-default)',
-            backgroundColor: 'var(--nb-bg-secondary)',
+            borderTop: '1px dashed var(--nb-border-default)',
+            backgroundColor: 'transparent',
           }}
         >
           {isExpanded ? (
             <>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-              </svg>
-              Collapse output
+              <ChevronUp className="w-3 h-3" />
+              Collapse
             </>
           ) : (
             <>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-              Expand output
+              <ChevronDown className="w-3 h-3" />
+              Expand
             </>
           )}
         </button>
@@ -776,35 +766,48 @@ export default function Cell({
     return 'var(--nb-bg-markdown-cell)'
   }
 
-  // Get selection indicator style - uniform border glow
-  // Blue = command mode (selected, ready to navigate)
-  // Green = edit mode (typing inside cell)
+  // Get selection indicator style - left stripe instead of full border
+  // Blue = command mode (selected), Green = edit mode (typing)
   const getSelectionStyle = () => {
-    if (!isSelected) {
-      return {}
-    }
-
-    // Edit mode - green glow
-    if (isEditMode) {
+    // Running state - animated blue pulse (highest priority)
+    if (isRunning) {
       return {
-        outline: '2px solid #10b981',
-        outlineOffset: '-2px',
-        boxShadow: '0 0 12px rgba(16, 185, 129, 0.25)',
+        borderLeft: '3px solid #3b82f6',
+        boxShadow: '0 0 12px rgba(59, 130, 246, 0.4)',
+        animation: 'gutter-pulse 1.5s ease-in-out infinite',
       }
     }
 
-    // Command mode - blue glow
+    if (!isSelected) {
+      return {
+        borderLeft: '3px solid transparent',
+      }
+    }
+
+    // Edit mode - green left stripe
+    if (isEditMode) {
+      return {
+        borderLeft: '3px solid #10b981',
+        boxShadow: '0 0 8px rgba(16, 185, 129, 0.15)',
+      }
+    }
+
+    // Command mode - blue left stripe
     return {
-      outline: '2px solid #3b82f6',
-      outlineOffset: '-2px',
-      boxShadow: '0 0 8px rgba(59, 130, 246, 0.2)',
+      borderLeft: '3px solid #3b82f6',
+      boxShadow: '0 0 6px rgba(59, 130, 246, 0.1)',
     }
   }
 
+  // Add cell-editing class for markdown cells in edit mode (shows card styling)
+  const editingClass = cell.type === 'markdown' && isEditMode ? 'cell-editing' : ''
+
+  // Cell ID already includes 'cell-' prefix (e.g., 'cell-1764683711390-swbvvzf58')
+  // Use it directly as the DOM element ID
   return (
     <div
-      id={`cell-${cell.id}`}
-      className={`group rounded-lg transition-all overflow-hidden cell-wrapper ${cellTypeClass}`}
+      id={cell.id}
+      className={`group rounded-lg transition-all overflow-hidden cell-wrapper ${cellTypeClass} ${editingClass}`}
       onClick={onSelect}
       style={{
         backgroundColor: getCellBgColor(),
@@ -814,74 +817,54 @@ export default function Cell({
     >
       {/* Cell content wrapper */}
       <div>
-        {/* Cell Header */}
+        {/* Cell Header - minimal, content-first design */}
         <div
-          className={`flex items-center justify-between px-3 py-2 ${
+          className={`flex items-center justify-between px-3 py-1 transition-all duration-200 ${
             cell.type === 'code' ? 'cell-code-header' : 'cell-markdown-header'
           }`}
-          style={{
-            borderBottom: '1px solid var(--nb-border-default)',
-            backgroundColor: cell.type === 'code'
-              ? 'var(--nb-bg-code-header)'
-              : 'transparent',
-          }}
         >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Running indicator */}
           {isRunning && (
             <div
-              className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
+              className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
               style={{ borderColor: 'var(--nb-accent-code)', borderTopColor: 'transparent' }}
             />
           )}
 
-          {/* Cell type badge with icon */}
+          {/* Minimal cell type icon - no badge, just a small icon */}
           <span
-            className="text-xs px-2 py-0.5 rounded flex items-center gap-1.5 font-medium"
+            className="opacity-40 group-hover:opacity-70 transition-opacity"
             style={{
-              backgroundColor: cell.type === 'code'
+              color: cell.type === 'code'
                 ? 'var(--nb-accent-code)'
                 : cell.type === 'raw'
                   ? 'var(--nb-accent-notes)'
                   : 'var(--nb-accent-markdown)',
-              color: '#11111b',
-              opacity: 0.9,
             }}
           >
             {cell.type === 'code' ? (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                Code
-              </>
+              <Code className="w-3.5 h-3.5" />
             ) : cell.type === 'raw' ? (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                Notes
-              </>
+              <Edit3 className="w-3.5 h-3.5" />
             ) : (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Markdown
-              </>
+              <FileText className="w-3.5 h-3.5" />
             )}
           </span>
 
-          {/* Execution count */}
+          {/* Execution count - small and muted */}
           {cell.type === 'code' && (
-            <span className="execution-count">
-              {cell.execution_count ? `In [${cell.execution_count}]:` : 'In [ ]:'}
+            <span
+              className="text-[10px] font-mono opacity-50 group-hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--nb-text-muted)' }}
+            >
+              {cell.execution_count ? `[${cell.execution_count}]` : '[ ]'}
             </span>
           )}
 
-          {/* Cell ID - shown on hover or always visible as muted text */}
+          {/* Cell ID - always visible but subtle */}
           <span
-            className="text-[10px] font-mono opacity-50 hover:opacity-100 cursor-pointer transition-opacity"
+            className="text-[10px] font-mono opacity-40 hover:opacity-80 cursor-pointer transition-opacity"
             style={{ color: 'var(--nb-text-muted)' }}
             title="Click to copy cell ID"
             onClick={(e) => {
@@ -901,9 +884,7 @@ export default function Cell({
             style={{ color: 'var(--nb-text-muted)' }}
             title="Move up"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
+            <ChevronUp className="w-4 h-4" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown() }}
@@ -911,9 +892,7 @@ export default function Cell({
             style={{ color: 'var(--nb-text-muted)' }}
             title="Move down"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <ChevronDown className="w-4 h-4" />
           </button>
           {cell.type === 'code' && (
             isRunning ? (
@@ -923,9 +902,7 @@ export default function Cell({
                 style={{ color: 'var(--nb-accent-error)' }}
                 title="Stop execution"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <rect x="6" y="6" width="12" height="12" />
-                </svg>
+                <Square className="w-4 h-4" fill="currentColor" />
               </button>
             ) : (
               <button
@@ -934,9 +911,7 @@ export default function Cell({
                 style={{ color: 'var(--nb-accent-success)' }}
                 title="Run cell (Shift+Enter)"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
+                <Play className="w-4 h-4" fill="currentColor" />
               </button>
             )
           )}
@@ -950,7 +925,7 @@ export default function Cell({
               style={{ color: copiedSource ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
               title={cell.type === 'code' ? 'Copy code' : 'Copy content'}
             >
-              {copiedSource ? <CheckIcon /> : <CopyIcon />}
+              {copiedSource ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             </button>
           )}
           {/* Copy output (code cells only) */}
@@ -961,7 +936,7 @@ export default function Cell({
               style={{ color: copiedOutput ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
               title="Copy output"
             >
-              {copiedOutput ? <CheckIcon /> : <CopyIcon />}
+              {copiedOutput ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span className="text-[10px]">Out</span>
             </button>
           )}
@@ -972,9 +947,7 @@ export default function Cell({
             style={{ color: 'var(--nb-accent-error)' }}
             title="Delete cell"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>

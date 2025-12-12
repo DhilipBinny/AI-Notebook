@@ -128,13 +128,13 @@ function LoginForm() {
             </svg>
           </div>
           <h2
-            className="text-3xl font-bold"
+            className="text-xl font-bold"
             style={{ color: 'var(--app-text-primary)' }}
           >
             AI Notebook
           </h2>
           <p
-            className="mt-2"
+            className="mt-2 text-sm"
             style={{ color: 'var(--app-text-muted)' }}
           >
             Sign in to your account

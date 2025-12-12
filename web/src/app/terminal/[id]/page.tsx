@@ -16,6 +16,12 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isInIframe, setIsInIframe] = useState(false)
+
+  // Detect if running in iframe
+  useEffect(() => {
+    setIsInIframe(window.self !== window.top)
+  }, [])
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -142,7 +148,26 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
 
   return (
     <div className="h-screen w-screen flex flex-col" style={{ backgroundColor: '#1e1e2e' }}>
-      {/* Header */}
+      {/* Custom scrollbar styles for xterm */}
+      <style jsx global>{`
+        .xterm-viewport::-webkit-scrollbar {
+          width: 10px;
+        }
+        .xterm-viewport::-webkit-scrollbar-track {
+          background: #181825;
+          border-radius: 5px;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb {
+          background: #45475a;
+          border-radius: 5px;
+          border: 2px solid #181825;
+        }
+        .xterm-viewport::-webkit-scrollbar-thumb:hover {
+          background: #585b70;
+        }
+      `}</style>
+      {/* Header - hidden in iframe mode */}
+      {!isInIframe && (
       <div className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: '#313244', backgroundColor: '#181825' }}>
         <div className="flex items-center gap-3">
           <button
@@ -168,6 +193,7 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
           </span>
         </div>
       </div>
+      )}
 
       {/* Terminal */}
       <div className="flex-1 p-2">

@@ -1,24 +1,19 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-
-// Copy icon component for reuse
-function CopyIcon({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-    </svg>
-  )
-}
-
-// Check icon for copy feedback
-function CheckIcon({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-    </svg>
-  )
-}
+import {
+  Copy,
+  Check,
+  ChevronUp,
+  ChevronDown,
+  Play,
+  X,
+  Lightbulb,
+  Plus,
+  Settings,
+  RefreshCw,
+  AlertTriangle,
+} from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { Cell as CellType, AICellData, ImageInput, LLMStep, ThinkingStep } from '@/types'
@@ -326,7 +321,7 @@ export default function AICell({
     // Cell ID formats: cell-14d6c2b447d1 or cell-1764863866351-wq1kuzp8k
     const cellRefRegex = /(?:@|`)(cell-[a-zA-Z0-9-]+)`?/g
     return html.replace(cellRefRegex, (match, cellId) => {
-      return `<button class="cell-reference" data-cell-id="${cellId}" style="color: #a855f7; text-decoration: underline; cursor: pointer; background: none; border: none; font: inherit; padding: 0;">${match}</button>`
+      return `<button class="cell-reference" data-cell-id="${cellId}">${match}</button>`
     })
   }
 
@@ -357,10 +352,7 @@ export default function AICell({
     return (
       <details className="mt-3 text-xs">
         <summary className="cursor-pointer flex items-center gap-1.5 transition-colors" style={{ color: 'var(--nb-text-muted)' }}>
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <Settings className="w-3.5 h-3.5" />
           {summaryText}
         </summary>
         <div className="mt-2 space-y-2 ml-2 pl-3" style={{ borderLeft: '2px solid var(--nb-border-default)' }}>
@@ -450,7 +442,7 @@ export default function AICell({
       <div className="space-y-2">
         <div
           ref={responseRef}
-          className="prose prose-sm max-w-none prose-invert"
+          className="prose prose-sm max-w-none prose-invert ai-response-prose"
           style={{ color: 'var(--nb-text-primary)' }}
           dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
           onClick={handleResponseClick}
@@ -473,9 +465,7 @@ export default function AICell({
                 ? `Insert all ${codeBlocks.length} code blocks as new cells`
                 : 'Insert code as new cell'}
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              <Plus className="w-3.5 h-3.5" />
               Insert {codeBlocks.length > 1 ? `All ${codeBlocks.length} Cells` : 'Code'}
             </button>
           </div>
@@ -505,9 +495,11 @@ export default function AICell({
     }
   }
 
+  // Cell ID already includes 'cell-' prefix (e.g., 'cell-1764683711390-swbvvzf58')
+  // Use it directly as the DOM element ID
   return (
     <div
-      id={`cell-${cell.id}`}
+      id={cell.id}
       className="group rounded-lg transition-all overflow-hidden cell-wrapper cell-ai relative"
       onClick={onSelect}
       onDragOver={handleDragOver}
@@ -533,48 +525,42 @@ export default function AICell({
           </div>
         </div>
       )}
-      {/* Cell Header */}
+      {/* Cell Header - minimal design */}
       <div
-        className="flex items-center justify-between px-3 py-2 cell-ai-header"
+        className="flex items-center justify-between px-3 py-1 cell-ai-header"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Running indicator */}
           {aiData.status === 'running' && (
             <div
-              className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
+              className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
               style={{ borderColor: '#a855f7', borderTopColor: 'transparent' }}
             />
           )}
 
-          {/* Cell type badge */}
+          {/* Minimal cell type icon */}
           <span
-            className="text-xs px-2 py-0.5 rounded flex items-center gap-1.5 font-medium"
-            style={{
-              backgroundColor: '#a855f7',
-              color: '#ffffff',
-            }}
+            className="opacity-50 group-hover:opacity-80 transition-opacity"
+            style={{ color: '#a855f7' }}
           >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            AI
+            <Lightbulb className="w-3.5 h-3.5" />
           </span>
 
-          {/* Status indicator */}
+          {/* Status indicator - small text */}
           {aiData.status === 'completed' && (
-            <span className="text-xs" style={{ color: 'var(--nb-accent-success)' }}>
-              Completed
+            <span className="text-[10px]" style={{ color: 'var(--nb-accent-success)' }}>
+              Done
             </span>
           )}
           {aiData.status === 'error' && (
-            <span className="text-xs" style={{ color: 'var(--nb-accent-error)' }}>
+            <span className="text-[10px]" style={{ color: 'var(--nb-accent-error)' }}>
               Error
             </span>
           )}
 
-          {/* Cell ID */}
+          {/* Cell ID - always visible but subtle */}
           <span
-            className="text-[10px] font-mono opacity-50 hover:opacity-100 cursor-pointer transition-opacity"
+            className="text-[10px] font-mono opacity-40 hover:opacity-80 cursor-pointer transition-opacity"
             style={{ color: 'var(--nb-text-muted)' }}
             title="Click to copy cell ID"
             onClick={(e) => {
@@ -594,9 +580,7 @@ export default function AICell({
             style={{ color: 'var(--nb-text-muted)' }}
             title="Move up"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
+            <ChevronUp className="w-4 h-4" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown() }}
@@ -604,9 +588,7 @@ export default function AICell({
             style={{ color: 'var(--nb-text-muted)' }}
             title="Move down"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <ChevronDown className="w-4 h-4" />
           </button>
           <button
             onClick={(e) => {
@@ -624,9 +606,7 @@ export default function AICell({
                 style={{ borderColor: 'var(--nb-accent-success)', borderTopColor: 'transparent' }}
               />
             ) : (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+              <Play className="w-4 h-4" fill="currentColor" />
             )}
           </button>
           <button
@@ -635,9 +615,7 @@ export default function AICell({
             style={{ color: 'var(--nb-accent-error)' }}
             title="Delete cell"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -655,7 +633,7 @@ export default function AICell({
               style={{ color: copiedPrompt ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
               title="Copy prompt"
             >
-              {copiedPrompt ? <CheckIcon className="w-3.5 h-3.5" /> : <CopyIcon className="w-3.5 h-3.5" />}
+              {copiedPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           )}
         </div>
@@ -739,9 +717,7 @@ export default function AICell({
                         }}
                         title="Remove image"
                       >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <X className="w-3 h-3" />
                       </button>
                       {/* Filename label */}
                       <div
@@ -810,13 +786,13 @@ export default function AICell({
         )}
       </div>
 
-      {/* Response Area */}
+      {/* Response Area - transparent with left border */}
       {(aiData.llm_response || aiData.status === 'running' || aiData.error) && (
         <div
-          className="px-3 py-2"
+          className="px-3 py-2 ml-3"
           style={{
-            borderTop: '1px solid var(--nb-border-default)',
-            backgroundColor: 'var(--nb-bg-output)',
+            borderLeft: '2px solid rgba(168, 85, 247, 0.3)',
+            backgroundColor: 'transparent',
           }}
         >
           <div className="flex items-center justify-between mb-2">
@@ -830,7 +806,7 @@ export default function AICell({
                 style={{ color: copiedResponse ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)' }}
                 title="Copy response"
               >
-                {copiedResponse ? <CheckIcon className="w-3.5 h-3.5" /> : <CopyIcon className="w-3.5 h-3.5" />}
+                {copiedResponse ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             )}
           </div>
@@ -857,9 +833,7 @@ export default function AICell({
                     }}
                     title="Cancel AI Cell execution"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <X className="w-3.5 h-3.5" />
                     Cancel
                   </button>
                 )}
@@ -966,8 +940,51 @@ export default function AICell({
           )}
 
           {aiData.error && (
-            <div className="text-sm" style={{ color: 'var(--nb-accent-error)' }}>
-              Error: {aiData.error}
+            <div
+              className="rounded-lg overflow-hidden"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+              }}
+            >
+              {/* Error header */}
+              <div
+                className="flex items-center justify-between px-3 py-2"
+                style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  borderBottom: '1px solid rgba(239, 68, 68, 0.2)',
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" style={{ color: 'var(--nb-accent-error)' }} />
+                  <span className="text-sm font-medium" style={{ color: 'var(--nb-accent-error)' }}>
+                    Error
+                  </span>
+                </div>
+                {/* Retry button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleRun()
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md transition-all hover:opacity-80"
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    color: 'var(--nb-accent-error)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                  }}
+                  title="Retry this request"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry
+                </button>
+              </div>
+              {/* Error message */}
+              <div className="px-3 py-2">
+                <p className="text-sm" style={{ color: 'var(--nb-text-secondary)' }}>
+                  {aiData.error}
+                </p>
+              </div>
             </div>
           )}
 
@@ -997,9 +1014,7 @@ export default function AICell({
               style={{ color: '#fff' }}
               title="Close (Esc)"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-6 h-6" />
             </button>
             {/* Enlarged image */}
             <img

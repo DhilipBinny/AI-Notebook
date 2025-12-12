@@ -2,6 +2,22 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '@/contexts/ThemeContext'
+import {
+  MessageSquare,
+  Sparkles,
+  User,
+  Lightbulb,
+  Copy,
+  RefreshCw,
+  Edit3,
+  Trash2,
+  AlertTriangle,
+  Image,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  Wrench,
+} from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import type { ChatMessage, LLMStep, ImageInput } from '@/types'
@@ -46,6 +62,22 @@ const themeColors = {
     border: 'var(--nb-border-default)',
   },
   light: {
+    panelBg: 'var(--nb-bg-primary)',
+    headerBg: 'var(--nb-bg-secondary)',
+    messagesBg: 'var(--nb-bg-primary)',
+    inputBg: 'var(--nb-bg-secondary)',
+    assistantBubble: 'var(--nb-bg-code-cell)',
+    border: 'var(--nb-border-default)',
+  },
+  obsidian: {
+    panelBg: 'var(--nb-bg-primary)',
+    headerBg: 'var(--nb-bg-secondary)',
+    messagesBg: 'var(--nb-bg-primary)',
+    inputBg: 'var(--nb-bg-secondary)',
+    assistantBubble: 'var(--nb-bg-secondary)',
+    border: 'var(--nb-border-default)',
+  },
+  latte: {
     panelBg: 'var(--nb-bg-primary)',
     headerBg: 'var(--nb-bg-secondary)',
     messagesBg: 'var(--nb-bg-primary)',
@@ -318,10 +350,7 @@ export default function ChatPanel({
     return (
       <details className="mt-3 text-xs">
         <summary className="cursor-pointer flex items-center gap-1.5 transition-colors" style={{ color: 'var(--nb-text-muted)' }}>
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <Wrench className="w-3.5 h-3.5" />
           {summaryText}
         </summary>
         <div className="mt-2 space-y-2 ml-2 pl-3" style={{ borderLeft: '2px solid var(--nb-border-default)' }}>
@@ -380,8 +409,7 @@ export default function ChatPanel({
               onScrollToCell(cellId)
             }
           }}
-          className="text-purple-400 underline cursor-pointer hover:text-purple-300 transition-colors bg-transparent border-none p-0 font-inherit"
-          style={{ font: 'inherit' }}
+          className="cell-reference"
         >
           @{cellId}
         </button>
@@ -395,20 +423,74 @@ export default function ChatPanel({
     return parts.length > 0 ? parts : [text]
   }
 
+  // Detect if content is an error message (JSON or common error patterns)
+  const parseErrorMessage = useCallback((content: string): { isError: boolean; title: string; details: string } | null => {
+    // Check for JSON error format
+    try {
+      const parsed = JSON.parse(content)
+      if (parsed.error || parsed.message || parsed.detail) {
+        const errorMsg = parsed.error?.message || parsed.message || parsed.detail || 'Unknown error'
+        const errorType = parsed.error?.type || parsed.error?.code || parsed.status || 'Error'
+        return {
+          isError: true,
+          title: typeof errorType === 'string' ? errorType.replace(/_/g, ' ') : 'Error',
+          details: typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg, null, 2)
+        }
+      }
+    } catch {
+      // Not JSON, check for common error patterns
+    }
+
+    // Check for common error patterns in text
+    const errorPatterns = [
+      /^Error:\s*(.+)/i,
+      /^(Resource Exhausted|Rate Limited|Quota Exceeded|API Error|Connection Failed|Timeout)[\s:]*(.*)$/i,
+      /^(429|500|502|503|504)\s*[-:]\s*(.+)/i,
+    ]
+
+    for (const pattern of errorPatterns) {
+      const match = content.match(pattern)
+      if (match) {
+        return {
+          isError: true,
+          title: match[1] || 'Error',
+          details: match[2] || content
+        }
+      }
+    }
+
+    return null
+  }, [])
+
   // Render message content with clickable cell references
   const renderMessageContent = useCallback((content: string) => {
     // Parse markdown and sanitize HTML (same approach as AICell)
     const html = marked.parse(content) as string
-    // Process cell references before sanitizing
-    const processedHtml = html.replace(
-      /\[cell:([a-f0-9-]+)\]/gi,
-      (match, cellId) => {
-        return `<button class="cell-ref-btn inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer transition-colors" data-cell-id="${cellId}">📍 Cell</button>`
-      }
-    )
+
+    // Process cell references in multiple formats:
+    // 1. [cell:xxx] format
+    // 2. `cell-xxx` format (backticks)
+    // 3. **`cell-xxx`** format (bold backticks)
+    // Note: Using data-cellid (no hyphen) because DOMPurify normalizes attribute names
+    let processedHtml = html
+      // Format 1: [cell:xxx]
+      .replace(
+        /\[cell:([a-f0-9-]+)\]/gi,
+        (match, cellId) => {
+          return `<button class="cell-ref-btn" data-cellid="cell-${cellId}">📍 cell-${cellId}</button>`
+        }
+      )
+      // Format 2 & 3: `cell-xxx` or <code>cell-xxx</code> (after markdown parsing)
+      .replace(
+        /<code>(cell-[a-zA-Z0-9_-]+)<\/code>/gi,
+        (match, cellId) => {
+          return `<button class="cell-ref-btn" data-cellid="${cellId}">📍 ${cellId}</button>`
+        }
+      )
+
     const sanitizedHtml = DOMPurify.sanitize(processedHtml, {
       ADD_TAGS: ['button'],
-      ADD_ATTR: ['data-cell-id', 'class', 'style']
+      ADD_ATTR: ['data-cellid', 'class', 'style']
     })
     return sanitizedHtml
   }, [])
@@ -416,9 +498,12 @@ export default function ChatPanel({
   // Handle clicks on cell reference buttons in messages
   const handleMessageClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement
+    console.log('[ChatPanel] Click on:', target.tagName, target.className)
     if (target.classList.contains('cell-ref-btn')) {
-      const cellId = target.dataset.cellId
+      const cellId = target.dataset.cellid  // lowercase because HTML attributes are case-insensitive
+      console.log('[ChatPanel] Cell ref clicked, cellId:', cellId)
       if (cellId && onScrollToCell) {
+        console.log('[ChatPanel] Calling onScrollToCell with:', cellId)
         onScrollToCell(cellId)
       }
     }
@@ -439,86 +524,49 @@ export default function ChatPanel({
       onClick={onPanelClick}
     >
       {/* Header */}
-      <div className="p-4 backdrop-blur-sm" style={{ background: colors.headerBg, borderBottom: `1px solid ${colors.border}` }}>
-        <div className="flex items-center justify-between mb-3">
+      <div className="px-3 py-2 backdrop-blur-sm" style={{ background: colors.headerBg, borderBottom: `1px solid ${colors.border}` }}>
+        {/* Main header row - Clean */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
+              <MessageSquare className="w-4 h-4 text-white" />
             </div>
             <h2 className="text-base font-semibold" style={{ color: textPrimary }}>AI Assistant</h2>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {/* Summarize button */}
             <button
               onClick={onSummarize}
               disabled={isSummarizing}
-              className="text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              className="p-1.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80"
+              style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: 'rgb(192, 132, 252)' }}
               title="Generate AI summary of notebook"
             >
               {isSummarizing ? (
-                <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
-                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
-                </svg>
+                <Sparkles className="w-4 h-4" />
               )}
-              Summarize
             </button>
-            <select
-              value={llmProvider}
-              onChange={(e) => onProviderChange(e.target.value)}
-              className="text-xs rounded-md px-2.5 py-1.5 border focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
-              style={{ backgroundColor: theme === 'light' ? '#fff' : 'rgba(255,255,255,0.05)', borderColor: colors.border, color: textSecondary }}
-            >
-              <option value="ollama">Ollama</option>
-              <option value="gemini">Gemini</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
-            <select
-              value={toolMode}
-              onChange={(e) => onToolModeChange(e.target.value as 'auto' | 'manual' | 'ai_decide')}
-              className="text-xs rounded-md px-2.5 py-1.5 border focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
-              style={{ backgroundColor: theme === 'light' ? '#fff' : 'rgba(255,255,255,0.05)', borderColor: colors.border, color: textSecondary }}
-              title="Tool execution mode"
-            >
-              <option value="auto">Tools: Auto</option>
-              <option value="manual">Tools: Approval</option>
-              <option value="ai_decide">Tools: AI Decides</option>
-            </select>
-            <select
-              value={contextFormat}
-              onChange={(e) => onContextFormatChange(e.target.value as 'xml' | 'plain')}
-              className="text-xs rounded-md px-2.5 py-1.5 border focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer"
-              style={{ backgroundColor: theme === 'light' ? '#fff' : 'rgba(255,255,255,0.05)', borderColor: colors.border, color: textSecondary }}
-              title="Context format for LLM (XML recommended for Claude)"
-            >
-              <option value="xml">Context: XML</option>
-              <option value="plain">Context: Plain</option>
-            </select>
+            {/* Clear button */}
             <button
               onClick={onClearHistory}
-              className="text-xs px-2.5 py-1.5 rounded-md hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+              className="p-1.5 rounded-lg transition-all hover:bg-red-500/20"
               style={{ color: textMuted }}
               title="Clear chat history"
             >
-              Clear
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
-
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundColor: colors.messagesBg }}>
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" style={{ backgroundColor: colors.messagesBg }}>
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-12">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500/20 to-teal-500/20 border border-blue-500/20 flex items-center justify-center">
-              <svg className="w-8 h-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
+              <MessageSquare className="w-8 h-8 text-blue-400" strokeWidth={1.5} />
             </div>
             <h3 className="text-lg font-medium mb-2" style={{ color: textPrimary }}>Welcome!</h3>
             <p className="mb-4" style={{ color: textSecondary }}>I can help with your notebook:</p>
@@ -559,13 +607,9 @@ export default function ChatPanel({
                   : 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/20'
               }`}>
                 {msg.role === 'user' ? (
-                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+                  <User className="w-4 h-4 text-white" />
                 ) : (
-                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
+                  <Lightbulb className="w-4 h-4 text-white" />
                 )}
               </div>
 
@@ -614,12 +658,70 @@ export default function ChatPanel({
                   ) : (
                     <>
                       {msg.role === 'assistant' ? (
-                        <div
-                          className="prose prose-sm max-w-none prose-invert"
-                          style={{ color: 'var(--nb-text-primary)' }}
-                          dangerouslySetInnerHTML={{ __html: renderMessageContent(msg.content) }}
-                          onClick={handleMessageClick}
-                        />
+                        // Check if message is an error
+                        (() => {
+                          const errorInfo = parseErrorMessage(msg.content)
+                          if (errorInfo) {
+                            return (
+                              <div
+                                className="rounded-lg overflow-hidden"
+                                style={{
+                                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                }}
+                              >
+                                {/* Error header */}
+                                <div
+                                  className="flex items-center gap-2 px-3 py-2"
+                                  style={{
+                                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                                    borderBottom: '1px solid rgba(239, 68, 68, 0.2)',
+                                  }}
+                                >
+                                  <AlertTriangle className="w-4 h-4" style={{ color: 'var(--nb-accent-error)' }} />
+                                  <span className="text-sm font-medium" style={{ color: 'var(--nb-accent-error)' }}>
+                                    {errorInfo.title}
+                                  </span>
+                                </div>
+                                {/* Error message */}
+                                <div className="px-3 py-2">
+                                  <p className="text-sm" style={{ color: 'var(--nb-text-secondary)' }}>
+                                    {errorInfo.details}
+                                  </p>
+                                </div>
+                                {/* Raw details toggle */}
+                                {msg.content.includes('{') && (
+                                  <details className="px-3 pb-2">
+                                    <summary
+                                      className="text-xs cursor-pointer"
+                                      style={{ color: 'var(--nb-text-muted)' }}
+                                    >
+                                      Show raw details
+                                    </summary>
+                                    <pre
+                                      className="mt-2 text-xs p-2 rounded overflow-x-auto"
+                                      style={{
+                                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                                        color: 'var(--nb-text-muted)',
+                                      }}
+                                    >
+                                      {msg.content}
+                                    </pre>
+                                  </details>
+                                )}
+                              </div>
+                            )
+                          }
+                          // Normal message rendering
+                          return (
+                            <div
+                              className="prose prose-sm max-w-none prose-invert"
+                              style={{ color: 'var(--nb-text-primary)' }}
+                              dangerouslySetInnerHTML={{ __html: renderMessageContent(msg.content) }}
+                              onClick={handleMessageClick}
+                            />
+                          )
+                        })()
                       ) : (
                         <div className="text-sm whitespace-pre-wrap leading-relaxed">
                           {msg.content}
@@ -654,9 +756,7 @@ export default function ChatPanel({
                       style={{ color: 'var(--nb-text-muted)' }}
                       title="Copy message"
                     >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                      <Copy className="w-3.5 h-3.5" />
                     </button>
                     {/* Re-run button - only for last user message */}
                     {msg.role === 'user' && idx === lastUserMessageIndex && (
@@ -666,9 +766,7 @@ export default function ChatPanel({
                         style={{ color: 'var(--nb-accent-code)' }}
                         title="Re-run this message"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
+                        <RefreshCw className="w-3.5 h-3.5" />
                       </button>
                     )}
                     {/* Edit button */}
@@ -678,9 +776,7 @@ export default function ChatPanel({
                       style={{ color: 'var(--nb-accent-warning)' }}
                       title="Edit message"
                     >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
+                      <Edit3 className="w-3.5 h-3.5" />
                     </button>
                     {/* Delete button - only for user messages */}
                     {msg.role === 'user' && (
@@ -690,9 +786,7 @@ export default function ChatPanel({
                         style={{ color: 'var(--nb-accent-error)' }}
                         title="Delete message and responses"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
@@ -706,9 +800,7 @@ export default function ChatPanel({
         {pendingTools.length > 0 && (
           <div className="rounded-xl p-4 bg-amber-500/10 border border-amber-500/30 shadow-lg shadow-amber-500/5 animate-fadeIn">
             <div className="flex items-center gap-2 text-sm font-medium mb-3 text-amber-400">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+              <AlertTriangle className="w-5 h-5" />
               The assistant wants to use these tools:
             </div>
             <div className="space-y-2 mb-4">
@@ -762,9 +854,7 @@ export default function ChatPanel({
           <div className="flex justify-start animate-fadeIn">
             <div className="flex items-start gap-2.5">
               <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg" style={{ background: 'linear-gradient(135deg, var(--nb-accent-success), var(--nb-accent-context))' }}>
-                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
+                <Lightbulb className="w-4 h-4 text-white" />
               </div>
               <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-lg" style={{ backgroundColor: 'var(--nb-bg-secondary)', border: '1px solid var(--nb-border-default)' }}>
                 <div className="flex items-center gap-2" style={{ color: 'var(--nb-text-muted)' }}>
@@ -784,99 +874,113 @@ export default function ChatPanel({
       </div>
 
       {/* Input */}
-      <form
-        onSubmit={handleSubmit}
-        className="p-4"
-        style={{ background: colors.inputBg, borderTop: `1px solid ${colors.border}` }}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+      <div
+        className="p-2"
+        style={{
+          background: colors.inputBg,
+          borderTop: `1px solid ${colors.border}`,
+        }}
       >
-        {/* Image previews */}
-        {images.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {images.map((img, idx) => (
-              <div key={idx} className="relative group">
-                <img
-                  src={`data:${img.mime_type};base64,${img.data}`}
-                  alt={img.filename || `Image ${idx + 1}`}
-                  className="w-16 h-16 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
-                  style={{ borderColor: colors.border }}
-                  onClick={() => setEnlargedImage(img)}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className={`flex gap-3 relative ${isDragging ? 'opacity-50' : ''}`}>
-          {/* Drag overlay */}
-          {isDragging && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10 z-10">
-              <span className="text-blue-400 text-sm font-medium">Drop image here</span>
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-lg p-2"
+          style={{
+            backgroundColor: theme === 'light' ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${colors.border}`,
+          }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {/* Image previews */}
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {images.map((img, idx) => (
+                <div key={idx} className="relative group">
+                  <img
+                    src={`data:${img.mime_type};base64,${img.data}`}
+                    alt={img.filename || `Image ${idx + 1}`}
+                    className="w-16 h-16 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                    style={{ borderColor: colors.border }}
+                    onClick={() => setEnlargedImage(img)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(idx)}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
-          <div className="flex-1 relative">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              placeholder="Ask AI for help... (Enter to send, Shift+Enter for new line, paste/drop images)"
-              className="w-full rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              style={{
-                minHeight: '80px',
-                maxHeight: '300px',
-                backgroundColor: theme === 'light' ? '#fff' : 'rgba(31, 41, 55, 0.5)',
-                border: `1px solid ${colors.border}`,
-                color: textPrimary,
-              }}
-              disabled={isLoading}
-            />
+          <div className={`flex gap-2 relative ${isDragging ? 'opacity-50' : ''}`}>
+            {/* Drag overlay */}
+            {isDragging && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10 z-10">
+                <span className="text-blue-400 text-sm font-medium">Drop image here</span>
+              </div>
+            )}
+
+            <div className="flex-1 relative">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder="Ask AI for help... (Enter to send, Shift+Enter for new line)"
+                className="w-full rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
+                style={{
+                  minHeight: '56px',
+                  maxHeight: '150px',
+                  backgroundColor: theme === 'light' ? '#fff' : 'rgba(17, 24, 39, 0.6)',
+                  border: `1px solid ${theme === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                  color: textPrimary,
+                }}
+                disabled={isLoading}
+              />
+            </div>
+            <div className="flex flex-col items-center gap-2 justify-end">
+              {/* Image upload button */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2 rounded-lg transition-all hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30"
+                style={{ color: textMuted }}
+                title="Attach image (paste or drop also works)"
+              >
+                <Image className="w-5 h-5" />
+              </button>
+              <button
+                type="submit"
+                disabled={(!input.trim() && images.length === 0) || isLoading}
+                className="p-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md shadow-blue-500/20 hover:shadow-blue-500/30 disabled:shadow-none"
+                title="Send message (Enter)"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <div className="flex flex-col items-center gap-2 pb-1 justify-end">
-            {/* Image upload button */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded-lg transition-all hover:opacity-80"
-              style={{ color: textMuted, backgroundColor: theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)' }}
-              title="Attach image"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </button>
-            <button
-              type="submit"
-              disabled={(!input.trim() && images.length === 0) || isLoading}
-              className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 disabled:shadow-none"
-              title="Send message"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </button>
+
+          {/* Helper text */}
+          <div className="flex items-center justify-between mt-2 px-1">
+            <span className="text-[10px]" style={{ color: textMuted }}>
+              Enter to send • Shift+Enter for new line • Paste/drop images
+            </span>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
 
       {/* Add fade-in animation style */}
       <style jsx>{`
