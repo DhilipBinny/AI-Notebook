@@ -13,6 +13,8 @@ import { useKernel } from '@/hooks/useKernel'
 import { useNotebookUpdates } from '@/hooks/useNotebookUpdates'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import type { Cell as CellType, CellOutput, Playground, ChatMessage, ImageInput } from '@/types'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import {
   ChevronLeft,
   BookOpen,
@@ -20,6 +22,12 @@ import {
   Plus,
   AlertTriangle,
 } from 'lucide-react'
+
+// Configure marked for PDF export
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+})
 
 // ANSI color code to CSS color mapping
 const ansiColors: Record<number, string> = {
@@ -149,6 +157,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingPDF, setIsExportingPDF] = useState(false)
   const [isSummarizing, setIsSummarizing] = useState(false)
   const [playground, setPlayground] = useState<Playground | null>(null)
   const [playgroundLoading, setPlaygroundLoading] = useState(false)
@@ -1016,6 +1025,273 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [currentProject, projectId, isDirty, handleSave])
 
+  const handleExportPDF = useCallback(async () => {
+    if (!currentProject || cells.length === 0) {
+      setErrorPopup('No cells to export. Add some content first.')
+      return
+    }
+    setIsExportingPDF(true)
+    try {
+      // First save the notebook to ensure we export the latest version
+      if (isDirty) {
+        await handleSave()
+      }
+
+      // Helper function to escape HTML
+      function escapeHtml(text: string): string {
+        const div = document.createElement('div')
+        div.textContent = text
+        return div.innerHTML
+      }
+
+      // Helper function to strip ANSI escape codes
+      function stripAnsi(text: string): string {
+        // eslint-disable-next-line no-control-regex
+        return text.replace(/\x1b\[[0-9;]*m/g, '')
+      }
+
+      // Helper function to render markdown to HTML
+      function renderMarkdown(text: string): string {
+        try {
+          const html = marked.parse(text) as string
+          return DOMPurify.sanitize(html)
+        } catch {
+          return escapeHtml(text)
+        }
+      }
+
+      // Helper function to extract text output from cell outputs
+      function getOutputContent(outputs: CellOutput[]): { text: string; html: string } {
+        let textOutput = ''
+        let htmlOutput = ''
+
+        for (const output of outputs) {
+          if (output.output_type === 'stream' || output.output_type === 'execute_result') {
+            // Text output
+            if (output.text) {
+              const text = Array.isArray(output.text) ? output.text.join('') : output.text
+              textOutput += stripAnsi(text)
+            }
+            // Rich data output
+            if (output.data) {
+              // Prefer HTML, then markdown, then plain text
+              if (output.data['text/html']) {
+                const html = Array.isArray(output.data['text/html'])
+                  ? output.data['text/html'].join('')
+                  : output.data['text/html'] as string
+                htmlOutput += DOMPurify.sanitize(html)
+              } else if (output.data['text/markdown']) {
+                const md = Array.isArray(output.data['text/markdown'])
+                  ? output.data['text/markdown'].join('')
+                  : output.data['text/markdown'] as string
+                htmlOutput += renderMarkdown(md)
+              } else if (output.data['image/png']) {
+                const imgData = output.data['image/png'] as string
+                htmlOutput += `<img src="data:image/png;base64,${imgData}" style="max-width: 100%;" />`
+              } else if (output.data['image/svg+xml']) {
+                const svg = Array.isArray(output.data['image/svg+xml'])
+                  ? output.data['image/svg+xml'].join('')
+                  : output.data['image/svg+xml'] as string
+                htmlOutput += DOMPurify.sanitize(svg)
+              } else if (output.data['text/plain']) {
+                const plain = Array.isArray(output.data['text/plain'])
+                  ? output.data['text/plain'].join('')
+                  : output.data['text/plain'] as string
+                textOutput += stripAnsi(plain)
+              }
+            }
+          } else if (output.output_type === 'display_data') {
+            // Display data (images, HTML, etc.)
+            if (output.data) {
+              if (output.data['text/html']) {
+                const html = Array.isArray(output.data['text/html'])
+                  ? output.data['text/html'].join('')
+                  : output.data['text/html'] as string
+                htmlOutput += DOMPurify.sanitize(html)
+              } else if (output.data['image/png']) {
+                const imgData = output.data['image/png'] as string
+                htmlOutput += `<img src="data:image/png;base64,${imgData}" style="max-width: 100%;" />`
+              } else if (output.data['image/svg+xml']) {
+                const svg = Array.isArray(output.data['image/svg+xml'])
+                  ? output.data['image/svg+xml'].join('')
+                  : output.data['image/svg+xml'] as string
+                htmlOutput += DOMPurify.sanitize(svg)
+              } else if (output.data['text/markdown']) {
+                const md = Array.isArray(output.data['text/markdown'])
+                  ? output.data['text/markdown'].join('')
+                  : output.data['text/markdown'] as string
+                htmlOutput += renderMarkdown(md)
+              }
+            }
+          } else if (output.output_type === 'error') {
+            // Error output
+            if (output.traceback) {
+              textOutput += stripAnsi(output.traceback.join('\n'))
+            } else if (output.ename && output.evalue) {
+              textOutput += `${output.ename}: ${output.evalue}`
+            }
+          }
+        }
+
+        return { text: textOutput.trim(), html: htmlOutput }
+      }
+
+      // Build HTML content for PDF
+      let htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${currentProject.name}</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              max-width: 800px;
+              margin: 0 auto;
+              padding: 40px 20px;
+              line-height: 1.6;
+              color: #1a1a1a;
+            }
+            h1.title { border-bottom: 2px solid #3b82f6; padding-bottom: 10px; margin-bottom: 30px; }
+            .cell { margin-bottom: 24px; page-break-inside: avoid; }
+            .cell-header {
+              font-size: 11px;
+              color: #6b7280;
+              margin-bottom: 8px;
+              padding: 4px 8px;
+              background: #f3f4f6;
+              border-radius: 4px;
+              display: inline-block;
+            }
+            .code-cell .cell-header { background: #dbeafe; color: #1e40af; }
+            .markdown-cell .cell-header { background: #f3e8ff; color: #7c3aed; }
+            .ai-cell .cell-header { background: #fce7f3; color: #be185d; }
+            pre {
+              background: #1e1e1e;
+              color: #d4d4d4;
+              padding: 16px;
+              border-radius: 8px;
+              overflow-x: auto;
+              font-size: 13px;
+              font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+              white-space: pre-wrap;
+              word-wrap: break-word;
+            }
+            .output {
+              background: #fafafa;
+              border: 1px solid #e5e7eb;
+              padding: 12px 16px;
+              border-radius: 6px;
+              margin-top: 8px;
+              font-family: monospace;
+              font-size: 13px;
+              white-space: pre-wrap;
+              word-wrap: break-word;
+            }
+            .output-html {
+              margin-top: 8px;
+            }
+            .output-html img { max-width: 100%; height: auto; }
+            .output-html table { border-collapse: collapse; margin: 8px 0; }
+            .output-html table th, .output-html table td { border: 1px solid #e5e7eb; padding: 8px; }
+            .output-label { font-size: 10px; color: #9ca3af; margin-bottom: 4px; }
+            .markdown-content { }
+            .markdown-content h1 { font-size: 1.8em; margin: 0.5em 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+            .markdown-content h2 { font-size: 1.5em; margin: 0.5em 0; }
+            .markdown-content h3 { font-size: 1.25em; margin: 0.5em 0; }
+            .markdown-content ul, .markdown-content ol { padding-left: 2em; margin: 0.5em 0; }
+            .markdown-content li { margin: 0.25em 0; }
+            .markdown-content code { background: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+            .markdown-content pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; }
+            .markdown-content pre code { background: none; padding: 0; }
+            .markdown-content blockquote { border-left: 4px solid #e5e7eb; margin: 0.5em 0; padding-left: 1em; color: #6b7280; }
+            .ai-prompt { background: #fef3c7; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
+            .ai-response { background: #ecfdf5; padding: 12px; border-radius: 6px; }
+            .ai-response h1, .ai-response h2, .ai-response h3 { margin-top: 0.5em; }
+            .ai-response ul, .ai-response ol { padding-left: 2em; }
+            .ai-response code { background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px; }
+            .ai-response pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; }
+            .ai-response pre code { background: none; padding: 0; }
+            .thinking { background: #f3f4f6; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #6b7280; margin-bottom: 8px; font-style: italic; }
+            @media print {
+              body { padding: 0; }
+              .cell { page-break-inside: avoid; }
+              pre { white-space: pre-wrap; word-wrap: break-word; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1 class="title">${escapeHtml(currentProject.name)}</h1>
+      `
+
+      cells.forEach((cell, index) => {
+        const cellClass = cell.type === 'code' ? 'code-cell' : cell.type === 'markdown' ? 'markdown-cell' : 'ai-cell'
+        const cellLabel = cell.type === 'code' ? 'Code' : cell.type === 'markdown' ? 'Markdown' : 'AI'
+
+        htmlContent += `<div class="cell ${cellClass}">`
+        htmlContent += `<div class="cell-header">[${index + 1}] ${cellLabel}</div>`
+
+        if (cell.type === 'code') {
+          htmlContent += `<pre>${escapeHtml(cell.source || '')}</pre>`
+          if (cell.outputs && cell.outputs.length > 0) {
+            const { text, html } = getOutputContent(cell.outputs)
+            if (text) {
+              htmlContent += `<div class="output"><div class="output-label">Output:</div>${escapeHtml(text)}</div>`
+            }
+            if (html) {
+              htmlContent += `<div class="output-html">${html}</div>`
+            }
+          }
+        } else if (cell.type === 'markdown') {
+          // Render markdown to HTML
+          htmlContent += `<div class="markdown-content">${renderMarkdown(cell.source || '')}</div>`
+        } else if (cell.type === 'ai') {
+          if (cell.ai_data?.user_prompt) {
+            htmlContent += `<div class="ai-prompt"><strong>Question:</strong> ${escapeHtml(cell.ai_data.user_prompt)}</div>`
+          }
+          if (cell.ai_data?.thinking && cell.ai_data.thinking.length > 0) {
+            const thinkingText = cell.ai_data.thinking.map(t => t.content).join('\n\n')
+            htmlContent += `<div class="thinking">${escapeHtml(thinkingText)}</div>`
+          }
+          if (cell.ai_data?.llm_response) {
+            // Render AI response as markdown (it usually contains markdown formatting)
+            htmlContent += `<div class="ai-response"><strong>Answer:</strong> ${renderMarkdown(cell.ai_data.llm_response)}</div>`
+          }
+        }
+
+        htmlContent += `</div>`
+      })
+
+      htmlContent += `
+          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af;">
+            Exported from AI Notebook on ${new Date().toLocaleDateString()}
+          </div>
+        </body>
+        </html>
+      `
+
+      // Open print dialog
+      const printWindow = window.open('', '_blank')
+      if (printWindow) {
+        printWindow.document.write(htmlContent)
+        printWindow.document.close()
+        printWindow.focus()
+        // Small delay to ensure content is loaded
+        setTimeout(() => {
+          printWindow.print()
+        }, 250)
+      } else {
+        setErrorPopup('Please allow popups to export PDF')
+      }
+
+    } catch (err) {
+      console.error('Failed to export PDF:', err)
+      setErrorPopup('Failed to export PDF. Please try again.')
+    } finally {
+      setIsExportingPDF(false)
+    }
+  }, [currentProject, cells, isDirty, handleSave])
+
   const handleSummarize = useCallback(async () => {
     if (!currentProject || cells.length === 0) {
       setErrorPopup('No cells to summarize. Add some content first.')
@@ -1862,6 +2138,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onSave={handleSave}
         onExport={handleExport}
         isExporting={isExporting}
+        onExportPDF={handleExportPDF}
+        isExportingPDF={isExportingPDF}
         totalCells={cells.length}
         isDirty={isDirty}
         isSaving={isSaving}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { auth, projects, playgrounds, notebooks, workspaces } from '@/lib/api'
+import { getRelativeTime, sortByDateDesc } from '@/lib/dateUtils'
 import { useAuthStore, useProjectsStore } from '@/lib/store'
 import type { Project, Workspace } from '@/types'
 import {
@@ -653,22 +654,6 @@ export default function DashboardPage() {
   const uncategorizedCount = projectList.filter(p => !p.workspace_id).length
   const activePlaygrounds = Object.values(playgroundStatuses).filter(s => s.status === 'running').length
 
-  // Helper function for relative time formatting
-  const getRelativeTime = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / (1000 * 60))
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
-    return date.toLocaleDateString()
-  }
-
   // Get user initials for avatar
   const getUserInitials = () => {
     if (!user?.email) return '?'
@@ -1266,7 +1251,7 @@ export default function DashboardPage() {
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--app-text-muted)' }}>Recent Projects</h3>
             <div className="space-y-1.5">
-              {[...projectList].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5).map(project => {
+              {sortByDateDesc(projectList, 'updated_at').slice(0, 5).map(project => {
                 const pgStatus = playgroundStatuses[project.id]
                 const isRunning = pgStatus?.status === 'running'
                 return (

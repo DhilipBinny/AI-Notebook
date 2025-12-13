@@ -152,6 +152,10 @@ async def save_notebook(
     # Save to S3 using storage_month
     result = await s3_client.save_notebook(project.storage_month, project_id, notebook_data)
 
+    # Update project's updated_at timestamp in database
+    project.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+
     return {
         "success": True,
         "version": result["version"],

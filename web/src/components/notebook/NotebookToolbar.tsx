@@ -26,6 +26,7 @@ import {
   FileCode,
   Palette,
   Type,
+  FileDown,
 } from 'lucide-react'
 
 interface NotebookToolbarProps {
@@ -38,6 +39,8 @@ interface NotebookToolbarProps {
   onSave: () => void
   onExport: () => void
   isExporting: boolean
+  onExportPDF: () => void
+  isExportingPDF: boolean
   totalCells: number
   isDirty: boolean
   isSaving: boolean
@@ -69,6 +72,8 @@ export default function NotebookToolbar({
   onSave,
   onExport,
   isExporting,
+  onExportPDF,
+  isExportingPDF,
   totalCells,
   isDirty,
   isSaving,
@@ -618,7 +623,7 @@ export default function NotebookToolbar({
           )}
         </div>
 
-        {/* Export button - ghost style */}
+        {/* Export buttons - ghost style */}
         <button
           onClick={onExport}
           disabled={isExporting}
@@ -630,6 +635,19 @@ export default function NotebookToolbar({
             <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
           ) : (
             <Download className="w-5 h-5" />
+          )}
+        </button>
+        <button
+          onClick={onExportPDF}
+          disabled={isExportingPDF}
+          className="p-2 rounded-md transition-all flex items-center justify-center border border-transparent hover:border-rose-500/30 hover:bg-rose-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ color: 'rgb(244, 63, 94)' }}
+          title="Export as PDF"
+        >
+          {isExportingPDF ? (
+            <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+          ) : (
+            <FileDown className="w-5 h-5" />
           )}
         </button>
 

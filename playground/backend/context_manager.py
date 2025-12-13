@@ -274,8 +274,11 @@ NOTEBOOK CONTEXT:
             context_str = self._format_xml_context(structured)
         elif format == ContextFormat.JSON:
             context_str = self._format_json_context(structured)
+        elif format == ContextFormat.PLAIN:
+            context_str = self._format_plain_context(structured)
         else:
-            context_str = self._format_compact_context(structured)
+            log(f"Invalid context format: {format}")
+            return ""
 
         log(f"📋 Context [{format.value}]: {len(context_str)} chars, {structured.total_cells} cells, {len(structured.imports)} imports, {len(structured.recent_errors)} errors")
 
@@ -345,129 +348,136 @@ NOTEBOOK CONTEXT:
 
         return structured
 
-    def _format_compact_context(self, structured: StructuredContext) -> str:
-        """Format structured context into compact LLM-friendly string"""
+    def _format_plain_context(self, structured: StructuredContext) -> str:
+        """
+        Format structured context into compact plain text.
+
+        Uses bracketed format instead of tables to avoid issues with
+        pipe characters in code. More robust and token-efficient.
+        """
         parts = []
 
         parts.append("=== NOTEBOOK OVERVIEW ===")
-        parts.append(f"Total cells: {structured.total_cells}")
 
-        # Environment section
+        # Variables section - compact inline
+        if structured.variables:
+            vars_list = [f"{k}={v}" for k, v in list(structured.variables.items())[:8]]
+            vars_str = ', '.join(vars_list)
+            if len(structured.variables) > 8:
+                vars_str += f" (+{len(structured.variables) - 8} more)"
+            parts.append(f"Variables: {vars_str}")
+
+        # Imports section - compact inline
         if structured.imports:
             imports_str = ', '.join(sorted(structured.imports)[:12])
             if len(structured.imports) > 12:
                 imports_str += f" (+{len(structured.imports) - 12} more)"
             parts.append(f"Imports: {imports_str}")
 
-        if structured.variables:
-            vars_list = [f"{k}:{v}" for k, v in list(structured.variables.items())[:8]]
-            vars_str = ', '.join(vars_list)
-            if len(structured.variables) > 8:
-                vars_str += f" (+{len(structured.variables) - 8} more)"
-            parts.append(f"Variables: {vars_str}")
-
-        # Errors section (important!)
+        # Errors section (critical!)
         if structured.recent_errors:
-            parts.append("\n[ERRORS]")
+            parts.append("")
             for err in structured.recent_errors[-3:]:
-                parts.append(f"  {err['cell_id']}: {err['error']}")
+                parts.append(f"[ERROR {err['cell_id']}]: {err['error']}")
 
-        # Cells overview - compact table format
-        parts.append("\n[CELLS]")
-        parts.append("ID | Type | Preview | Output")
-        parts.append("-" * 60)
-
-        for cell in structured.cells:
+        # Cells - bracketed format with line numbers for position anchoring
+        # Line numbers help LLMs understand cell positions without counting
+        parts.append("")
+        num_width = len(str(len(structured.cells)))  # Dynamic padding width
+        for idx, cell in enumerate(structured.cells, 1):
             cell_id = cell["cell_id"]
-            # Map cell types: markdown -> md, ai -> ai, code/other -> py
-            if cell["type"] == "markdown":
-                cell_type = "md"
-            elif cell["type"] == "ai":
-                cell_type = "ai"
-            else:
-                cell_type = "py"
-            preview = cell["preview"][:45]
+            # Short type names
+            cell_type = "md" if cell["type"] == "markdown" else cell["type"]
+            preview = cell["preview"][:50]
 
-            # Output indicator
+            # Output indicator suffix
             if cell["has_error"]:
-                output_ind = "[ERROR]"
-            elif cell["has_output"]:
-                output_ind = f"[{cell['output_type']}]" if cell["output_type"] else "[out]"
+                suffix = " [ERR]"
+            elif cell["has_output"] and cell["output_type"]:
+                suffix = f" [{cell['output_type'][:4]}]"
             else:
-                output_ind = ""
+                suffix = ""
 
-            parts.append(f"{cell_id} | {cell_type} | {preview} | {output_ind}")
+            # Line number prefix (zero-padded)
+            line_num = str(idx).zfill(num_width)
 
-        parts.append("\n=== END OVERVIEW ===")
-        parts.append("\nUse get_cell_content(cell_id) to read full cell content/output.")
+            # For AI cells, show the prompt
+            if cell["type"] == "ai":
+                ai_prompt = cell.get("ai_prompt", "")
+                content = ai_prompt[:50] if ai_prompt else preview
+                parts.append(f"{line_num}. [{cell_id}] ({cell_type}): {content}{suffix}")
+            else:
+                parts.append(f"{line_num}. [{cell_id}] ({cell_type}): {preview}{suffix}")
+
+        parts.append("")
+        parts.append("Tools: get_cell_content(id), get_notebook_overview()")
 
         return '\n'.join(parts)
 
     def _format_xml_context(self, structured: StructuredContext) -> str:
         """
-        Format structured context into XML for LLM.
+        Format structured context into optimized XML for LLM.
 
-        XML format is recommended for Claude (specifically trained on XML tags)
-        and works well with other LLMs like GPT-4 and Gemini.
-        Research shows XML can improve accuracy by up to 40% for complex tasks.
+        Uses short tag names and attributes for token efficiency:
+        - <c> instead of <cell> (saves ~2 chars × N cells)
+        - type="md" instead of type="markdown" (saves 6 chars)
+        - Content directly inside tags (no nested <preview>)
+        - Attributes for metadata instead of nested tags
+
+        XML format is recommended for Claude (specifically trained on XML tags).
         """
         parts = []
 
-        parts.append('<notebook_context>')
-        parts.append(f'  <overview total_cells="{structured.total_cells}"/>')
+        parts.append(f'<notebook cells="{structured.total_cells}">')
 
-        # Imports section
-        if structured.imports:
-            parts.append('  <imports>')
-            for imp in sorted(structured.imports)[:12]:
-                parts.append(f'    <import>{self._escape_xml(imp)}</import>')
-            if len(structured.imports) > 12:
-                parts.append(f'    <!-- +{len(structured.imports) - 12} more imports -->')
-            parts.append('  </imports>')
-
-        # Variables section
+        # Variables section - compact format
         if structured.variables:
-            parts.append('  <variables>')
-            for name, var_type in list(structured.variables.items())[:10]:
-                parts.append(f'    <var name="{self._escape_xml(name)}" type="{self._escape_xml(var_type)}"/>')
+            vars_list = [f"{k}={v}" for k, v in list(structured.variables.items())[:10]]
+            vars_str = ", ".join(vars_list)
             if len(structured.variables) > 10:
-                parts.append(f'    <!-- +{len(structured.variables) - 10} more variables -->')
-            parts.append('  </variables>')
+                vars_str += f" (+{len(structured.variables) - 10} more)"
+            parts.append(f'<vars>{self._escape_xml(vars_str)}</vars>')
 
-        # Errors section (high priority - always show)
+        # Imports section - compact inline
+        if structured.imports:
+            imports_str = ", ".join(sorted(structured.imports)[:12])
+            if len(structured.imports) > 12:
+                imports_str += f" (+{len(structured.imports) - 12} more)"
+            parts.append(f'<imports>{self._escape_xml(imports_str)}</imports>')
+
+        # Errors section (critical - always show)
         if structured.recent_errors:
-            parts.append('  <errors>')
             for err in structured.recent_errors[-3:]:
-                parts.append(f'    <error cell_id="{self._escape_xml(err["cell_id"])}">')
-                parts.append(f'      {self._escape_xml(err["error"])}')
-                parts.append('    </error>')
-            parts.append('  </errors>')
+                parts.append(f'<err cell="{self._escape_xml(err["cell_id"])}">{self._escape_xml(err["error"])}</err>')
 
-        # Cells section
-        parts.append('  <cells>')
+        # Cells section - optimized format
         for cell in structured.cells:
-            # Preserve actual cell type (code, markdown, ai)
-            cell_type = cell["type"]
-            has_output = "true" if cell["has_output"] else "false"
-            has_error = "true" if cell["has_error"] else "false"
-            output_type = cell["output_type"] or ""
+            # Short type names: code->code, markdown->md, ai->ai
+            cell_type = "md" if cell["type"] == "markdown" else cell["type"]
+            cell_id = cell["cell_id"]
+            preview = self._escape_xml(cell["preview"][:50])
 
-            parts.append(f'    <cell id="{self._escape_xml(cell["cell_id"])}" type="{cell_type}" has_output="{has_output}" has_error="{has_error}" output_type="{output_type}">')
-            parts.append(f'      <preview>{self._escape_xml(cell["preview"][:50])}</preview>')
-            # Include AI cell specific data
-            if cell_type == "ai":
+            # Build attributes string
+            attrs = f'id="{self._escape_xml(cell_id)}" type="{cell_type}"'
+
+            # Add output indicator as attribute if present
+            if cell["has_error"]:
+                attrs += ' err="1"'
+            elif cell["has_output"] and cell["output_type"]:
+                # Short output type
+                out_type = cell["output_type"][:4]  # text->text, DataFrame->Data, etc.
+                attrs += f' out="{out_type}"'
+
+            # For AI cells, include prompt preview in content
+            if cell["type"] == "ai":
                 ai_prompt = cell.get("ai_prompt", "")
-                ai_response = cell.get("ai_response", "")
-                if ai_prompt:
-                    parts.append(f'      <ai_prompt>{self._escape_xml(ai_prompt[:100])}</ai_prompt>')
-                if ai_response:
-                    parts.append(f'      <ai_response_preview>{self._escape_xml(ai_response[:100])}</ai_response_preview>')
-            parts.append('    </cell>')
-        parts.append('  </cells>')
+                content = self._escape_xml(ai_prompt[:60]) if ai_prompt else preview
+                parts.append(f'<c {attrs}>{content}</c>')
+            else:
+                parts.append(f'<c {attrs}>{preview}</c>')
 
-        parts.append('</notebook_context>')
-        parts.append('')
-        parts.append('<tool_hint>Use get_cell_content(cell_id) to read full cell content and output.</tool_hint>')
+        parts.append('</notebook>')
+        parts.append('<hint>Tools: get_cell_content(id), get_notebook_overview()</hint>')
 
         return '\n'.join(parts)
 
@@ -485,38 +495,65 @@ NOTEBOOK CONTEXT:
 
     def _format_json_context(self, structured: StructuredContext) -> str:
         """
-        Format structured context into JSON for LLM.
+        Format structured context into ultra-compact JSON for LLM.
 
-        JSON format works well with OpenAI and Gemini models that are
-        trained to parse structured data.
+        Uses List of Lists instead of List of Objects to eliminate key repetition.
+        Schema: [id, type, preview, output_indicator]
+        - Saves ~50% on cell data compared to objects with keys
+
+        Example: ["cell-1","code","import pandas",null] instead of {"id":"cell-1","t":"code","p":"import pandas"}
         """
+        # Build cells as arrays: [id, type, preview, out/err]
+        cells = []
+        for cell in structured.cells:
+            cell_type = "md" if cell["type"] == "markdown" else cell["type"]
+            preview = cell["preview"][:50] if cell["preview"] else ""
+
+            # Output indicator: "E" for error, short type, or null
+            if cell["has_error"]:
+                out_ind = "E"
+            elif cell["has_output"] and cell["output_type"]:
+                out_ind = cell["output_type"][:4]
+            else:
+                out_ind = None
+
+            # For AI cells, use prompt as preview
+            if cell["type"] == "ai":
+                ai_prompt = cell.get("ai_prompt", "")
+                preview = ai_prompt[:50] if ai_prompt else preview
+
+            # Array format: [id, type, preview, out]
+            cells.append([cell["cell_id"], cell_type, preview, out_ind])
+
+        # Build compact context object
         context_obj = {
-            "notebook_context": {
-                "total_cells": structured.total_cells,
-                "imports": sorted(structured.imports)[:12],
-                "variables": {k: v for k, v in list(structured.variables.items())[:10]},
-                "errors": [
-                    {"cell_id": err["cell_id"], "error": err["error"]}
-                    for err in structured.recent_errors[-3:]
-                ],
-                "cells": [
-                    {
-                        "id": cell["cell_id"],
-                        "type": cell["type"],
-                        "preview": cell["preview"][:50] if cell["preview"] else "",
-                        "has_output": cell["has_output"],
-                        "has_error": cell["has_error"],
-                        "output_type": cell["output_type"],
-                        **({"ai_prompt": (cell.get("ai_prompt") or "")[:100]} if cell["type"] == "ai" else {}),
-                        **({"ai_response_preview": (cell.get("ai_response") or "")[:100]} if cell["type"] == "ai" else {}),
-                    }
-                    for cell in structured.cells
-                ]
-            },
-            "tool_hint": "Use get_cell_content(cell_id) to read full cell content and output."
+            "n": structured.total_cells,  # total cells count
         }
 
-        return json.dumps(context_obj, indent=2)
+        # Add variables if present (compact format)
+        if structured.variables:
+            context_obj["vars"] = {k: v for k, v in list(structured.variables.items())[:10]}
+
+        # Add imports if present
+        if structured.imports:
+            context_obj["imports"] = sorted(structured.imports)[:12]
+
+        # Add errors if present (critical) - keep as objects for clarity
+        if structured.recent_errors:
+            context_obj["errs"] = [
+                [err["cell_id"], err["error"]]
+                for err in structured.recent_errors[-3:]
+            ]
+
+        # Cells object containing schema and list
+        context_obj["cells"] = {
+            "schema": ["id", "type", "preview", "out"],
+            "list": cells
+        }
+        context_obj["hint"] = "tools: get_cell_content(id), get_notebook_overview()"
+
+        # Minified JSON output
+        return json.dumps(context_obj, separators=(',', ':'))
 
     # =========================================================================
     # POSITIONAL CONTEXT (for AI Cell)
@@ -526,8 +563,7 @@ NOTEBOOK CONTEXT:
         self,
         cells: List[Dict[str, Any]],
         ai_cell_index: int,
-        format: ContextFormat = ContextFormat.PLAIN,
-        max_output_chars: int = 500
+        format: ContextFormat = ContextFormat.PLAIN
     ) -> str:
         """
         Process notebook cells into positional context for AI Cell.
@@ -535,20 +571,22 @@ NOTEBOOK CONTEXT:
         This creates a context with cells organized as "above" and "below"
         the AI cell's position, with immediate neighbors marked.
 
+        Full Mode: No truncation on content, output, ai_prompt, or ai_response.
+        LLM gets complete context to understand the notebook state.
+
         Args:
             cells: List of cell dicts with id, type, content, output, cellNumber
             ai_cell_index: The 0-based index of the AI cell in the notebook
-            format: Output format - PLAIN or XML
-            max_output_chars: Max characters for cell output (default: 500)
+            format: Output format - PLAIN, XML, or JSON
 
         Returns:
             Positional context string for AI Cell
         """
         if not cells:
             if format == ContextFormat.XML:
-                return "<notebook_context><empty>No other cells in notebook</empty></notebook_context>"
+                return "<notebook><empty>No other cells in notebook</empty></notebook>"
             elif format == ContextFormat.JSON:
-                return json.dumps({"notebook_context": {"empty": True, "message": "No other cells in notebook"}})
+                return json.dumps({"empty": True, "msg": "No other cells"}, separators=(',', ':'))
             return "(No other cells in notebook)"
 
         cells_above = []
@@ -556,18 +594,22 @@ NOTEBOOK CONTEXT:
 
         for i, cell in enumerate(cells):
             cell_position = cell.get("cellNumber", i + 1) - 1 if cell.get("cellNumber") else i
+
+            # Full Mode: Source code only, no outputs
+            # LLM can use get_cell_content() tool if it needs output
             output = cell.get("output", "") or ""
+            ai_response = cell.get("ai_response", "") or ""
 
             cell_data = {
                 "id": cell.get("id", f"cell-{i}"),
                 "type": cell.get("type", "code"),
-                "content": cell.get("content", "") or "",
-                "output": output[:max_output_chars] if output else "",
+                "content": cell.get("content", "") or "",  # Full source code
+                "has_output": bool(output.strip()),  # Indicator only
                 "position": cell_position,
                 "is_immediate": False,
                 # AI cell specific fields
-                "ai_prompt": cell.get("ai_prompt", ""),
-                "ai_response": cell.get("ai_response", ""),
+                "ai_prompt": cell.get("ai_prompt", "") or "",  # Full prompt
+                "has_response": bool(ai_response.strip()),  # Indicator only
             }
 
             if ai_cell_index >= 0 and cell_position < ai_cell_index:
@@ -594,128 +636,144 @@ NOTEBOOK CONTEXT:
         return context_str
 
     def _format_positional_plain(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
-        """Format positional context in plain text"""
+        """
+        Format positional context in plain text with delimiter style.
+
+        Uses clear separators between cells and their outputs.
+        Includes line numbers for position anchoring.
+        """
+        total = len(cells_above) + len(cells_below) + 1
+        num_width = len(str(total))  # Dynamic padding width
         parts = []
 
-        def format_cell(cell: Dict) -> str:
-            """Format a single cell for plain text output"""
-            cell_type = "Code" if cell["type"] == "code" else cell["type"].capitalize()
-            prefix = "[IMMEDIATELY ABOVE] " if cell["is_immediate"] else ("[IMMEDIATELY BELOW] " if cell.get("is_immediate_below") else "")
+        def format_cell(cell: Dict, is_near: bool = False) -> str:
+            """Format a single cell with delimiter style and line number"""
+            cell_type = "md" if cell["type"] == "markdown" else cell["type"]
+            near_marker = " [NEAR]" if is_near else ""
+            # Line number from cell position (1-based)
+            line_num = str(cell["position"] + 1).zfill(num_width)
 
-            # For AI cells, show user prompt and response
+            # Output indicator (no actual output - use get_cell_content for that)
+            out_marker = " [OUT]" if cell.get("has_output") else ""
+
+            # For AI cells, show question only (no response content)
             if cell["type"] == "ai":
                 ai_prompt = cell.get("ai_prompt", "")
-                ai_response = cell.get("ai_response", "")
-                cell_info = f"{prefix}[@{cell['id']}] (AI Cell):"
+                resp_marker = " [RESP]" if cell.get("has_response") else ""
+                cell_lines = [f"=== {line_num}. {cell['id']} ({cell_type}){near_marker}{resp_marker} ==="]
                 if ai_prompt:
-                    cell_info += f"\n[User Question]: {ai_prompt}"
-                if ai_response:
-                    # Truncate long responses
-                    response_preview = ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
-                    cell_info += f"\n[AI Response]: {response_preview}"
-                return cell_info
+                    cell_lines.append(f"[Q]: {ai_prompt}")
+                return "\n".join(cell_lines)
             else:
-                cell_info = f"{prefix}[@{cell['id']}] ({cell_type}):\n{cell['content']}"
-                if cell["output"]:
-                    cell_info += f"\n[Output]: {cell['output']}"
-                return cell_info
+                cell_lines = [f"=== {line_num}. {cell['id']} ({cell_type}){near_marker}{out_marker} ==="]
+                cell_lines.append(cell["content"])
+                return "\n".join(cell_lines)
+
+        parts.append(f"POSITION: {ai_cell_index + 1}/{total}")
 
         if cells_above:
-            parts.append("=== CELLS ABOVE YOU ===")
+            parts.append("\n[ABOVE]")
             for cell in cells_above:
-                parts.append(format_cell(cell))
-
-        parts.append(f"\n=== YOUR POSITION (AI Cell #{ai_cell_index + 1}) ===")
+                parts.append(format_cell(cell, cell["is_immediate"]))
 
         if cells_below:
-            parts.append("\n=== CELLS BELOW YOU ===")
+            parts.append("\n[BELOW]")
             for cell in cells_below:
-                cell["is_immediate_below"] = cell["is_immediate"]  # Mark for formatting
-                parts.append(format_cell(cell))
+                parts.append(format_cell(cell, cell["is_immediate"]))
 
         return "\n".join(parts)
 
     def _format_positional_xml(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
-        """Format positional context in XML"""
-        parts = []
-        parts.append('<notebook_context>')
-        parts.append(f'  <your_position cell_number="{ai_cell_index + 1}"/>')
+        """
+        Format positional context in optimized XML.
 
-        def format_cell_xml(cell: Dict, immediate_attr: str) -> List[str]:
+        Uses short tag names for token efficiency:
+        - <src> instead of <content>
+        - out="1" attribute instead of <out> content
+        - near="1" for immediate neighbors
+        - type="md" for markdown
+        """
+        total = len(cells_above) + len(cells_below) + 1
+        parts = []
+        parts.append(f'<notebook pos="{ai_cell_index + 1}/{total}">')
+
+        def format_cell_xml(cell: Dict) -> List[str]:
             """Format a single cell for XML output"""
             cell_parts = []
-            cell_parts.append(f'    <cell id="{self._escape_xml(cell["id"])}" type="{cell["type"]}"{immediate_attr}>')
+            cell_type = "md" if cell["type"] == "markdown" else cell["type"]
+            near_attr = ' near="1"' if cell["is_immediate"] else ''
+            out_attr = ' out="1"' if cell.get("has_output") else ''
 
-            # For AI cells, include user_prompt and ai_response
+            # For AI cells, show question only (no response content)
             if cell["type"] == "ai":
                 ai_prompt = cell.get("ai_prompt", "")
-                ai_response = cell.get("ai_response", "")
+                resp_attr = ' resp="1"' if cell.get("has_response") else ''
+                cell_parts.append(f'<cell id="{self._escape_xml(cell["id"])}" type="{cell_type}"{near_attr}{resp_attr}>')
                 if ai_prompt:
-                    cell_parts.append(f'      <user_question>{self._escape_xml(ai_prompt)}</user_question>')
-                if ai_response:
-                    # Truncate long responses
-                    response_preview = ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
-                    cell_parts.append(f'      <ai_response>{self._escape_xml(response_preview)}</ai_response>')
+                    cell_parts.append(f'<q>{self._escape_xml(ai_prompt)}</q>')
             else:
-                cell_parts.append(f'      <content>{self._escape_xml(cell["content"])}</content>')
-                if cell["output"]:
-                    cell_parts.append(f'      <output>{self._escape_xml(cell["output"])}</output>')
+                cell_parts.append(f'<cell id="{self._escape_xml(cell["id"])}" type="{cell_type}"{near_attr}{out_attr}>')
+                cell_parts.append(f'<src>{self._escape_xml(cell["content"])}</src>')
 
-            cell_parts.append('    </cell>')
+            cell_parts.append('</cell>')
             return cell_parts
 
         if cells_above:
-            parts.append('  <cells_above>')
+            parts.append('<above>')
             for cell in cells_above:
-                immediate = ' immediate="true"' if cell["is_immediate"] else ''
-                parts.extend(format_cell_xml(cell, immediate))
-            parts.append('  </cells_above>')
+                parts.extend(format_cell_xml(cell))
+            parts.append('</above>')
 
         if cells_below:
-            parts.append('  <cells_below>')
+            parts.append('<below>')
             for cell in cells_below:
-                immediate = ' immediate="true"' if cell["is_immediate"] else ''
-                parts.extend(format_cell_xml(cell, immediate))
-            parts.append('  </cells_below>')
+                parts.extend(format_cell_xml(cell))
+            parts.append('</below>')
 
-        parts.append('</notebook_context>')
+        parts.append('</notebook>')
         return '\n'.join(parts)
 
     def _format_positional_json(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
-        """Format positional context in JSON"""
+        """
+        Format positional context in ultra-compact JSON.
 
-        def format_cell_json(cell: Dict) -> Dict:
-            """Format a single cell for JSON output"""
-            cell_obj = {
-                "id": cell["id"],
-                "type": cell["type"],
-                "is_immediate": cell["is_immediate"],
-            }
+        Uses List of Lists to eliminate key repetition.
+        Schema: [id, type, near, src, has_out]
+        - near: 1 if immediate neighbor, 0 otherwise
+        - src: content for code/md, prompt for ai
+        - has_out: 1 if has output/response, 0 otherwise
+        """
+        total = len(cells_above) + len(cells_below) + 1
+
+        def format_cell_array(cell: Dict) -> list:
+            """Format a single cell as array: [id, type, near, src, has_out]"""
+            cell_type = "md" if cell["type"] == "markdown" else cell["type"]
+            near = 1 if cell["is_immediate"] else 0
 
             if cell["type"] == "ai":
-                ai_prompt = cell.get("ai_prompt", "")
-                ai_response = cell.get("ai_response", "")
-                if ai_prompt:
-                    cell_obj["user_question"] = ai_prompt
-                if ai_response:
-                    # Truncate long responses
-                    cell_obj["ai_response"] = ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
+                src = cell.get("ai_prompt", "") or None
+                has_out = 1 if cell.get("has_response") else 0
             else:
-                cell_obj["content"] = cell["content"]
-                if cell["output"]:
-                    cell_obj["output"] = cell["output"]
+                src = cell["content"] or None
+                has_out = 1 if cell.get("has_output") else 0
 
-            return cell_obj
+            return [cell["id"], cell_type, near, src, has_out]
 
         context_obj = {
-            "notebook_context": {
-                "your_position": ai_cell_index + 1,
-                "cells_above": [format_cell_json(cell) for cell in cells_above],
-                "cells_below": [format_cell_json(cell) for cell in cells_below],
+            "pos": f"{ai_cell_index + 1}/{total}",
+            "cells": {
+                "schema": ["id", "type", "near", "src", "has_out"],
             }
         }
 
-        return json.dumps(context_obj, indent=2)
+        if cells_above:
+            context_obj["cells"]["above"] = [format_cell_array(cell) for cell in cells_above]
+
+        if cells_below:
+            context_obj["cells"]["below"] = [format_cell_array(cell) for cell in cells_below]
+
+        # Minified JSON output
+        return json.dumps(context_obj, separators=(',', ':'))
 
     def _get_first_line(self, content: str) -> str:
         """Get first meaningful line of content as preview"""
@@ -794,16 +852,51 @@ NOTEBOOK CONTEXT:
             if match:
                 var_name = match.group(1)
                 value = match.group(2).strip()
-                var_type = self._infer_type(value)
-                if var_type:
-                    variables[var_name] = var_type
+                var_info = self._get_var_info(value)
+                if var_info:
+                    variables[var_name] = var_info
 
         return variables
 
-    def _infer_type(self, value: str) -> Optional[str]:
-        """Infer variable type from assignment value"""
+    def _get_var_info(self, value: str) -> Optional[str]:
+        """
+        Get type AND value for primitives, just type for complex objects.
+
+        For small primitives (int, float, bool, short strings), captures the actual
+        value so LLM can answer "What is the value of X?" without calling tools.
+        """
         value = value.strip()
 
+        # Capture primitive literals with their values (max 30 chars for strings)
+        # Numbers
+        if value.replace('.', '', 1).replace('-', '', 1).isdigit():
+            if '.' in value:
+                return f"float={value}"
+            else:
+                return f"int={value}"
+
+        # Booleans
+        if value in ('True', 'False'):
+            return f"bool={value}"
+
+        # None
+        if value == 'None':
+            return 'None'
+
+        # Strings - show value with truncation indicator if too long
+        if value.startswith(('"', "'")):
+            # Extract string content
+            quote_char = value[0]
+            if value.endswith(quote_char) and len(value) > 1:
+                clean_val = value[1:-1]
+                if len(clean_val) <= 30:
+                    return f'str="{clean_val}"'
+                else:
+                    # Truncate with ... so LLM knows to fetch full value
+                    return f'str="{clean_val[:30]}..."'
+            return 'str'
+
+        # Complex types - just return type name
         if value.startswith(('pd.read_', 'pd.DataFrame')):
             return 'DataFrame'
         elif value.startswith(('np.array', 'np.zeros', 'np.ones', 'np.arange')):
@@ -812,14 +905,6 @@ NOTEBOOK CONTEXT:
             return 'list'
         elif value.startswith('{'):
             return 'dict'
-        elif value.startswith(('"', "'")):
-            return 'str'
-        elif value.replace('.', '').replace('-', '').isdigit():
-            return 'float' if '.' in value else 'int'
-        elif value in ('True', 'False'):
-            return 'bool'
-        elif value == 'None':
-            return 'None'
         elif '(' in value:
             func_match = re.match(r'(\w+(?:\.\w+)*)\s*\(', value)
             if func_match:

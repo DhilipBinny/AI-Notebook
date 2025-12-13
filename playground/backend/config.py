@@ -43,7 +43,7 @@ TOOL_EXECUTION_MODE = os.environ.get("TOOL_EXECUTION_MODE", "ai_decide")
 
 # Maximum iterations for auto tool calling loops (Chat Panel and AI Cell)
 # Prevents infinite loops when LLM keeps calling tools
-MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "5"))
+MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "10"))
 
 # Legacy support - AUTO_FUNCTION_CALLING maps to mode
 AUTO_FUNCTION_CALLING = os.environ.get("AUTO_FUNCTION_CALLING", "false").lower() == "true"
