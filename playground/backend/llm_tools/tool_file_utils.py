@@ -5,11 +5,10 @@ These tools provide file operations within a safe working directory.
 Operations are restricted to the /workspace directory for security.
 """
 
-import os
 import shutil
 from pathlib import Path
 from typing import Optional
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 # Safe working directory for file operations
 WORKSPACE_DIR = Path("/workspace")
@@ -78,7 +77,7 @@ def read_file(file_path: str, max_lines: Optional[int] = None) -> dict:
         To read a config file: read_file("config.json")
         To read first 50 lines of a large file: read_file("data.csv", max_lines=50)
     """
-    log_debug_message(f"==> read_file({file_path}) called from LLM")
+    log(f"==> read_file({file_path}) called from LLM")
 
     safe_path = _safe_path(file_path)
     if safe_path is None:
@@ -162,7 +161,7 @@ def write_file(file_path: str, content: str, create_dirs: bool = True) -> dict:
         To save results: write_file("output/results.json", json_content)
         To create a script: write_file("scripts/process.py", python_code)
     """
-    log_debug_message(f"==> write_file({file_path}) called from LLM")
+    log(f"==> write_file({file_path}) called from LLM")
 
     safe_path = _safe_path(file_path)
     if safe_path is None:
@@ -227,7 +226,7 @@ def append_file(file_path: str, content: str) -> dict:
     Example:
         To append to a log: append_file("logs/process.log", "New log entry\\n")
     """
-    log_debug_message(f"==> append_file({file_path}) called from LLM")
+    log(f"==> append_file({file_path}) called from LLM")
 
     safe_path = _safe_path(file_path)
     if safe_path is None:
@@ -281,7 +280,7 @@ def delete_file(file_path: str) -> dict:
     Example:
         To delete a temp file: delete_file("temp/processing.tmp")
     """
-    log_debug_message(f"==> delete_file({file_path}) called from LLM")
+    log(f"==> delete_file({file_path}) called from LLM")
 
     safe_path = _safe_path(file_path)
     if safe_path is None:
@@ -339,7 +338,7 @@ def rename_file(old_path: str, new_path: str) -> dict:
         To rename: rename_file("data.csv", "data_processed.csv")
         To move: rename_file("data.csv", "processed/data.csv")
     """
-    log_debug_message(f"==> rename_file({old_path}, {new_path}) called from LLM")
+    log(f"==> rename_file({old_path}, {new_path}) called from LLM")
 
     safe_old = _safe_path(old_path)
     safe_new = _safe_path(new_path)
@@ -411,7 +410,7 @@ def copy_file(source_path: str, dest_path: str) -> dict:
         To backup: copy_file("config.json", "config.json.backup")
         To copy to new location: copy_file("template.py", "scripts/new_script.py")
     """
-    log_debug_message(f"==> copy_file({source_path}, {dest_path}) called from LLM")
+    log(f"==> copy_file({source_path}, {dest_path}) called from LLM")
 
     safe_source = _safe_path(source_path)
     safe_dest = _safe_path(dest_path)
@@ -489,7 +488,7 @@ def list_directory(dir_path: str = ".", include_hidden: bool = False) -> dict:
         To list a subdirectory: list_directory("data")
         To include hidden files: list_directory(".", include_hidden=True)
     """
-    log_debug_message(f"==> list_directory({dir_path}) called from LLM")
+    log(f"==> list_directory({dir_path}) called from LLM")
 
     safe_path = _safe_path(dir_path)
     if safe_path is None:
@@ -569,7 +568,7 @@ def create_directory(dir_path: str) -> dict:
     Example:
         To create output dir: create_directory("output/results")
     """
-    log_debug_message(f"==> create_directory({dir_path}) called from LLM")
+    log(f"==> create_directory({dir_path}) called from LLM")
 
     safe_path = _safe_path(dir_path)
     if safe_path is None:
@@ -617,7 +616,7 @@ def delete_directory(dir_path: str, recursive: bool = False) -> dict:
         To delete empty dir: delete_directory("temp")
         To delete with contents: delete_directory("temp", recursive=True)
     """
-    log_debug_message(f"==> delete_directory({dir_path}, recursive={recursive}) called from LLM")
+    log(f"==> delete_directory({dir_path}, recursive={recursive}) called from LLM")
 
     safe_path = _safe_path(dir_path)
     if safe_path is None:
@@ -695,7 +694,7 @@ def file_exists(file_path: str) -> dict:
     Example:
         To check if data exists: file_exists("data/input.csv")
     """
-    log_debug_message(f"==> file_exists({file_path}) called from LLM")
+    log(f"==> file_exists({file_path}) called from LLM")
 
     safe_path = _safe_path(file_path)
     if safe_path is None:

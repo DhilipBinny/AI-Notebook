@@ -23,7 +23,6 @@ import {
   Settings,
   Sparkles,
   Bot,
-  Wrench,
   FileCode,
   Palette,
   Type,
@@ -55,10 +54,8 @@ interface NotebookToolbarProps {
   // AI Settings
   llmProvider: string
   onProviderChange: (provider: string) => void
-  toolMode: 'auto' | 'manual' | 'ai_decide'
-  onToolModeChange: (mode: 'auto' | 'manual' | 'ai_decide') => void
-  contextFormat: 'xml' | 'plain'
-  onContextFormatChange: (format: 'xml' | 'plain') => void
+  contextFormat: 'xml' | 'json' | 'plain'
+  onContextFormatChange: (format: 'xml' | 'json' | 'plain') => void
 }
 
 
@@ -87,8 +84,6 @@ export default function NotebookToolbar({
   onOpenTerminal,
   llmProvider,
   onProviderChange,
-  toolMode,
-  onToolModeChange,
   contextFormat,
   onContextFormatChange,
 }: NotebookToolbarProps) {
@@ -716,28 +711,6 @@ export default function NotebookToolbar({
                   </select>
                 </div>
 
-                {/* Tools Mode */}
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--nb-text-muted)' }}>
-                    <Wrench className="w-4 h-4" />
-                    Tool Execution
-                  </label>
-                  <select
-                    value={toolMode}
-                    onChange={(e) => onToolModeChange(e.target.value as 'auto' | 'manual' | 'ai_decide')}
-                    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all cursor-pointer"
-                    style={{
-                      backgroundColor: 'var(--nb-bg-primary)',
-                      borderColor: 'var(--nb-border-default)',
-                      color: 'var(--nb-text-primary)',
-                    }}
-                  >
-                    <option value="auto">Auto-execute tools</option>
-                    <option value="manual">Require approval</option>
-                    <option value="ai_decide">AI decides</option>
-                  </select>
-                </div>
-
                 {/* Context Format */}
                 <div className="space-y-1.5">
                   <label className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--nb-text-muted)' }}>
@@ -746,7 +719,7 @@ export default function NotebookToolbar({
                   </label>
                   <select
                     value={contextFormat}
-                    onChange={(e) => onContextFormatChange(e.target.value as 'xml' | 'plain')}
+                    onChange={(e) => onContextFormatChange(e.target.value as 'xml' | 'json' | 'plain')}
                     className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all cursor-pointer"
                     style={{
                       backgroundColor: 'var(--nb-bg-primary)',
@@ -754,8 +727,9 @@ export default function NotebookToolbar({
                       color: 'var(--nb-text-primary)',
                     }}
                   >
-                    <option value="xml">XML (recommended for Claude)</option>
-                    <option value="plain">Plain text</option>
+                    <option value="xml">XML (Claude)</option>
+                    <option value="json">JSON (OpenAI, Gemini)</option>
+                    <option value="plain">Plain text (Ollama)</option>
                   </select>
                 </div>
               </div>

@@ -6,9 +6,8 @@ packages are installed in the correct environment that the notebook uses.
 """
 
 import re
-from typing import List
 from backend.session_manager import get_current_session
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 def _get_session_kernel():
@@ -89,7 +88,7 @@ def pip_install(packages: str, upgrade: bool = False) -> dict:
         To upgrade: pip_install("pandas", upgrade=True)
         To install specific version: pip_install("pandas==2.0.0")
     """
-    log_debug_message(f"==> pip_install({packages}, upgrade={upgrade}) called from LLM")
+    log(f"==> pip_install({packages}, upgrade={upgrade}) called from LLM")
 
     if not packages or not packages.strip():
         return {
@@ -203,7 +202,7 @@ def pip_uninstall(packages: str) -> dict:
         To uninstall: pip_uninstall("old-package")
         To uninstall multiple: pip_uninstall("pkg1 pkg2")
     """
-    log_debug_message(f"==> pip_uninstall({packages}) called from LLM")
+    log(f"==> pip_uninstall({packages}) called from LLM")
 
     if not packages or not packages.strip():
         return {
@@ -268,7 +267,7 @@ def pip_list() -> dict:
     Example:
         To list all packages: pip_list()
     """
-    log_debug_message(f"==> pip_list() called from LLM")
+    log(f"==> pip_list() called from LLM")
 
     list_code = '''
 import subprocess
@@ -338,7 +337,7 @@ def pip_show(package: str) -> dict:
     Example:
         To check pandas: pip_show("pandas")
     """
-    log_debug_message(f"==> pip_show({package}) called from LLM")
+    log(f"==> pip_show({package}) called from LLM")
 
     if not package or not package.strip():
         return {
@@ -419,7 +418,7 @@ def pip_search_installed(query: str) -> dict:
         To find data-related packages: pip_search_installed("data")
         To check for scikit packages: pip_search_installed("scikit")
     """
-    log_debug_message(f"==> pip_search_installed({query}) called from LLM")
+    log(f"==> pip_search_installed({query}) called from LLM")
 
     if not query or not query.strip():
         return {
@@ -480,7 +479,7 @@ def extract_missing_modules(error_message: str) -> dict:
         result = extract_missing_modules(error)
         # result: {"modules": ["pandas"], "suggested_packages": ["pandas"]}
     """
-    log_debug_message(f"==> extract_missing_modules called from LLM")
+    log(f"==> extract_missing_modules called from LLM")
 
     if not error_message:
         return {

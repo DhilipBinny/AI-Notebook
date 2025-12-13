@@ -111,27 +111,27 @@ class Session:
 
     def cleanup(self):
         """Cleanup session resources (thread-safe with exception handling)"""
-        from backend.utils.util_func import log_debug_message
+        from backend.utils.util_func import log
         try:
             # Stop kernel first
             if self.kernel.is_alive():
                 self.kernel.stop()
         except Exception as e:
-            log_debug_message(f"[Session] Error stopping kernel: {e}")
+            log(f"[Session] Error stopping kernel: {e}")
 
         try:
             # Cleanup sandbox kernel for this session
             from backend.llm_tools.tool_sandbox import cleanup_sandbox
             cleanup_sandbox(self.session_id)
         except Exception as e:
-            log_debug_message(f"[Session] Error cleaning up sandbox: {e}")
+            log(f"[Session] Error cleaning up sandbox: {e}")
 
         # Always clear state, even if cleanup failed
         with self._lock:
             self.notebook_state = {"cells": [], "updates": []}
             self.llm_steps = []
 
-        log_debug_message(f"[Session] Cleaned up session {self.session_id}")
+        log(f"[Session] Cleaned up session {self.session_id}")
 
 
 class SessionManager:

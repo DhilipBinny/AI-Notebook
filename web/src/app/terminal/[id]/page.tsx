@@ -186,11 +186,60 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
             <span className="font-medium" style={{ color: '#cdd6f4' }}>Container Terminal</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-sm" style={{ color: '#a6adc8' }}>
-            {connected ? 'Connected' : 'Disconnected'}
-          </span>
+        <div className="flex items-center gap-3">
+          {/* Clear button */}
+          <button
+            onClick={() => terminalInstance.current?.clear()}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-sm hover:bg-white/10 transition-colors"
+            style={{ color: '#cdd6f4' }}
+            title="Clear terminal"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Clear
+          </button>
+          {/* Export Logs button */}
+          <button
+            onClick={() => {
+              if (terminalInstance.current) {
+                // Get all text from the terminal buffer
+                const buffer = terminalInstance.current.buffer.active
+                let logs = ''
+                for (let i = 0; i < buffer.length; i++) {
+                  const line = buffer.getLine(i)
+                  if (line) {
+                    logs += line.translateToString(true) + '\n'
+                  }
+                }
+                // Create and download file
+                const blob = new Blob([logs], { type: 'text/plain' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `terminal-logs-${projectId}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                URL.revokeObjectURL(url)
+              }
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-sm hover:bg-white/10 transition-colors"
+            style={{ color: '#cdd6f4' }}
+            title="Export terminal logs"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Export
+          </button>
+          {/* Connection status */}
+          <div className="flex items-center gap-2 ml-2">
+            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-sm" style={{ color: '#a6adc8' }}>
+              {connected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
         </div>
       </div>
       )}

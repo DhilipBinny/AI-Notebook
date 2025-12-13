@@ -69,6 +69,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 300000,  // 5 minutes - matches backend timeout for LLM requests
 })
 
 // Add auth token to requests
@@ -305,7 +306,7 @@ export const chat = {
     contextCellIds: string[],
     toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
     llmProvider: string = 'gemini',
-    contextFormat: 'xml' | 'plain' = 'xml',
+    contextFormat: 'xml' | 'json' | 'plain' = 'xml',
     images?: ImageInput[]
   ): Promise<ChatResponse> => {
     const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
@@ -321,7 +322,7 @@ export const chat = {
     approvedTools: PendingToolCall[],
     toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
     llmProvider: string = 'gemini',
-    contextFormat: 'xml' | 'plain' = 'xml'
+    contextFormat: 'xml' | 'json' | 'plain' = 'xml'
   ): Promise<ChatResponse> => {
     const { data } = await api.post(`/projects/${projectId}/chat/execute-tools?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
       approved_tools: approvedTools,
@@ -342,7 +343,7 @@ export const chat = {
     llmProvider: string = 'gemini',
     aiCellId?: string,
     aiCellIndex?: number,
-    contextFormat: 'xml' | 'plain' = 'xml',
+    contextFormat: 'xml' | 'json' | 'plain' = 'xml',
     images?: { data: string; mime_type: string; filename?: string }[],
     onEvent?: (event: { type: string; data: Record<string, unknown> }) => void,
     onDone?: (result: { success: boolean; response: string; model: string; steps: LLMStep[]; cancelled?: boolean; thinking?: string }) => void,

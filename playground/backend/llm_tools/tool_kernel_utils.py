@@ -6,9 +6,8 @@ Runtime tools (require running kernel):
 - runtime_get_dataframe: Get detailed DataFrame information
 """
 
-from typing import Optional, List, Dict, Any
 from backend.session_manager import get_current_session
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 def _get_session_kernel(auto_start: bool = True):
@@ -18,7 +17,7 @@ def _get_session_kernel(auto_start: bool = True):
         raise RuntimeError("No active session. Session is required for kernel operations.")
     kernel = session.kernel
     if auto_start and not kernel.is_alive():
-        log_debug_message("[Kernel Utils] Auto-starting kernel for session")
+        log("[Kernel Utils] Auto-starting kernel for session")
         kernel.start()
     return kernel
 
@@ -48,7 +47,7 @@ def runtime_get_last_error() -> dict:
         #   "ename": "KeyError", "evalue": "'column_name'",
         #   "simplified": "KeyError: The key 'column_name' was not found..."}
     """
-    log_debug_message("==> runtime_get_last_error() called from LLM")
+    log("==> runtime_get_last_error() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -170,7 +169,7 @@ def runtime_get_dataframe(name: str) -> dict:
     Example:
         runtime_get_dataframe("df")  → full DataFrame analysis
     """
-    log_debug_message(f"==> runtime_get_dataframe({name}) called from LLM")
+    log(f"==> runtime_get_dataframe({name}) called from LLM")
 
     kernel = _get_session_kernel()
 

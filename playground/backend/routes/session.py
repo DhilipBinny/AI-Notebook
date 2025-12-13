@@ -4,7 +4,7 @@ Session Routes - API endpoints for session management
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import List
 
 from backend.session_manager import get_session_manager
 

@@ -200,7 +200,7 @@ class ChatService:
                     f"{playground.internal_url}/chat",
                     headers={"X-Internal-Secret": playground.internal_secret},
                     json=request_body,
-                    timeout=120,  # LLM can take a while
+                    timeout=300,  # LLM with auto tool execution can take 5+ minutes
                 )
 
                 if response.status_code != 200:
@@ -304,7 +304,7 @@ class ChatService:
                         "session_id": project.id,
                         "approved_tools": [t.model_dump() for t in approved_tools],
                     },
-                    timeout=120,
+                    timeout=300,  # Tool execution with LLM can take time
                 )
 
                 if response.status_code != 200:

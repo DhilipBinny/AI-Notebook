@@ -155,6 +155,14 @@ async def refresh_tokens(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
         )
+    except Exception as e:
+        # Log the error and return a generic auth error
+        import logging
+        logging.getLogger(__name__).error(f"Token refresh failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token refresh failed",
+        )
 
     return TokenResponse(
         access_token=tokens.access_token,

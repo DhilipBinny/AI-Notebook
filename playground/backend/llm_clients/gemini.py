@@ -6,6 +6,15 @@ Supports both automatic and manual (approval-based) function calling.
 Uses a two-phase approach for web search:
   - Phase 1: Detect if search is needed and perform search with native Google Search
   - Phase 2: Execute function tools with search context injected
+
+SECTIONS:
+1. Module-Level Setup (imports, constants, tool building)
+2. Initialization & Configuration
+3. Chat Panel - Main Conversation Interface
+4. History Management
+5. Simple Completions (No Tools)
+6. AI Cell - Tool Execution Framework
+7. Utilities & Helpers
 """
 
 import json
@@ -15,10 +24,16 @@ from google.genai import types
 from typing import List, Dict, Any, Optional, Union, Callable
 
 from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult, CancelledException
-from backend.utils.util_func import log_response_details, log_debug_message
+from backend.llm_clients.tool_schemas import build_gemini_tool_schema
+from backend.utils.util_func import log
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
+
+# =============================================================================
+# SECTION 1: MODULE-LEVEL SETUP
+# =============================================================================
+# Constants, tool definitions, and module-level helpers
 
 # Build tool map for manual execution
 # Filter out web_search since we handle it natively
@@ -28,20 +43,15 @@ TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS_NO_SEARCH}
 # AI Cell tool map (inspection + sandbox only)
 AI_CELL_TOOL_MAP = {func.__name__: func for func in AI_CELL_TOOLS}
 
-# Keywords that suggest web search is needed
-SEARCH_KEYWORDS = [
-    'search', 'find', 'look up', 'lookup', 'google', 'web',
-    'latest', 'recent', 'current', 'today', 'now', 'news',
-    'what is the', 'who is', 'when is', 'where is',
-    'weather', 'stock', 'price', 'score',
-    '2024', '2025',  # Recent dates
-]
-
 
 class GeminiClient(BaseLLMClient):
     """Gemini LLM client with tool calling and Google Search support (two-phase approach)"""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
+    # =========================================================================
+    # SECTION 2: INITIALIZATION & CONFIGURATION
+    # =========================================================================
+
+    def __init__(self, api_key: str, model_name: str = None, auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
         Initialize Gemini client.
 
@@ -54,27 +64,27 @@ class GeminiClient(BaseLLMClient):
         super().__init__()  # Initialize base class (cancellation support)
 
         self.client = genai.Client(api_key=api_key)
-        self.model_name = model_name
+        self.model_name = model_name or cfg.GEMINI_MODEL
         self.enable_web_search = enable_web_search
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
 
-        log_debug_message(f"Gemini tools configured with {len(TOOL_FUNCTIONS_NO_SEARCH)} functions (excluding web_search)")
+        log(f"Gemini tools configured with {len(TOOL_FUNCTIONS_NO_SEARCH)} functions (excluding web_search)")
         tool_names = [func.__name__ for func in TOOL_FUNCTIONS_NO_SEARCH]
-        log_debug_message(f"Gemini client initialized with tools: {tool_names}")
-        log_debug_message(f"Auto function calling: {self.auto_function_calling}")
-        log_debug_message(f"Web search enabled (two-phase): {self.enable_web_search}")
+        log(f"Gemini client initialized with tools: {tool_names}")
+        log(f"Config: tool_mode={cfg.TOOL_EXECUTION_MODE}, auto_func={self.auto_function_calling} (request may override)")
+        log(f"Web search enabled (two-phase): {self.enable_web_search}")
 
         # Initialize chat history
         self.history: List[Dict[str, Any]] = []
-        self._start_chat()
+        self._gemini_start_chat()
 
         # Cache AI Cell tools (built once)
         self._ai_cell_tools_cache: Optional[List[types.Tool]] = None
         self._ai_cell_tool_map_cache: Optional[Dict[str, Callable]] = None
 
-    def _build_config(self) -> types.GenerateContentConfig:
+    def _gemini_build_config(self) -> types.GenerateContentConfig:
         """Build the GenerateContentConfig with tools and system instruction (NO search tool)"""
         if self.auto_function_calling:
             # For automatic function calling, pass Python functions directly
@@ -85,7 +95,7 @@ class GeminiClient(BaseLLMClient):
         else:
             # For manual mode, use FunctionDeclarations
             tools_list = [types.Tool(function_declarations=[
-                self._func_to_declaration(func) for func in TOOL_FUNCTIONS_NO_SEARCH
+                self._gemini_func_to_declaration(func) for func in TOOL_FUNCTIONS_NO_SEARCH
             ])]
             config = types.GenerateContentConfig(
                 system_instruction=self.SYSTEM_PROMPT,
@@ -95,172 +105,14 @@ class GeminiClient(BaseLLMClient):
 
         return config
 
-    def _build_search_config(self) -> types.GenerateContentConfig:
+    def _gemini_build_search_config(self) -> types.GenerateContentConfig:
         """Build config for search-only requests (with Google Search grounding, NO function tools)"""
         return types.GenerateContentConfig(
             system_instruction="You are a helpful assistant. Search the web and provide relevant, accurate information based on the search results.",
             tools=[types.Tool(google_search=types.GoogleSearch())]
         )
 
-    def _needs_web_search(self, message: str, user_message_only: str = None) -> bool:
-        """
-        Determine if the message likely needs web search.
-
-        Args:
-            message: The full message (used for search query if triggered)
-            user_message_only: Optional - just the user's question (used for keyword detection)
-                               If not provided, uses the full message for detection
-        """
-        if not self.enable_web_search:
-            log_debug_message("🔍 Web search: DISABLED")
-            return False
-
-        # Use user_message_only for keyword detection if provided
-        # This prevents false triggers from notebook context containing keywords like "find", "search", etc.
-        check_text = (user_message_only if user_message_only else message).lower()
-
-        # Check for search keywords
-        for keyword in SEARCH_KEYWORDS:
-            if keyword in check_text:
-                log_debug_message(f"🔍 Web search: TRIGGERED (keyword: '{keyword}')")
-                return True
-
-        log_debug_message("🔍 Web search: NOT NEEDED (no keywords matched)")
-        return False
-
-    def _do_google_search(self, query: str) -> str:
-        """
-        Perform a web search using Gemini's native Google Search grounding.
-        This is a separate API call without function tools.
-
-        Args:
-            query: The search query
-
-        Returns:
-            Search results as formatted text
-        """
-        try:
-            log_debug_message(f"🌐 [PHASE 1] Google Search START - Query: {query[:50]}...")
-
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=f"Search the web and provide comprehensive information about: {query}",
-                config=self._build_search_config()
-            )
-
-            # Extract search results and grounding metadata
-            result_text = response.text if response.text else ""
-
-            # Check for grounding metadata (sources)
-            sources = []
-            if response.candidates and len(response.candidates) > 0:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                    metadata = candidate.grounding_metadata
-                    if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
-                        for chunk in metadata.grounding_chunks[:5]:  # Limit to 5 sources
-                            if hasattr(chunk, 'web') and chunk.web:
-                                sources.append({
-                                    'title': chunk.web.title if hasattr(chunk.web, 'title') else '',
-                                    'uri': chunk.web.uri if hasattr(chunk.web, 'uri') else ''
-                                })
-
-            # Format the search results
-            formatted_result = f"=== WEB SEARCH RESULTS ===\n{result_text}\n"
-
-            if sources:
-                formatted_result += "\n=== SOURCES ===\n"
-                for i, source in enumerate(sources, 1):
-                    formatted_result += f"{i}. {source['title']}: {source['uri']}\n"
-
-            formatted_result += "=== END SEARCH RESULTS ===\n"
-
-            log_debug_message(f"🌐 [PHASE 1] Google Search DONE - {len(result_text)} chars, {len(sources)} sources")
-            return formatted_result
-
-        except Exception as e:
-            log_debug_message(f"🌐 [PHASE 1] Google Search FAILED - {e}")
-            return f"[Web search failed: {str(e)}]"
-
-    def _func_to_declaration(self, func) -> types.FunctionDeclaration:
-        """Convert a Python function to a FunctionDeclaration"""
-        func_name = func.__name__
-        func_doc = func.__doc__ or ""
-        annotations = func.__annotations__
-
-        # Parse docstring to get description and parameter descriptions
-        doc_lines = func_doc.strip().split('\n')
-        description = ""
-        param_descriptions = {}
-        current_section = None
-
-        for line in doc_lines:
-            line = line.strip()
-            if line.lower().startswith('args:'):
-                current_section = 'args'
-                continue
-            elif line.lower().startswith('returns:'):
-                current_section = 'returns'
-                continue
-            elif line.lower().startswith('example:'):
-                current_section = 'example'
-                continue
-
-            if current_section is None and line:
-                description += line + " "
-            elif current_section == 'args' and ':' in line:
-                param_name = line.split(':')[0].strip()
-                param_desc = ':'.join(line.split(':')[1:]).strip()
-                param_descriptions[param_name] = param_desc
-
-        # Build parameters schema
-        properties = {}
-        required = []
-
-        for param_name, param_type in annotations.items():
-            if param_name == 'return':
-                continue
-
-            # Map Python types to JSON schema types
-            json_type = "string"
-            if param_type == int:
-                json_type = "integer"
-            elif param_type == float:
-                json_type = "number"
-            elif param_type == bool:
-                json_type = "boolean"
-            elif param_type == str:
-                json_type = "string"
-
-            properties[param_name] = {
-                "type": json_type,
-                "description": param_descriptions.get(param_name, f"The {param_name} parameter")
-            }
-
-            # Check if parameter has a default value
-            defaults = func.__defaults__ or ()
-            code = func.__code__
-            num_params = code.co_argcount
-            num_defaults = len(defaults)
-            params_without_defaults = num_params - num_defaults
-
-            param_names = code.co_varnames[:num_params]
-            if param_name in param_names:
-                param_index = list(param_names).index(param_name)
-                if param_index < params_without_defaults:
-                    required.append(param_name)
-
-        return types.FunctionDeclaration(
-            name=func_name,
-            description=description.strip(),
-            parameters={
-                "type": "object",
-                "properties": properties,
-                "required": required
-            }
-        )
-
-    def _start_chat(self, history: List = None):
+    def _gemini_start_chat(self, history: List = None):
         """Start a new chat session with appropriate settings"""
         chat_history = []
 
@@ -268,11 +120,14 @@ class GeminiClient(BaseLLMClient):
         if history:
             for msg in history:
                 role = msg.get("role", "user")
-                if role == "model":
-                    role = "model"
+                if role == "assistant":
+                    role = "model"  # Convert OpenAI/Anthropic format to Gemini format
+                # Support both "parts" (Gemini format) and "content" (standard format)
                 parts = msg.get("parts", [])
                 if isinstance(parts, list) and len(parts) > 0:
                     text = parts[0] if isinstance(parts[0], str) else parts[0].get("text", "")
+                elif "content" in msg:
+                    text = msg.get("content", "")
                 else:
                     text = str(parts)
 
@@ -282,15 +137,34 @@ class GeminiClient(BaseLLMClient):
                         parts=[types.Part.from_text(text=text)]
                     )
                 )
-            log_debug_message(f"Gemini chat started with {len(chat_history)} history messages")
+            log(f"Gemini chat started with {len(chat_history)} history messages")
 
         self.chat = self.client.chats.create(
             model=self.model_name,
-            config=self._build_config(),
+            config=self._gemini_build_config(),
             history=chat_history if chat_history else None
         )
 
-    def send_message(self, message: str, user_message: str = None, images: Optional[List[ImageData]] = None) -> Union[str, Dict[str, Any]]:
+    def _gemini_func_to_declaration(self, func) -> types.FunctionDeclaration:
+        """Convert a Python function to a FunctionDeclaration using shared schema builder"""
+        schema = build_gemini_tool_schema(func)
+        return types.FunctionDeclaration(
+            name=schema["name"],
+            description=schema["description"],
+            parameters=schema["parameters"]
+        )
+
+    # =========================================================================
+    # SECTION 3: CHAT PANEL - Main Conversation Interface
+    # =========================================================================
+    # These methods handle the main chat panel conversations with full tool support
+
+    def chat_panel_send(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> Union[str, Dict[str, Any]]:
         """
         Send a message to Gemini using two-phase approach.
 
@@ -298,91 +172,116 @@ class GeminiClient(BaseLLMClient):
         Phase 2: Send message with search context to main chat (with function tools)
 
         Args:
-            message: The full message (may include context)
-            user_message: Optional - just the user's actual question (for web search keyword detection)
+            notebook_context: Formatted notebook context
+            user_prompt: User's question/prompt
             images: Optional list of images for visual analysis
+
+        Note: Gemini automatically caches repeated content, so we just combine
+        notebook_context and user_prompt into a single message.
 
         Returns:
             str: Final response text (if auto mode or no tools needed)
             dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
         try:
-            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log_debug_message(f"📨 Gemini send_message() - User: {message[:60]}...")
+            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            log(f"📨 Gemini chat_panel_send()")
+            log(f"   Context: {len(notebook_context)} chars")
+            log(f"   User prompt: {len(user_prompt)} chars")
             if images:
-                log_debug_message(f"📷 Chat panel: {len(images)} image(s) attached")
-            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                log(f"   Images: {len(images)} attached")
+            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            # Phase 1: Check if web search is needed (use user_message for keyword detection)
+            # Combine context and user_prompt for Gemini (automatic caching handles efficiency)
+            if notebook_context:
+                message = f"{notebook_context}\n\n{user_prompt}"
+            else:
+                message = user_prompt
+
+            # Phase 1: Check if web search is needed (use user_prompt for keyword detection)
             search_context = ""
-            if self._needs_web_search(message, user_message):
-                # Use user_message for search query if available, otherwise use full message
-                search_query = user_message if user_message else message
-                search_context = self._do_google_search(search_query)
+            if self._needs_web_search(message, user_prompt):
+                search_context = self._gemini_do_google_search(user_prompt)
 
             # Phase 2: Send to main chat with function tools
             if search_context:
                 # Inject search results into the message
                 enhanced_message = f"{search_context}\n\nUser question: {message}\n\nPlease answer based on the search results above and your knowledge."
-                log_debug_message(f"🤖 [PHASE 2] Sending to Gemini WITH search context")
+                log(f"🤖 [PHASE 2] Sending to Gemini WITH search context")
             else:
                 enhanced_message = message
-                log_debug_message(f"🤖 [PHASE 2] Sending to Gemini (no search)")
+                log(f"🤖 [PHASE 2] Sending to Gemini (no search)")
 
             # Build content with optional images
             content = self._build_content_with_images(enhanced_message, images)
 
-            response = self.chat.send_message(message=content)
-            log_debug_message(f"✅ Gemini response received")
+            try:
+                response = self.chat.send_message(message=content)
+                log(f"✅ Gemini response received")
+            except KeyError as e:
+                # Gemini SDK throws KeyError when it tries to call a hallucinated tool
+                # that doesn't exist in our function_map
+                tool_name = str(e).strip("'")
+                log(f"⚠️ Gemini tried to call non-existent tool: {tool_name}")
+                # Restart chat to clear the bad state and try without the hallucinated tool
+                self._gemini_start_chat()
+                # Add a hint about available tools
+                retry_message = f"{enhanced_message}\n\n(Note: Use only the available tools. There is no '{tool_name}' tool.)"
+                content = self._build_content_with_images(retry_message, images)
+                response = self.chat.send_message(message=content)
+                log(f"✅ Gemini retry response received")
+
+            # Log cache usage
+            self._log_cache_usage(response)
 
             # Debug: Log response details
-            log_debug_message(f"Response text: {response.text[:100] if response.text else 'None'}...")
-            log_debug_message(f"Response candidates: {len(response.candidates) if hasattr(response, 'candidates') and response.candidates else 0}")
+            log(f"Response text: {response.text[:100] if response.text else 'None'}...")
+            log(f"Response candidates: {len(response.candidates) if hasattr(response, 'candidates') and response.candidates else 0}")
 
             # Check if there were function calls in auto mode
             if hasattr(response, 'candidates') and response.candidates:
                 candidate = response.candidates[0]
-                log_debug_message(f"Candidate finish_reason: {candidate.finish_reason if hasattr(candidate, 'finish_reason') else 'unknown'}")
+                log(f"Candidate finish_reason: {candidate.finish_reason if hasattr(candidate, 'finish_reason') else 'unknown'}")
                 if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
-                    log_debug_message(f"Candidate parts count: {len(candidate.content.parts)}")
+                    log(f"Candidate parts count: {len(candidate.content.parts)}")
                     for i, part in enumerate(candidate.content.parts):
-                        log_debug_message(f"Part {i} type: {type(part).__name__}")
+                        log(f"Part {i} type: {type(part).__name__}")
                         if hasattr(part, 'text') and part.text:
-                            log_debug_message(f"Part {i} text: {part.text[:50]}...")
+                            log(f"Part {i} text: {part.text[:50]}...")
                         if hasattr(part, 'function_call') and part.function_call:
-                            log_debug_message(f"🔧 Part {i} function_call: {part.function_call.name}")
+                            log(f"🔧 Part {i} function_call: {part.function_call.name}")
                         if hasattr(part, 'function_response') and part.function_response:
-                            log_debug_message(f"🔧 Part {i} function_response: {part.function_response.name}")
+                            log(f"🔧 Part {i} function_response: {part.function_response.name}")
                 else:
-                    log_debug_message(f"Candidate has no content parts")
+                    log(f"Candidate has no content parts")
 
             # If auto mode, tools are already executed - just return text
             if self.auto_function_calling:
-                log_debug_message(f"Auto mode - returning text")
-                # Check for MALFORMED_FUNCTION_CALL and try to extract any text
+                log(f"Auto mode - returning text")
+                # Check for MALFORMED_FUNCTION_CALL and retry without tools
                 if hasattr(response, 'candidates') and response.candidates:
                     candidate = response.candidates[0]
                     finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
                     if str(finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
-                        log_debug_message(f"⚠️ MALFORMED_FUNCTION_CALL detected - Gemini generated invalid function call")
-                        # Try to extract any partial text or error info
-                        if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
-                            for part in candidate.content.parts:
-                                if hasattr(part, 'function_call') and part.function_call:
-                                    fc = part.function_call
-                                    log_debug_message(f"⚠️ Malformed call was: {fc.name}({fc.args})")
-                        # Check if there's grounding metadata with the error
-                        if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                            log_debug_message(f"⚠️ Grounding metadata: {candidate.grounding_metadata}")
-                        # Try to get any text from the response
-                        if hasattr(response, 'text') and response.text:
-                            return response.text
-                        return "I encountered an error while trying to execute the requested action. Please try a simpler request - for example, ask me to add a markdown cell before a specific cell number."
+                        log(f"⚠️ MALFORMED_FUNCTION_CALL detected - retrying without tools")
+                        # Restart chat and retry with simpler prompt
+                        self._gemini_start_chat()
+                        simple_prompt = f"Please answer this question directly based on the context provided. Do not use any tools.\n\n{enhanced_message}"
+                        try:
+                            # Make a simple call without expecting tool use
+                            simple_response = self.chat.send_message(message=simple_prompt)
+                            if simple_response.text:
+                                log(f"✅ Retry without tools succeeded")
+                                return simple_response.text
+                        except Exception as retry_err:
+                            log(f"⚠️ Retry failed: {retry_err}")
+                        # If retry also failed, return helpful message
+                        return "I couldn't process that request. Based on the notebook context, pandas is not currently imported in any cell. You can check the imports by looking at the code cells that start with 'from' or 'import'."
 
                 # Handle case where tools were executed but no text was returned
                 if not response.text:
                     # Check if any tools were executed by looking at chat history
-                    log_debug_message(f"⚠️ No text in response, but tools may have been executed")
+                    log(f"⚠️ No text in response, but tools may have been executed")
                     return "I've completed the requested actions. Please check your notebook for the changes."
 
                 return response.text or ""
@@ -394,7 +293,7 @@ class GeminiClient(BaseLLMClient):
             # Check for function calls in the response
             if response.function_calls:
                 for fc in response.function_calls:
-                    log_debug_message(f"Pending function call: {fc.name}")
+                    log(f"Pending function call: {fc.name}")
                     pending_tools.append({
                         "id": f"{fc.name}_{len(pending_tools)}",
                         "name": fc.name,
@@ -416,9 +315,9 @@ class GeminiClient(BaseLLMClient):
                 return response_text or response.text
 
         except Exception as e:
-            log_debug_message(f"Gemini error: {e}")
+            log(f"Gemini error: {e}")
             import traceback
-            log_debug_message(f"Traceback: {traceback.format_exc()}")
+            log(f"Traceback: {traceback.format_exc()}")
             return f"Gemini Error: {e}"
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
@@ -441,7 +340,7 @@ class GeminiClient(BaseLLMClient):
                 tool_name = tool_call["name"]
                 tool_args = tool_call.get("arguments", {})
 
-                log_debug_message(f"Executing approved tool: {tool_name} with args: {tool_args}")
+                log(f"Executing approved tool: {tool_name} with args: {tool_args}")
 
                 if tool_name in TOOL_MAP:
                     try:
@@ -450,7 +349,7 @@ class GeminiClient(BaseLLMClient):
                             "name": tool_name,
                             "result": result
                         })
-                        log_debug_message(f"Tool {tool_name} result: {result}")
+                        log(f"Tool {tool_name} result: {result}")
 
                         # Convert result to string for the response
                         if isinstance(result, (dict, list)):
@@ -490,9 +389,13 @@ class GeminiClient(BaseLLMClient):
                     )
 
             # Send tool results back to Gemini
-            log_debug_message(f"Sending {len(function_responses)} function responses to Gemini")
+            log(f"Sending {len(function_responses)} function responses to Gemini")
             response = self.chat.send_message(function_responses)
-            log_debug_message(f"Response after tool execution: {response}")
+
+            # Log cache usage
+            self._log_cache_usage(response)
+
+            log(f"Response after tool execution: {response}")
 
             # Check for additional function calls
             pending_tools = []
@@ -500,7 +403,7 @@ class GeminiClient(BaseLLMClient):
 
             if response.function_calls:
                 for fc in response.function_calls:
-                    log_debug_message(f"Model wants to call another function: {fc.name}")
+                    log(f"Model wants to call another function: {fc.name}")
                     pending_tools.append({
                         "id": f"{fc.name}_{len(pending_tools)}",
                         "name": fc.name,
@@ -510,11 +413,11 @@ class GeminiClient(BaseLLMClient):
             if response.text:
                 final_text = response.text
 
-            log_debug_message(f"Final text: {final_text[:200] if final_text else 'No text'}...")
+            log(f"Final text: {final_text[:200] if final_text else 'No text'}...")
 
             # If there are more pending tools, return them for approval
             if pending_tools:
-                log_debug_message(f"Returning {len(pending_tools)} additional pending tools")
+                log(f"Returning {len(pending_tools)} additional pending tools")
                 return {
                     "pending_tool_calls": pending_tools,
                     "response_text": final_text,
@@ -528,15 +431,19 @@ class GeminiClient(BaseLLMClient):
             }
 
         except Exception as e:
-            log_debug_message(f"Error executing approved tools: {e}")
+            log(f"Error executing approved tools: {e}")
             import traceback
-            log_debug_message(f"Traceback: {traceback.format_exc()}")
+            log(f"Traceback: {traceback.format_exc()}")
             return f"Error executing tools: {e}"
+
+    # =========================================================================
+    # SECTION 4: HISTORY MANAGEMENT
+    # =========================================================================
 
     def clear_history(self) -> None:
         """Clear conversation history by starting a new chat"""
         self.history = []
-        self._start_chat()
+        self._gemini_start_chat()
 
     def get_history(self) -> List[Dict[str, Any]]:
         """Get conversation history in Gemini format"""
@@ -564,13 +471,14 @@ class GeminiClient(BaseLLMClient):
             history_list: List in Gemini format:
                          [{"role": "user"/"model", "parts": ["..."]}]
         """
-        self._start_chat(history=history_list)
+        self._gemini_start_chat(history=history_list)
 
-    @property
-    def provider_name(self) -> str:
-        return "Gemini"
+    # =========================================================================
+    # SECTION 5: SIMPLE COMPLETIONS (No Tools)
+    # =========================================================================
+    # These methods are for simple LLM calls without tool execution
 
-    def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
+    def simple_completion(self, prompt: str, max_tokens: int = 1000) -> str:
         """
         Simple chat completion without tools.
         Used for summarization and other simple LLM tasks.
@@ -590,10 +498,366 @@ class GeminiClient(BaseLLMClient):
                     max_output_tokens=max_tokens
                 )
             )
+            # Log cache usage
+            self._log_cache_usage(response)
             return response.text
         except Exception as e:
-            log_debug_message(f"Gemini chat_completion error: {e}")
+            log(f"Gemini simple_completion error: {e}")
             raise
+
+    def ai_cell_simple(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> str:
+        """
+        AI Cell completion - with web search but no notebook tools.
+        Used for inline Q&A in AI cells. Supports image inputs.
+
+        Args:
+            notebook_context: Formatted notebook context (Gemini handles caching automatically)
+            user_prompt: User's question/prompt
+            images: Optional list of images to analyze
+
+        Returns:
+            The response text from the LLM (may include web search results)
+        """
+        try:
+            log(f"🤖 Gemini AI Cell completion starting...")
+            log(f"   Context: {len(notebook_context)} chars")
+            log(f"   User prompt: {len(user_prompt)} chars")
+            if images:
+                log(f"📷 Including {len(images)} image(s)")
+
+            # Combine context and user prompt
+            full_prompt = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
+
+            # Check if web search might help (only for text, not image analysis)
+            # Pass full_prompt for search query, user_prompt for keyword detection
+            search_context = ""
+            if not images and self._needs_web_search(full_prompt, user_prompt):
+                search_context = self._gemini_do_google_search(user_prompt)
+
+            # Build the final prompt with search context if available
+            if search_context:
+                enhanced_prompt = f"{search_context}\n\n{full_prompt}"
+                log(f"🤖 AI Cell: Using web search context")
+            else:
+                enhanced_prompt = full_prompt
+
+            # Build content with optional images
+            content = self._build_content_with_images(enhanced_prompt, images)
+
+            # Use simple generate_content (no tools, no chat session)
+            # Gemini handles caching automatically based on content
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=content,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=4096  # Allow longer responses for AI cells
+                )
+            )
+
+            # Log cache usage
+            self._log_cache_usage(response)
+
+            result = response.text or ""
+            log(f"🤖 Gemini AI Cell response: {len(result)} chars")
+            return result
+
+        except Exception as e:
+            log(f"Gemini ai_cell_simple error: {e}")
+            raise
+
+    # =========================================================================
+    # SECTION 6: AI CELL - Tool Execution Framework
+    # =========================================================================
+    # These methods implement the unified tool execution interface for AI Cells
+    # Used for notebook inspection and code execution tools
+
+    def _get_ai_cell_tools(self) -> List[types.Tool]:
+        """
+        Get AI Cell tools in Gemini format (FunctionDeclarations for manual execution).
+        Uses cached tools to avoid rebuilding on each call.
+        """
+        if self._ai_cell_tools_cache is None:
+            # Build FunctionDeclarations for manual tool execution
+            declarations = [self._gemini_func_to_declaration(func) for func in AI_CELL_TOOLS]
+            self._ai_cell_tools_cache = [types.Tool(function_declarations=declarations)]
+        return self._ai_cell_tools_cache
+
+    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+        """Get mapping of tool names to callable functions for AI Cell."""
+        if self._ai_cell_tool_map_cache is None:
+            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
+        return self._ai_cell_tool_map_cache
+
+    def _get_web_search_tool(self) -> Optional[Any]:
+        """Get Gemini web search tool (Google Search)."""
+        if not self.enable_web_search:
+            return None
+        return types.Tool(google_search=types.GoogleSearch())
+
+    def _prepare_ai_cell_messages(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> List[types.Content]:
+        """
+        Prepare initial messages for AI Cell in Gemini format.
+
+        Args:
+            notebook_context: Formatted notebook context (Gemini handles caching automatically)
+            user_prompt: User's question/prompt
+            images: Optional images
+        """
+        # Combine context and user prompt (Gemini handles caching automatically)
+        full_prompt = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
+        content = self._build_content_with_images(full_prompt, images)
+
+        # Debug logging
+        log(f"📋 AI Cell messages: context={len(notebook_context)} chars, user_prompt={len(user_prompt)} chars")
+        if images:
+            log(f"📷 Sending {len(images)} image(s) to Gemini")
+
+        # Convert content to Gemini Content format
+        if isinstance(content, str):
+            parts = [types.Part.from_text(text=content)]
+        else:
+            parts = content  # Already a list of Parts
+
+        return [types.Content(role="user", parts=parts)]
+
+    def _call_llm_for_ai_cell(self, messages: List[types.Content], tools: List[types.Tool]) -> LLMResponse:
+        """
+        Make an LLM API call for AI Cell tool execution.
+
+        Uses generate_content_stream for cancellation support during LLM response.
+        Checks for cancellation between chunks to allow early termination.
+        Enables thinking mode for Gemini 2.5 models to show reasoning process.
+
+        Args:
+            messages: Gemini Content format
+            tools: Gemini Tool format (FunctionDeclarations)
+
+        Returns:
+            LLMResponse with text, tool_calls, thinking, and is_final flag
+        """
+        # Enable thinking for Gemini 2.5 models
+        thinking_config = None
+        if "2.5" in self.model_name or "2.0" in self.model_name:
+            thinking_config = types.ThinkingConfig(
+                thinking_budget=8192,  # Allow up to 8K tokens for thinking
+                include_thoughts=True  # Include thought summaries in response
+            )
+            log(f"💭 Gemini thinking mode enabled (budget: 8192 tokens)")
+
+        config = types.GenerateContentConfig(
+            system_instruction=self.AI_CELL_SYSTEM_PROMPT,
+            tools=tools,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=thinking_config
+        )
+
+        # Use streaming to allow cancellation during LLM response
+        text = ""
+        thinking = ""
+        tool_calls = []
+        last_finish_reason = None
+
+        try:
+            response_stream = self.client.models.generate_content_stream(
+                model=self.model_name,
+                contents=messages,
+                config=config
+            )
+
+            for chunk in response_stream:
+                # ✅ CANCELLATION CHECK - between each chunk
+                self._check_cancelled()
+
+                if chunk.candidates and len(chunk.candidates) > 0:
+                    candidate = chunk.candidates[0]
+
+                    # Track finish reason
+                    if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
+                        last_finish_reason = candidate.finish_reason
+
+                    # FIRST: Extract any thinking/text/tool_calls from this chunk (even before error check)
+                    if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            # Check if this is a thinking/thought part
+                            if hasattr(part, 'thought') and part.thought and hasattr(part, 'text') and part.text:
+                                thinking += part.text
+                                log(f"💭 Gemini thought chunk: {len(part.text)} chars")
+                            elif hasattr(part, 'text') and part.text:
+                                text += part.text
+                            elif hasattr(part, 'function_call') and part.function_call:
+                                fc = part.function_call
+                                tool_calls.append(ToolCall(
+                                    id=f"{fc.name}_{len(tool_calls)}",  # Gemini doesn't provide IDs
+                                    name=fc.name,
+                                    arguments=dict(fc.args) if fc.args else {}
+                                ))
+
+                    # Check for malformed function call (after extracting any content from this chunk)
+                    if str(last_finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
+                        log(f"⚠️ Gemini AI Cell: MALFORMED_FUNCTION_CALL detected")
+                        log(f"⚠️ Full candidate: {candidate}")
+                        log(f"⚠️ Candidate type: {type(candidate)}")
+                        log(f"⚠️ Candidate attributes: {dir(candidate)}")
+
+                        # Try to extract which function was malformed
+                        if hasattr(candidate, 'content') and candidate.content:
+                            log(f"⚠️ Content: {candidate.content}")
+                            log(f"⚠️ Content type: {type(candidate.content)}")
+                            if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                                log(f"⚠️ Parts count: {len(candidate.content.parts)}")
+                                for i, part in enumerate(candidate.content.parts):
+                                    log(f"⚠️ Part {i}: {part}")
+                                    log(f"⚠️ Part {i} type: {type(part)}")
+                                    log(f"⚠️ Part {i} attributes: {dir(part)}")
+                                    if hasattr(part, 'function_call') and part.function_call:
+                                        fc = part.function_call
+                                        log(f"⚠️ Malformed function: {fc.name}")
+                                        log(f"⚠️ Malformed args: {fc.args}")
+                                    if hasattr(part, 'text') and part.text:
+                                        log(f"⚠️ Partial text: {part.text[:500]}")
+                            else:
+                                log(f"⚠️ No parts in content")
+                        else:
+                            log(f"⚠️ No content in candidate")
+
+                        # Also check for any error message
+                        if hasattr(candidate, 'safety_ratings'):
+                            log(f"⚠️ Safety ratings: {candidate.safety_ratings}")
+                        if hasattr(candidate, 'citation_metadata'):
+                            log(f"⚠️ Citation metadata: {candidate.citation_metadata}")
+
+                        # Include any thinking that was captured before the error
+                        if thinking:
+                            log(f"💭 Gemini thinking before error: {len(thinking)} chars")
+
+                        return LLMResponse(
+                            text="I encountered an error while trying to analyze your notebook. Please try a more specific question.",
+                            tool_calls=[],
+                            is_final=True,
+                            thinking=thinking  # Include thinking even on error
+                        )
+
+        except CancelledException:
+            # Re-raise to be handled by the caller
+            raise
+
+        # is_final when there are no tool calls
+        is_final = len(tool_calls) == 0
+
+        if thinking:
+            log(f"💭 Gemini total thinking: {len(thinking)} chars")
+
+        return LLMResponse(
+            text=text,
+            tool_calls=tool_calls,
+            is_final=is_final,
+            thinking=thinking
+        )
+
+    def _add_tool_results_to_messages(self, messages: List[types.Content], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[types.Content]:
+        """
+        Add tool results to messages for the next Gemini API call.
+
+        Gemini requires:
+        1. Model message with function_call parts
+        2. User message with function_response parts
+        """
+        # Build model message with function calls
+        function_call_parts = []
+        for tc in response.tool_calls:
+            function_call_parts.append(types.Part.from_function_call(
+                name=tc.name,
+                args=tc.arguments
+            ))
+
+        messages.append(types.Content(role="model", parts=function_call_parts))
+
+        # Build user message with function responses
+        function_response_parts = []
+        for tr in tool_results:
+            # Parse result JSON back to dict for Gemini
+            try:
+                result_dict = json.loads(tr.result)
+            except json.JSONDecodeError:
+                result_dict = {"result": tr.result}
+
+            function_response_parts.append(types.Part.from_function_response(
+                name=tr.name,
+                response=result_dict
+            ))
+
+        messages.append(types.Content(role="user", parts=function_response_parts))
+
+        return messages
+
+    # =========================================================================
+    # SECTION 7: UTILITIES & HELPERS
+    # =========================================================================
+    # Note: _needs_web_search() is inherited from BaseLLMClient
+
+    def _gemini_do_google_search(self, query: str) -> str:
+        """
+        Perform a web search using Gemini's native Google Search grounding.
+        This is a separate API call without function tools.
+
+        Args:
+            query: The search query
+
+        Returns:
+            Search results as formatted text
+        """
+        try:
+            log(f"🌐 [PHASE 1] Google Search START - Query: {query[:50]}...")
+
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=f"Search the web and provide comprehensive information about: {query}",
+                config=self._gemini_build_search_config()
+            )
+
+            # Extract search results and grounding metadata
+            result_text = response.text if response.text else ""
+
+            # Check for grounding metadata (sources)
+            sources = []
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+                    metadata = candidate.grounding_metadata
+                    if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
+                        for chunk in metadata.grounding_chunks[:5]:  # Limit to 5 sources
+                            if hasattr(chunk, 'web') and chunk.web:
+                                sources.append({
+                                    'title': chunk.web.title if hasattr(chunk.web, 'title') else '',
+                                    'uri': chunk.web.uri if hasattr(chunk.web, 'uri') else ''
+                                })
+
+            # Format the search results
+            formatted_result = f"=== WEB SEARCH RESULTS ===\n{result_text}\n"
+
+            if sources:
+                formatted_result += "\n=== SOURCES ===\n"
+                for i, source in enumerate(sources, 1):
+                    formatted_result += f"{i}. {source['title']}: {source['uri']}\n"
+
+            formatted_result += "=== END SEARCH RESULTS ===\n"
+
+            log(f"🌐 [PHASE 1] Google Search DONE - {len(result_text)} chars, {len(sources)} sources")
+            return formatted_result
+
+        except Exception as e:
+            log(f"🌐 [PHASE 1] Google Search FAILED - {e}")
+            return f"[Web search failed: {str(e)}]"
 
     def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Any]]:
         """
@@ -633,262 +897,23 @@ class GeminiClient(BaseLLMClient):
 
         return parts
 
-    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
+    def _log_cache_usage(self, response) -> None:
         """
-        AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells. Supports image inputs.
-
-        Args:
-            prompt: The full prompt including notebook context and user question
-            images: Optional list of images to analyze
-
-        Returns:
-            The response text from the LLM (may include web search results)
+        Log cache usage statistics from Gemini response.
+        Gemini 2.5 has implicit caching enabled by default (since May 2025).
+        Cached tokens get 75-90% discount.
         """
-        try:
-            log_debug_message(f"🤖 Gemini AI Cell completion starting...")
-            if images:
-                log_debug_message(f"📷 Including {len(images)} image(s)")
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            usage = response.usage_metadata
+            input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
+            output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
+            cached_tokens = getattr(usage, 'cached_content_token_count', 0) or 0
 
-            # Check if web search might help (only for text, not image analysis)
-            search_context = ""
-            if not images and self._needs_web_search(prompt):
-                search_context = self._do_google_search(prompt)
-
-            # Build the final prompt with search context if available
-            if search_context:
-                enhanced_prompt = f"{search_context}\n\n{prompt}"
-                log_debug_message(f"🤖 AI Cell: Using web search context")
+            if cached_tokens > 0:
+                # Gemini 2.5: 90% discount, Gemini 2.0: 75% discount
+                discount = 0.90 if "2.5" in self.model_name else 0.75
+                savings_pct = (cached_tokens * discount) / max(input_tokens, 1) * 100
+                log(f"💾 Gemini Cache: cached={cached_tokens}, input={input_tokens}, output={output_tokens}")
+                log(f"💰 Cache savings: ~{savings_pct:.1f}% on input tokens ({int(discount*100)}% discount)")
             else:
-                enhanced_prompt = prompt
-
-            # Build content with optional images
-            content = self._build_content_with_images(enhanced_prompt, images)
-
-            # Use simple generate_content (no tools, no chat session)
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=content,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=4096  # Allow longer responses for AI cells
-                )
-            )
-
-            result = response.text or ""
-            log_debug_message(f"🤖 Gemini AI Cell response: {len(result)} chars")
-            return result
-
-        except Exception as e:
-            log_debug_message(f"Gemini ai_cell_completion error: {e}")
-            raise
-
-    # =========================================================================
-    # Unified tool execution - Abstract method implementations
-    # =========================================================================
-
-    def _get_ai_cell_tools(self) -> List[types.Tool]:
-        """
-        Get AI Cell tools in Gemini format (FunctionDeclarations for manual execution).
-        Uses cached tools to avoid rebuilding on each call.
-        """
-        if self._ai_cell_tools_cache is None:
-            # Build FunctionDeclarations for manual tool execution
-            declarations = [self._func_to_declaration(func) for func in AI_CELL_TOOLS]
-            self._ai_cell_tools_cache = [types.Tool(function_declarations=declarations)]
-        return self._ai_cell_tools_cache
-
-    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
-        """Get mapping of tool names to callable functions for AI Cell."""
-        if self._ai_cell_tool_map_cache is None:
-            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
-        return self._ai_cell_tool_map_cache
-
-    def _prepare_ai_cell_messages(self, prompt: str, images: Optional[List[ImageData]] = None) -> List[types.Content]:
-        """Prepare initial messages for AI Cell in Gemini format."""
-        content = self._build_content_with_images(prompt, images)
-
-        # Debug logging
-        if images:
-            log_debug_message(f"📷 Sending {len(images)} image(s) to Gemini")
-        else:
-            log_debug_message(f"📷 Sending text-only content to Gemini")
-
-        # Convert content to Gemini Content format
-        if isinstance(content, str):
-            parts = [types.Part.from_text(text=content)]
-        else:
-            parts = content  # Already a list of Parts
-
-        return [types.Content(role="user", parts=parts)]
-
-    def _call_llm_for_ai_cell(self, messages: List[types.Content], tools: List[types.Tool]) -> LLMResponse:
-        """
-        Make an LLM API call for AI Cell tool execution.
-
-        Uses generate_content_stream for cancellation support during LLM response.
-        Checks for cancellation between chunks to allow early termination.
-        Enables thinking mode for Gemini 2.5 models to show reasoning process.
-
-        Args:
-            messages: Gemini Content format
-            tools: Gemini Tool format (FunctionDeclarations)
-
-        Returns:
-            LLMResponse with text, tool_calls, thinking, and is_final flag
-        """
-        # Enable thinking for Gemini 2.5 models
-        thinking_config = None
-        if "2.5" in self.model_name or "2.0" in self.model_name:
-            thinking_config = types.ThinkingConfig(
-                thinking_budget=8192,  # Allow up to 8K tokens for thinking
-                include_thoughts=True  # Include thought summaries in response
-            )
-            log_debug_message(f"💭 Gemini thinking mode enabled (budget: 8192 tokens)")
-
-        config = types.GenerateContentConfig(
-            system_instruction=self.AI_CELL_SYSTEM_PROMPT,
-            tools=tools,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            thinking_config=thinking_config
-        )
-
-        # Use streaming to allow cancellation during LLM response
-        text = ""
-        thinking = ""
-        tool_calls = []
-        last_finish_reason = None
-
-        try:
-            response_stream = self.client.models.generate_content_stream(
-                model=self.model_name,
-                contents=messages,
-                config=config
-            )
-
-            for chunk in response_stream:
-                # ✅ CANCELLATION CHECK - between each chunk
-                self._check_cancelled()
-
-                if chunk.candidates and len(chunk.candidates) > 0:
-                    candidate = chunk.candidates[0]
-
-                    # Track finish reason
-                    if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
-                        last_finish_reason = candidate.finish_reason
-
-                    # FIRST: Extract any thinking/text/tool_calls from this chunk (even before error check)
-                    if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
-                        for part in candidate.content.parts:
-                            # Check if this is a thinking/thought part
-                            if hasattr(part, 'thought') and part.thought and hasattr(part, 'text') and part.text:
-                                thinking += part.text
-                                log_debug_message(f"💭 Gemini thought chunk: {len(part.text)} chars")
-                            elif hasattr(part, 'text') and part.text:
-                                text += part.text
-                            elif hasattr(part, 'function_call') and part.function_call:
-                                fc = part.function_call
-                                tool_calls.append(ToolCall(
-                                    id=f"{fc.name}_{len(tool_calls)}",  # Gemini doesn't provide IDs
-                                    name=fc.name,
-                                    arguments=dict(fc.args) if fc.args else {}
-                                ))
-
-                    # Check for malformed function call (after extracting any content from this chunk)
-                    if str(last_finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
-                        log_debug_message(f"⚠️ Gemini AI Cell: MALFORMED_FUNCTION_CALL detected")
-                        log_debug_message(f"⚠️ Full candidate: {candidate}")
-                        log_debug_message(f"⚠️ Candidate type: {type(candidate)}")
-                        log_debug_message(f"⚠️ Candidate attributes: {dir(candidate)}")
-
-                        # Try to extract which function was malformed
-                        if hasattr(candidate, 'content') and candidate.content:
-                            log_debug_message(f"⚠️ Content: {candidate.content}")
-                            log_debug_message(f"⚠️ Content type: {type(candidate.content)}")
-                            if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                                log_debug_message(f"⚠️ Parts count: {len(candidate.content.parts)}")
-                                for i, part in enumerate(candidate.content.parts):
-                                    log_debug_message(f"⚠️ Part {i}: {part}")
-                                    log_debug_message(f"⚠️ Part {i} type: {type(part)}")
-                                    log_debug_message(f"⚠️ Part {i} attributes: {dir(part)}")
-                                    if hasattr(part, 'function_call') and part.function_call:
-                                        fc = part.function_call
-                                        log_debug_message(f"⚠️ Malformed function: {fc.name}")
-                                        log_debug_message(f"⚠️ Malformed args: {fc.args}")
-                                    if hasattr(part, 'text') and part.text:
-                                        log_debug_message(f"⚠️ Partial text: {part.text[:500]}")
-                            else:
-                                log_debug_message(f"⚠️ No parts in content")
-                        else:
-                            log_debug_message(f"⚠️ No content in candidate")
-
-                        # Also check for any error message
-                        if hasattr(candidate, 'safety_ratings'):
-                            log_debug_message(f"⚠️ Safety ratings: {candidate.safety_ratings}")
-                        if hasattr(candidate, 'citation_metadata'):
-                            log_debug_message(f"⚠️ Citation metadata: {candidate.citation_metadata}")
-
-                        # Include any thinking that was captured before the error
-                        if thinking:
-                            log_debug_message(f"💭 Gemini thinking before error: {len(thinking)} chars")
-
-                        return LLMResponse(
-                            text="I encountered an error while trying to analyze your notebook. Please try a more specific question.",
-                            tool_calls=[],
-                            is_final=True,
-                            thinking=thinking  # Include thinking even on error
-                        )
-
-        except CancelledException:
-            # Re-raise to be handled by the caller
-            raise
-
-        # is_final when there are no tool calls
-        is_final = len(tool_calls) == 0
-
-        if thinking:
-            log_debug_message(f"💭 Gemini total thinking: {len(thinking)} chars")
-
-        return LLMResponse(
-            text=text,
-            tool_calls=tool_calls,
-            is_final=is_final,
-            thinking=thinking
-        )
-
-    def _add_tool_results_to_messages(self, messages: List[types.Content], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[types.Content]:
-        """
-        Add tool results to messages for the next Gemini API call.
-
-        Gemini requires:
-        1. Model message with function_call parts
-        2. User message with function_response parts
-        """
-        from .base import LLMResponse  # Import here to avoid circular import
-
-        # Build model message with function calls
-        function_call_parts = []
-        for tc in response.tool_calls:
-            function_call_parts.append(types.Part.from_function_call(
-                name=tc.name,
-                args=tc.arguments
-            ))
-
-        messages.append(types.Content(role="model", parts=function_call_parts))
-
-        # Build user message with function responses
-        function_response_parts = []
-        for tr in tool_results:
-            # Parse result JSON back to dict for Gemini
-            try:
-                result_dict = json.loads(tr.result)
-            except json.JSONDecodeError:
-                result_dict = {"result": tr.result}
-
-            function_response_parts.append(types.Part.from_function_response(
-                name=tr.name,
-                response=result_dict
-            ))
-
-        messages.append(types.Content(role="user", parts=function_response_parts))
-
-        return messages
+                log(f"📊 Gemini Usage: input={input_tokens}, output={output_tokens} (no cache hit)")

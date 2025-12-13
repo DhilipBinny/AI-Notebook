@@ -39,8 +39,8 @@ interface ChatPanelProps {
   onProviderChange: (provider: string) => void
   toolMode: 'auto' | 'manual' | 'ai_decide'
   onToolModeChange: (mode: 'auto' | 'manual' | 'ai_decide') => void
-  contextFormat: 'xml' | 'plain'
-  onContextFormatChange: (format: 'xml' | 'plain') => void
+  contextFormat: 'xml' | 'json' | 'plain'
+  onContextFormatChange: (format: 'xml' | 'json' | 'plain') => void
   onDeleteMessage: (index: number) => void
   onEditMessage: (index: number, newContent: string) => void
   onRerunMessage: (index: number) => void
@@ -533,7 +533,26 @@ export default function ChatPanel({
             </div>
             <h2 className="text-base font-semibold" style={{ color: textPrimary }}>AI Assistant</h2>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            {/* Tool Mode Selector */}
+            <div className="flex items-center gap-1.5">
+              <Wrench className="w-3.5 h-3.5" style={{ color: textMuted }} />
+              <select
+                value={toolMode}
+                onChange={(e) => onToolModeChange(e.target.value as 'auto' | 'manual' | 'ai_decide')}
+                className="text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all cursor-pointer"
+                style={{
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.border,
+                  color: textPrimary,
+                }}
+                title="Tool Execution Mode"
+              >
+                <option value="auto">Auto</option>
+                <option value="manual">Manual</option>
+                <option value="ai_decide">AI Decide</option>
+              </select>
+            </div>
             {/* Summarize button */}
             <button
               onClick={onSummarize}

@@ -11,9 +11,8 @@ All functions prefixed with 'runtime_' to indicate they require a running kernel
 Uses session-scoped kernel from session_manager.
 """
 
-from typing import Optional
 from backend.session_manager import get_current_session
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 def _get_session_kernel(auto_start: bool = True):
@@ -31,7 +30,7 @@ def _get_session_kernel(auto_start: bool = True):
     kernel = session.kernel
     # Auto-start kernel if not running
     if auto_start and not kernel.is_alive():
-        log_debug_message("[Kernel Inspect] Auto-starting kernel for session")
+        log("[Kernel Inspect] Auto-starting kernel for session")
         kernel.start()
     return kernel
 
@@ -59,7 +58,7 @@ def runtime_list_variables() -> dict:
         #   {"name": "x", "type": "int", "shape": null, "size": "28 bytes", "preview": "42"},
         # ]}
     """
-    log_debug_message("==> runtime_list_variables() called from LLM")
+    log("==> runtime_list_variables() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -199,7 +198,7 @@ def runtime_get_variable(name: str) -> dict:
         runtime_get_variable("my_list")  → info about a list
         runtime_get_variable("config")   → info about a dict
     """
-    log_debug_message(f"==> runtime_get_variable({name}) called from LLM")
+    log(f"==> runtime_get_variable({name}) called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -358,7 +357,7 @@ def runtime_list_functions() -> dict:
         #   {"name": "process_data", "args": "(x, y=10)", "docstring": "Process data...", "source": "def process_data..."},
         # ]}
     """
-    log_debug_message("==> runtime_list_functions() called from LLM")
+    log("==> runtime_list_functions() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -478,7 +477,7 @@ def runtime_list_imports() -> dict:
         #   {"name": "np", "module_name": "numpy", "version": "1.24.0"},
         # ]}
     """
-    log_debug_message("==> runtime_list_imports() called from LLM")
+    log("==> runtime_list_imports() called from LLM")
 
     kernel = _get_session_kernel()
 
@@ -590,7 +589,7 @@ def runtime_kernel_status() -> dict:
         result = runtime_kernel_status()
         # Returns: {"success": True, "alive": True, "execution_count": 15, "memory_used": "~256MB", ...}
     """
-    log_debug_message("==> runtime_kernel_status() called from LLM")
+    log("==> runtime_kernel_status() called from LLM")
 
     kernel = _get_session_kernel()
 

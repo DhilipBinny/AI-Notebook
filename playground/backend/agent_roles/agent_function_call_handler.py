@@ -11,7 +11,7 @@ import json
 from typing import Dict, Any, List, Optional
 
 import backend.config as cfg
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 VALIDATOR_PROMPT = """
@@ -71,7 +71,7 @@ class ToolCallValidator:
 
     def _init_provider(self):
         """Initialize the appropriate LLM provider for validation"""
-        log_debug_message(f"Initializing ToolCallValidator with provider: {self.provider}")
+        log(f"Initializing ToolCallValidator with provider: {self.provider}")
 
         if self.provider == "gemini":
             self._init_gemini()
@@ -80,13 +80,13 @@ class ToolCallValidator:
         elif self.provider == "ollama":
             self._init_ollama()
         else:
-            log_debug_message(f"Unknown provider: {self.provider}, defaulting to manual approval")
+            log(f"Unknown provider: {self.provider}, defaulting to manual approval")
             self.model = None
 
     def _init_gemini(self):
         """Initialize Gemini provider"""
         if not cfg.GEMINI_API_KEY:
-            log_debug_message("Warning: GEMINI_API_KEY not set, validator will default to requiring approval")
+            log("Warning: GEMINI_API_KEY not set, validator will default to requiring approval")
             self.model = None
             return
 
@@ -97,24 +97,24 @@ class ToolCallValidator:
                 model_name=cfg.GEMINI_MODEL,
                 system_instruction=VALIDATOR_PROMPT
             )
-            log_debug_message("ToolCallValidator initialized with gemini-2.0-flash")
+            log("ToolCallValidator initialized with gemini-2.0-flash")
         except Exception as e:
-            log_debug_message(f"Failed to initialize Gemini validator: {e}")
+            log(f"Failed to initialize Gemini validator: {e}")
             self.model = None
 
     def _init_openai(self):
         """Initialize OpenAI provider"""
         if not cfg.OPENAI_API_KEY:
-            log_debug_message("Warning: OPENAI_API_KEY not set, validator will default to requiring approval")
+            log("Warning: OPENAI_API_KEY not set, validator will default to requiring approval")
             self.model = None
             return
 
         try:
             from openai import OpenAI
             self.model = OpenAI(api_key=cfg.OPENAI_API_KEY)
-            log_debug_message("ToolCallValidator initialized with OpenAI gpt-4o-mini")
+            log("ToolCallValidator initialized with OpenAI gpt-4o-mini")
         except Exception as e:
-            log_debug_message(f"Failed to initialize OpenAI validator: {e}")
+            log(f"Failed to initialize OpenAI validator: {e}")
             self.model = None
 
     def _init_ollama(self):
@@ -125,9 +125,9 @@ class ToolCallValidator:
                 base_url=cfg.OLLAMA_URL,
                 api_key="ollama"  # Ollama doesn't need a real key
             )
-            log_debug_message(f"ToolCallValidator initialized with Ollama ({cfg.OLLAMA_MODEL})")
+            log(f"ToolCallValidator initialized with Ollama ({cfg.OLLAMA_MODEL})")
         except Exception as e:
-            log_debug_message(f"Failed to initialize Ollama validator: {e}")
+            log(f"Failed to initialize Ollama validator: {e}")
             self.model = None
 
     def _call_gemini(self, tool_info: str) -> str:
@@ -190,11 +190,11 @@ class ToolCallValidator:
             # Build the prompt for validation
             tool_info = f"Tool: {tool_name}\nArguments: {json.dumps(arguments, indent=2)}"
 
-            log_debug_message(f"Validating tool call: {tool_name} (provider: {self.provider})")
+            log(f"Validating tool call: {tool_name} (provider: {self.provider})")
 
             response_text = self._call_llm(tool_info)
 
-            log_debug_message(f"Validator response: {response_text}")
+            log(f"Validator response: {response_text}")
 
             # Parse the JSON response
             # Handle markdown code blocks if present
@@ -212,11 +212,11 @@ class ToolCallValidator:
             }
 
         except json.JSONDecodeError as e:
-            log_debug_message(f"Failed to parse validator response: {e}")
+            log(f"Failed to parse validator response: {e}")
             return {"safe": False, "reason": "Could not parse validator response, defaulting to manual"}
 
         except Exception as e:
-            log_debug_message(f"Validator error: {e}")
+            log(f"Validator error: {e}")
             return {"safe": False, "reason": f"Validation error: {str(e)[:50]}"}
 
     def validate_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -279,7 +279,7 @@ def validate_tool_calls(tool_calls: List[Dict[str, Any]], provider: Optional[str
     safe_tools = [t for t in validated if t.get("validation", {}).get("safe", False)]
     unsafe_tools = [t for t in validated if not t.get("validation", {}).get("safe", True)]
 
-    log_debug_message(f"Validation result: {len(safe_tools)} safe, {len(unsafe_tools)} need approval")
+    log(f"Validation result: {len(safe_tools)} safe, {len(unsafe_tools)} need approval")
 
     return {
         "safe_tools": safe_tools,

@@ -18,10 +18,9 @@ LAZY LOAD ARCHITECTURE:
 """
 
 import httpx
-from typing import List, Dict, Any
-from typing import Optional
+from typing import List, Optional
 from backend.session_manager import get_current_session
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 import backend.config as cfg
 
 
@@ -57,7 +56,7 @@ def _call_master_api(method: str, endpoint: str, json_data: dict = None) -> dict
     url = f"{cfg.MASTER_API_URL}{endpoint}"
     headers = {"X-Internal-Secret": cfg.INTERNAL_SECRET}
 
-    log_debug_message(f"==> Master API call: {method} {url}")
+    log(f"==> Master API call: {method} {url}")
 
     try:
         with httpx.Client(timeout=30) as client:
@@ -80,7 +79,7 @@ def _call_master_api(method: str, endpoint: str, json_data: dict = None) -> dict
     except httpx.TimeoutException:
         return {"success": False, "error": "Master API request timed out"}
     except Exception as e:
-        log_debug_message(f"Master API error: {e}")
+        log(f"Master API error: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -122,7 +121,7 @@ def get_notebook_overview(detail: str = "brief") -> dict:
         get_notebook_overview()  → quick view with cell IDs
         get_notebook_overview(detail="full")  → full notebook context
     """
-    log_debug_message(f"==> get_notebook_overview(detail={detail}) called from LLM")
+    log(f"==> get_notebook_overview(detail={detail}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -214,7 +213,7 @@ def get_cell_content(cell_id: str) -> dict:
         2. get_cell_content(cell_id) → read the source code
         3. update_cell_content(cell_id, improved_code) → edit it
     """
-    log_debug_message(f"==> get_cell_content({cell_id}) called from LLM")
+    log(f"==> get_cell_content({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -257,7 +256,7 @@ def update_cell_content(cell_id: str, new_content: str, cell_type: Optional[str]
         1. First call get_notebook_overview() to find the cell_id
         2. Then: update_cell_content("cell-a1b2c3d4", "def improved_function():\\n    ...")
     """
-    log_debug_message(f"==> update_cell_content({cell_id}) called from LLM")
+    log(f"==> update_cell_content({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -303,7 +302,7 @@ def delete_cell(cell_id: str) -> dict:
         1. First call get_notebook_overview() to find the cell_id
         2. Then: delete_cell("cell-a1b2c3d4")
     """
-    log_debug_message(f"==> delete_cell({cell_id}) called from LLM")
+    log(f"==> delete_cell({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -343,7 +342,7 @@ def multi_delete_cells(cell_ids: List[str]) -> dict:
         1. First call get_notebook_overview() to find the cell_ids
         2. Then: multi_delete_cells(["cell-a1b2c3d4", "cell-e5f6g7h8", "cell-i9j0k1l2"])
     """
-    log_debug_message(f"==> multi_delete_cells({len(cell_ids)} cells) called from LLM")
+    log(f"==> multi_delete_cells({len(cell_ids)} cells) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -404,7 +403,7 @@ def multi_insert_cells(cells_json: str) -> dict:
             "error": "cells_json must be a JSON array"
         }
 
-    log_debug_message(f"==> multi_insert_cells({len(cells)} cells) called from LLM")
+    log(f"==> multi_insert_cells({len(cells)} cells) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -464,7 +463,7 @@ def insert_cell_after(after_cell_id: str, content: str, cell_type: str) -> dict:
         1. get_notebook_overview() → find cell_id
         2. insert_cell_after(cell_id, "# New section", "markdown")
     """
-    log_debug_message(f"==> insert_cell_after({after_cell_id}, type={cell_type}) called from LLM")
+    log(f"==> insert_cell_after({after_cell_id}, type={cell_type}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -517,7 +516,7 @@ def insert_cell_at_position(position: int, content: str, cell_type: str) -> dict
     # Convert to int in case LLM sends float
     position = int(position)
 
-    log_debug_message(f"==> insert_cell_at_position(position={position}, type={cell_type}) called from LLM")
+    log(f"==> insert_cell_at_position(position={position}, type={cell_type}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -568,7 +567,7 @@ def execute_cell(cell_id: str) -> dict:
         2. update_cell_content(cell_id, new_code) → edit the cell
         3. execute_cell(cell_id) → run and save output
     """
-    log_debug_message(f"==> execute_cell({cell_id}) called from LLM")
+    log(f"==> execute_cell({cell_id}) called from LLM")
 
     project_id = _get_project_id()
     if not project_id:
@@ -659,7 +658,7 @@ def execute_cell(cell_id: str) -> dict:
             }
         )
     except Exception as e:
-        log_debug_message(f"Failed to update cell output: {e}")
+        log(f"Failed to update cell output: {e}")
 
     return {
         "success": result["success"],

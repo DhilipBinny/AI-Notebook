@@ -5,7 +5,7 @@ Uses session-scoped kernel from session_manager.
 """
 
 from backend.session_manager import get_current_session
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 def _get_session_kernel():
@@ -41,7 +41,7 @@ def execute_python_code(code: str) -> dict:
         Dictionary with success, output, error, execution_count
     """
 
-    log_debug_message(f"==> execute_python_code: {code} called from LLM")
+    log(f"==> execute_python_code: {code} called from LLM")
 
     kernel = _get_session_kernel()
 

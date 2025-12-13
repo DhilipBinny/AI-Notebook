@@ -8,10 +8,17 @@ Supported providers:
 - Ollama (local models)
 
 All providers support multimodal inputs (text + images) for AI Cell operations.
+
+Usage:
+    from backend.llm_clients import get_llm_client
+
+    client = get_llm_client()  # Uses configured provider
+    client = get_llm_client(provider="gemini")  # Explicit provider
 """
 
-from backend.llm_clients.client import LLMClient
+from backend.llm_clients.client import get_llm_client
 from backend.llm_clients.base import (
+    BaseLLMClient,
     ImageData,
     encode_image_from_path,
     encode_image_from_bytes,
@@ -19,7 +26,8 @@ from backend.llm_clients.base import (
 )
 
 __all__ = [
-    "LLMClient",
+    "get_llm_client",
+    "BaseLLMClient",
     "ImageData",
     "encode_image_from_path",
     "encode_image_from_bytes",

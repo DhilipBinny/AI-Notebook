@@ -14,19 +14,48 @@ Tiered Context Approach:
 
 This allows sending ALL cells as context while keeping token usage minimal.
 LLM uses get_cell_content(cell_id) to dig deeper when needed.
+
+Public Methods:
+- build_ai_cell_context(): Complete AI Cell message with position info and context
+- build_chat_context(): Complete Chat Panel message with tiered overview
+- process_context(): Raw tiered context formatting (used by build_chat_context)
+- process_positional_context(): Raw positional formatting (used by build_ai_cell_context)
 """
 
 import re
-from typing import List, Dict, Any, Optional, Literal
+import json
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 class ContextFormat(str, Enum):
-    """Supported context formats for LLM"""
-    PLAIN = "plain"  # Simple text format
-    XML = "xml"      # XML tags (recommended)
+    """
+    Supported context formats for LLM.
+
+    Each format is optimized for different LLM providers:
+    - XML: Best for Claude (specifically trained on XML tags)
+    - JSON: Best for OpenAI, Gemini (structured data parsing)
+    - PLAIN: Best for Ollama/local models (simple text)
+    """
+    PLAIN = "plain"  # Simple text with separators (legacy, Ollama)
+    XML = "xml"      # XML tags (recommended for Claude)
+    JSON = "json"    # JSON format (recommended for OpenAI, Gemini)
+
+
+@dataclass
+class FormattedContext:
+    """
+    Structured representation of formatted context for LLM.
+
+    Keeps notebook_context and user_prompt separate to allow:
+    - LLM clients to apply caching appropriately (e.g., Anthropic's cache_control)
+    - Clean separation of cacheable vs dynamic content
+    """
+    notebook_context: str      # Formatted notebook context (cacheable - Layer 2)
+    user_prompt: str           # User's question/prompt (never cached - Layer 3)
+    format: ContextFormat      # Format used for notebook_context
 
 
 @dataclass
@@ -55,6 +84,168 @@ class ContextManager:
         """Initialize context manager."""
         pass
 
+    # =========================================================================
+    # PUBLIC HIGH-LEVEL METHODS
+    # =========================================================================
+
+    def build_ai_cell_context(
+        self,
+        cells: List[Any],  # List of CellContext Pydantic models or dicts
+        ai_cell_index: int,
+        user_prompt: str,
+        format: ContextFormat = ContextFormat.XML
+    ) -> FormattedContext:
+        """
+        Build AI Cell context with separate notebook_context and user_prompt.
+
+        This is the main entry point for AI Cell context building.
+        Handles conversion from Pydantic models, position calculation,
+        and final message formatting.
+
+        Returns FormattedContext with separate parts to allow:
+        - LLM clients to apply caching appropriately (e.g., Anthropic's cache_control)
+        - Clean separation of cacheable (notebook_context) vs dynamic (user_prompt) content
+
+        Args:
+            cells: List of CellContext objects (Pydantic) or dicts
+            ai_cell_index: 0-based index of the AI cell in the notebook
+            user_prompt: User's question/prompt
+            format: Output format - XML (recommended) or PLAIN
+
+        Returns:
+            FormattedContext with notebook_context and user_prompt separated
+        """
+        # Convert cells to dicts if they are Pydantic models
+        cells_data = self._convert_cells_to_dicts(cells)
+
+        # Calculate total cells (+1 for AI cell itself which is not in the list)
+        total_cells = len(cells_data) + 1
+
+        # Build position info
+        position_info = self._build_position_info(ai_cell_index, total_cells)
+
+        # Build notebook context using positional formatting
+        positional_context = self.process_positional_context(
+            cells_data,
+            ai_cell_index,
+            format=format
+        )
+
+        # Build notebook_context with position info (this is the cacheable part)
+        notebook_context = f"""POSITION: {position_info}
+
+NOTEBOOK CONTEXT:
+{positional_context}"""
+
+        log(f"📋 AI Cell context built: context={len(notebook_context)} chars, user_prompt={len(user_prompt)} chars, position {ai_cell_index + 1}/{total_cells}")
+
+        return FormattedContext(
+            notebook_context=notebook_context,
+            user_prompt=user_prompt,
+            format=format
+        )
+
+    def build_chat_context(
+        self,
+        cells: List[Any],  # List of CellContext Pydantic models or dicts
+        user_prompt: str,
+        format: ContextFormat = ContextFormat.XML,
+        kernel_variables: Optional[Dict[str, str]] = None
+    ) -> FormattedContext:
+        """
+        Build Chat Panel context with separate notebook_context and user_prompt.
+
+        This is the main entry point for Chat Panel context building.
+        Uses tiered approach: compact overview + get_cell_content() tool for details.
+
+        Returns FormattedContext with separate parts to allow:
+        - LLM clients to apply caching appropriately (e.g., Anthropic's cache_control)
+        - Clean separation of cacheable (notebook_context) vs dynamic (user_prompt) content
+
+        Args:
+            cells: List of CellContext objects (Pydantic) or dicts
+            user_prompt: User's question/prompt
+            format: Output format - XML (recommended) or PLAIN
+            kernel_variables: Optional dict of variable names to types
+
+        Returns:
+            FormattedContext with notebook_context and user_prompt separated
+        """
+        # Convert cells to dicts if they are Pydantic models
+        cells_data = self._convert_cells_to_dicts(cells)
+
+        # Build compact context using tiered approach
+        notebook_context = self.process_context(cells_data, kernel_variables, format)
+
+        log(f"📋 Chat context built: context={len(notebook_context)} chars, user_prompt={len(user_prompt)} chars, {len(cells_data)} cells")
+
+        return FormattedContext(
+            notebook_context=notebook_context,
+            user_prompt=user_prompt,
+            format=format
+        )
+
+    def _convert_cells_to_dicts(self, cells: List[Any]) -> List[Dict[str, Any]]:
+        """
+        Convert cells to list of dicts.
+
+        Handles both Pydantic BaseModel objects and plain dicts.
+        """
+        if not cells:
+            return []
+
+        cells_data = []
+        for cell in cells:
+            # Check if it's a Pydantic model (has model_dump or dict method)
+            if hasattr(cell, 'model_dump'):
+                # Pydantic v2
+                cell_dict = cell.model_dump()
+            elif hasattr(cell, 'dict'):
+                # Pydantic v1
+                cell_dict = cell.dict()
+            elif isinstance(cell, dict):
+                cell_dict = cell
+            else:
+                # Try to convert attributes manually
+                cell_dict = {
+                    "id": getattr(cell, 'id', ''),
+                    "type": getattr(cell, 'type', 'code'),
+                    "content": getattr(cell, 'content', ''),
+                    "output": getattr(cell, 'output', None),
+                    "cellNumber": getattr(cell, 'cellNumber', None),
+                    "ai_prompt": getattr(cell, 'ai_prompt', None),
+                    "ai_response": getattr(cell, 'ai_response', None),
+                }
+            cells_data.append(cell_dict)
+
+        return cells_data
+
+    def _build_position_info(self, ai_cell_index: int, total_cells: int) -> str:
+        """
+        Build position description string for AI Cell.
+
+        Args:
+            ai_cell_index: 0-based index of AI cell
+            total_cells: Total number of cells in notebook
+
+        Returns:
+            Human-readable position description
+        """
+        if ai_cell_index < 0:
+            return "Position unknown."
+
+        position_info = f"You are in Cell #{ai_cell_index + 1} of {total_cells} total cells."
+        if ai_cell_index > 0:
+            position_info += f" There are {ai_cell_index} cell(s) ABOVE you."
+        if ai_cell_index < total_cells - 1:
+            position_info += f" There are {total_cells - ai_cell_index - 1} cell(s) BELOW you."
+
+        return position_info
+
+    # =========================================================================
+    # CONTEXT FORMATTING METHODS
+    # =========================================================================
+
     def process_context(
         self,
         cells: List[Dict[str, Any]],
@@ -67,7 +258,7 @@ class ContextManager:
         Args:
             cells: List of cell dicts with id, type, content, output, cellNumber
             kernel_variables: Optional dict of variable names to types from kernel
-            format: Output format - PLAIN (legacy) or XML (recommended for Claude)
+            format: Output format - PLAIN, XML, or JSON
 
         Returns:
             Compact context string for LLM
@@ -81,10 +272,12 @@ class ContextManager:
         # Format for LLM based on selected format
         if format == ContextFormat.XML:
             context_str = self._format_xml_context(structured)
+        elif format == ContextFormat.JSON:
+            context_str = self._format_json_context(structured)
         else:
             context_str = self._format_compact_context(structured)
 
-        log_debug_message(f"📋 Context [{format.value}]: {len(context_str)} chars, {structured.total_cells} cells, {len(structured.imports)} imports, {len(structured.recent_errors)} errors")
+        log(f"📋 Context [{format.value}]: {len(context_str)} chars, {structured.total_cells} cells, {len(structured.imports)} imports, {len(structured.recent_errors)} errors")
 
         return context_str
 
@@ -290,6 +483,41 @@ class ContextManager:
         text = text.replace("'", '&apos;')
         return text
 
+    def _format_json_context(self, structured: StructuredContext) -> str:
+        """
+        Format structured context into JSON for LLM.
+
+        JSON format works well with OpenAI and Gemini models that are
+        trained to parse structured data.
+        """
+        context_obj = {
+            "notebook_context": {
+                "total_cells": structured.total_cells,
+                "imports": sorted(structured.imports)[:12],
+                "variables": {k: v for k, v in list(structured.variables.items())[:10]},
+                "errors": [
+                    {"cell_id": err["cell_id"], "error": err["error"]}
+                    for err in structured.recent_errors[-3:]
+                ],
+                "cells": [
+                    {
+                        "id": cell["cell_id"],
+                        "type": cell["type"],
+                        "preview": cell["preview"][:50] if cell["preview"] else "",
+                        "has_output": cell["has_output"],
+                        "has_error": cell["has_error"],
+                        "output_type": cell["output_type"],
+                        **({"ai_prompt": (cell.get("ai_prompt") or "")[:100]} if cell["type"] == "ai" else {}),
+                        **({"ai_response_preview": (cell.get("ai_response") or "")[:100]} if cell["type"] == "ai" else {}),
+                    }
+                    for cell in structured.cells
+                ]
+            },
+            "tool_hint": "Use get_cell_content(cell_id) to read full cell content and output."
+        }
+
+        return json.dumps(context_obj, indent=2)
+
     # =========================================================================
     # POSITIONAL CONTEXT (for AI Cell)
     # =========================================================================
@@ -319,6 +547,8 @@ class ContextManager:
         if not cells:
             if format == ContextFormat.XML:
                 return "<notebook_context><empty>No other cells in notebook</empty></notebook_context>"
+            elif format == ContextFormat.JSON:
+                return json.dumps({"notebook_context": {"empty": True, "message": "No other cells in notebook"}})
             return "(No other cells in notebook)"
 
         cells_above = []
@@ -354,10 +584,12 @@ class ContextManager:
         # Build context based on format
         if format == ContextFormat.XML:
             context_str = self._format_positional_xml(cells_above, cells_below, ai_cell_index)
+        elif format == ContextFormat.JSON:
+            context_str = self._format_positional_json(cells_above, cells_below, ai_cell_index)
         else:
             context_str = self._format_positional_plain(cells_above, cells_below, ai_cell_index)
 
-        log_debug_message(f"📋 Positional Context [{format.value}]: {len(context_str)} chars, {len(cells_above)} above, {len(cells_below)} below")
+        log(f"📋 Positional Context [{format.value}]: {len(context_str)} chars, {len(cells_above)} above, {len(cells_below)} below")
 
         return context_str
 
@@ -448,6 +680,42 @@ class ContextManager:
 
         parts.append('</notebook_context>')
         return '\n'.join(parts)
+
+    def _format_positional_json(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
+        """Format positional context in JSON"""
+
+        def format_cell_json(cell: Dict) -> Dict:
+            """Format a single cell for JSON output"""
+            cell_obj = {
+                "id": cell["id"],
+                "type": cell["type"],
+                "is_immediate": cell["is_immediate"],
+            }
+
+            if cell["type"] == "ai":
+                ai_prompt = cell.get("ai_prompt", "")
+                ai_response = cell.get("ai_response", "")
+                if ai_prompt:
+                    cell_obj["user_question"] = ai_prompt
+                if ai_response:
+                    # Truncate long responses
+                    cell_obj["ai_response"] = ai_response[:500] + "..." if len(ai_response) > 500 else ai_response
+            else:
+                cell_obj["content"] = cell["content"]
+                if cell["output"]:
+                    cell_obj["output"] = cell["output"]
+
+            return cell_obj
+
+        context_obj = {
+            "notebook_context": {
+                "your_position": ai_cell_index + 1,
+                "cells_above": [format_cell_json(cell) for cell in cells_above],
+                "cells_below": [format_cell_json(cell) for cell in cells_below],
+            }
+        }
+
+        return json.dumps(context_obj, indent=2)
 
     def _get_first_line(self, content: str) -> str:
         """Get first meaningful line of content as preview"""

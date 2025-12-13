@@ -178,7 +178,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [pendingTools, setPendingTools] = useState<PendingToolCall[]>([])
   const [llmProvider, setLlmProvider] = useState('gemini')
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
-  const [contextFormat, setContextFormat] = useState<'xml' | 'plain'>('xml')
+  const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
   const [showChat, setShowChat] = useState(true)
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
   const [confirmPopup, setConfirmPopup] = useState<{
@@ -1877,8 +1877,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onOpenTerminal={() => window.open(`/terminal/${projectId}`, '_blank')}
         llmProvider={llmProvider}
         onProviderChange={setLlmProvider}
-        toolMode={toolMode}
-        onToolModeChange={setToolMode}
         contextFormat={contextFormat}
         onContextFormatChange={setContextFormat}
       />

@@ -9,7 +9,7 @@ These tools help the LLM:
 
 import re
 from typing import Optional
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 # Try to import optional dependencies
 try:
@@ -84,7 +84,7 @@ def fetch_url_as_markdown(url: str, max_length: int = 15000) -> dict:
     Example:
         fetch_url_as_markdown("https://pandas.pydata.org/docs/getting_started/")
     """
-    log_debug_message(f"==> fetch_url_as_markdown({url}) called from LLM")
+    log(f"==> fetch_url_as_markdown({url}) called from LLM")
 
     if not HAS_HTTPX:
         return {
@@ -207,7 +207,7 @@ def get_library_docs(library_name: str, topic: Optional[str] = None) -> dict:
         get_library_docs("pandas", "DataFrame.groupby")  → specific function docs
         get_library_docs("matplotlib", "scatter")  → matplotlib scatter docs
     """
-    log_debug_message(f"==> get_library_docs({library_name}, topic={topic}) called from LLM")
+    log(f"==> get_library_docs({library_name}, topic={topic}) called from LLM")
 
     if not HAS_HTTPX:
         return {

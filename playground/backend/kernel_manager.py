@@ -40,7 +40,6 @@ class NotebookKernel:
         """Start a new kernel"""
         try:
             import os
-            import sys
             import traceback
 
             # Set unbuffered output for real-time streaming
@@ -432,8 +431,8 @@ print("[Kernel] Module cache refreshed - new packages should now be importable")
                                         continue  # Keep trying
                             except Exception as e:
                                 # Log error but don't fail the execution
-                                from backend.utils.util_func import log_debug_message
-                                log_debug_message(f"[Kernel] Shell msg error (non-fatal): {e}")
+                                from backend.utils.util_func import log
+                                log(f"[Kernel] Shell msg error (non-fatal): {e}")
 
                             yield {"type": "status", "status": "complete"}
                             break

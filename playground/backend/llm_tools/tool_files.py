@@ -14,9 +14,9 @@ SECURITY: All paths are restricted to the project directory.
 import os
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from backend.session_manager import get_current_session
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 import backend.config as cfg
 
 
@@ -72,7 +72,7 @@ def _safe_path(user_path: str) -> Optional[Path]:
         for part in Path(user_path).parts:
             current = current / part
             if current.is_symlink():
-                log_debug_message(f"[Files] Symlink detected and blocked: {current}")
+                log(f"[Files] Symlink detected and blocked: {current}")
                 return None
 
         # Now resolve to get the canonical path
@@ -84,16 +84,16 @@ def _safe_path(user_path: str) -> Optional[Path]:
         try:
             common = Path(os.path.commonpath([str(full_path), str(project_root_resolved)]))
             if common != project_root_resolved:
-                log_debug_message(f"[Files] Path traversal attempt blocked: {user_path}")
+                log(f"[Files] Path traversal attempt blocked: {user_path}")
                 return None
         except ValueError:
             # commonpath raises ValueError if paths are on different drives (Windows)
-            log_debug_message(f"[Files] Path traversal attempt blocked (different root): {user_path}")
+            log(f"[Files] Path traversal attempt blocked (different root): {user_path}")
             return None
 
         return full_path
     except Exception as e:
-        log_debug_message(f"[Files] Path resolution error: {e}")
+        log(f"[Files] Path resolution error: {e}")
         return None
 
 
@@ -128,7 +128,7 @@ def list_project_files(path: str = "/", pattern: str = "*", recursive: bool = Fa
         list_project_files("/data", "*.csv")  → list CSV files in data folder
         list_project_files("/", "*.py", recursive=True)  → find all Python files
     """
-    log_debug_message(f"==> list_project_files({path}, {pattern}, recursive={recursive}) called from LLM")
+    log(f"==> list_project_files({path}, {pattern}, recursive={recursive}) called from LLM")
 
     safe_dir = _safe_path(path)
     if not safe_dir:
@@ -228,7 +228,7 @@ def list_project_files(path: str = "/", pattern: str = "*", recursive: bool = Fa
         }
 
     except Exception as e:
-        log_debug_message(f"[Files] List error: {e}")
+        log(f"[Files] List error: {e}")
         return {
             "success": False,
             "path": path,
@@ -265,7 +265,7 @@ def file_info(path: str) -> dict:
     Example:
         file_info("data.csv")  → check if data.csv exists and its size
     """
-    log_debug_message(f"==> file_info({path}) called from LLM")
+    log(f"==> file_info({path}) called from LLM")
 
     safe_file = _safe_path(path)
     if not safe_file:
@@ -369,7 +369,7 @@ def read_text_file(path: str, max_lines: int = 200, encoding: str = "utf-8") -> 
         read_text_file("config.json")  → read JSON config
         read_text_file("script.py", max_lines=50)  → read first 50 lines
     """
-    log_debug_message(f"==> read_text_file({path}, max_lines={max_lines}) called from LLM")
+    log(f"==> read_text_file({path}, max_lines={max_lines}) called from LLM")
 
     safe_file = _safe_path(path)
     if not safe_file:
@@ -477,7 +477,7 @@ def preview_data_file(path: str, rows: int = 10) -> dict:
         preview_data_file("data.csv")  → preview CSV with headers and first 10 rows
         preview_data_file("config.json")  → preview JSON structure
     """
-    log_debug_message(f"==> preview_data_file({path}, rows={rows}) called from LLM")
+    log(f"==> preview_data_file({path}, rows={rows}) called from LLM")
 
     safe_file = _safe_path(path)
     if not safe_file:
@@ -664,7 +664,7 @@ def write_text_file(path: str, content: str, overwrite: bool = False) -> dict:
         write_text_file("output.txt", "Hello world")  → create new file
         write_text_file("config.json", json_str, overwrite=True)  → update existing
     """
-    log_debug_message(f"==> write_text_file({path}, overwrite={overwrite}) called from LLM")
+    log(f"==> write_text_file({path}, overwrite={overwrite}) called from LLM")
 
     safe_file = _safe_path(path)
     if not safe_file:
@@ -741,7 +741,7 @@ def delete_file(path: str, confirm: bool = False) -> dict:
     Example:
         delete_file("temp.txt", confirm=True)  → delete the file
     """
-    log_debug_message(f"==> delete_file({path}, confirm={confirm}) called from LLM")
+    log(f"==> delete_file({path}, confirm={confirm}) called from LLM")
 
     safe_file = _safe_path(path)
     if not safe_file:

@@ -16,10 +16,10 @@ This allows the AI to:
 Uses a per-session sandbox kernel managed alongside the main kernel.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 from backend.session_manager import get_current_session
 from backend.kernel_manager import NotebookKernel
-from backend.utils.util_func import log_debug_message
+from backend.utils.util_func import log
 
 
 # Store sandbox kernels per session
@@ -81,7 +81,7 @@ def sandbox_execute(code: str, timeout: int = 10) -> dict:
         1. sandbox_execute("def fix(): ...") → test the fix works
         2. If success → update_cell_content(cell_id, code) → write to notebook
     """
-    log_debug_message(f"==> sandbox_execute: {code[:100]}... called from LLM")
+    log(f"==> sandbox_execute: {code[:100]}... called from LLM")
 
     sandbox = _get_sandbox_kernel()
     if sandbox is None:
@@ -96,7 +96,7 @@ def sandbox_execute(code: str, timeout: int = 10) -> dict:
 
     # Start sandbox kernel if not running
     if not sandbox.is_alive():
-        log_debug_message("[Sandbox] Starting sandbox kernel...")
+        log("[Sandbox] Starting sandbox kernel...")
         if not sandbox.start():
             return {
                 "success": False,
@@ -173,7 +173,7 @@ def sandbox_reset() -> dict:
         result = sandbox_reset()
         # Returns: {"success": True, "message": "Sandbox reset successfully"}
     """
-    log_debug_message("==> sandbox_reset() called from LLM")
+    log("==> sandbox_reset() called from LLM")
 
     sandbox = _get_sandbox_kernel()
     if sandbox is None:
@@ -223,7 +223,7 @@ def sandbox_pip_install(packages: str) -> dict:
         sandbox_pip_install("pandas matplotlib")
         sandbox_execute("import pandas as pd; print(pd.__version__)")
     """
-    log_debug_message(f"==> sandbox_pip_install({packages}) called from LLM")
+    log(f"==> sandbox_pip_install({packages}) called from LLM")
 
     if not packages or not packages.strip():
         return {
@@ -242,7 +242,7 @@ def sandbox_pip_install(packages: str) -> dict:
 
     # Start sandbox kernel if not running
     if not sandbox.is_alive():
-        log_debug_message("[Sandbox] Starting sandbox kernel for pip install...")
+        log("[Sandbox] Starting sandbox kernel for pip install...")
         if not sandbox.start():
             return {
                 "success": False,
@@ -334,7 +334,7 @@ def sandbox_sync_from_main(variable_names: List[str] = None) -> dict:
         result = sandbox_sync_from_main()
         # Returns: {"success": True, "copied": ["df", "x", "y", ...], "failed": []}
     """
-    log_debug_message(f"==> sandbox_sync_from_main({variable_names}) called from LLM")
+    log(f"==> sandbox_sync_from_main({variable_names}) called from LLM")
 
     main_kernel = _get_main_kernel()
     sandbox = _get_sandbox_kernel()
@@ -400,7 +400,7 @@ print(json.dumps(_vars))
                 import json
                 vars_to_copy = json.loads(output_text.strip())
             except (json.JSONDecodeError, ValueError) as e:
-                log_debug_message(f"[Sandbox] Failed to parse variable list: {e}")
+                log(f"[Sandbox] Failed to parse variable list: {e}")
                 vars_to_copy = []
         else:
             vars_to_copy = []
@@ -426,7 +426,7 @@ print(json.dumps(_vars))
         try:
             # Security: validate variable name is a valid Python identifier
             if not valid_identifier.match(var_name):
-                log_debug_message(f"[Sandbox] Invalid variable name rejected: {var_name}")
+                log(f"[Sandbox] Invalid variable name rejected: {var_name}")
                 failed.append(var_name)
                 continue
 
@@ -460,7 +460,7 @@ except Exception as e:
             # Security: validate base64 output contains only valid base64 characters
             # Base64 alphabet: A-Z, a-z, 0-9, +, /, and = for padding
             if not re.match(r'^[A-Za-z0-9+/=]+$', output_text):
-                log_debug_message(f"[Sandbox] Invalid base64 data for {var_name}")
+                log(f"[Sandbox] Invalid base64 data for {var_name}")
                 failed.append(var_name)
                 continue
 
@@ -480,7 +480,7 @@ print("OK")
                 failed.append(var_name)
 
         except Exception as e:
-            log_debug_message(f"[Sandbox] Failed to copy {var_name}: {e}")
+            log(f"[Sandbox] Failed to copy {var_name}: {e}")
             failed.append(var_name)
 
     return {
@@ -508,7 +508,7 @@ def sandbox_status() -> dict:
         result = sandbox_status()
         # Returns: {"success": True, "alive": True, "execution_count": 5, "message": "Sandbox is running"}
     """
-    log_debug_message("==> sandbox_status() called from LLM")
+    log("==> sandbox_status() called from LLM")
 
     sandbox = _get_sandbox_kernel()
 
@@ -539,11 +539,11 @@ def cleanup_sandbox(session_id: str = None):
         sandbox = _sandbox_kernels.pop(session_id, None)
         if sandbox and sandbox.is_alive():
             sandbox.stop()
-            log_debug_message(f"[Sandbox] Cleaned up sandbox for session {session_id}")
+            log(f"[Sandbox] Cleaned up sandbox for session {session_id}")
     else:
         # Cleanup all
         for sid, sandbox in list(_sandbox_kernels.items()):
             if sandbox.is_alive():
                 sandbox.stop()
         _sandbox_kernels.clear()
-        log_debug_message("[Sandbox] Cleaned up all sandboxes")
+        log("[Sandbox] Cleaned up all sandboxes")

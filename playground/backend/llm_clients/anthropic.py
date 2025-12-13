@@ -4,19 +4,33 @@ Anthropic LLM Client - Claude implementation
 Implements the BaseLLMClient interface for Anthropic models (Claude 3, etc.).
 Supports both automatic and manual (approval-based) function calling.
 Includes web search tool for real-time web information.
+
+SECTIONS:
+1. Module-Level Setup (imports, constants, tool building)
+2. Initialization & Configuration
+3. Chat Panel - Main Conversation Interface
+4. History Management
+5. Simple Completions (No Tools)
+6. AI Cell - Tool Execution Framework
+7. Utilities & Helpers
 """
 
 import json
 import copy
 from typing import List, Dict, Any, Optional, Union, Callable
-import anthropic
 from anthropic import Anthropic
 
-from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult
-from backend.utils.util_func import log_debug_message
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult, MAX_TOOL_ITERATIONS
+from backend.llm_clients.tool_schemas import build_anthropic_tools
+from backend.utils.util_func import log
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
 
+
+# =============================================================================
+# SECTION 1: MODULE-LEVEL SETUP
+# =============================================================================
+# Constants, tool definitions, and module-level helpers
 
 # Web search tool definition for Anthropic
 WEB_SEARCH_TOOL = {
@@ -25,96 +39,6 @@ WEB_SEARCH_TOOL = {
     "max_uses": 5  # Limit searches per request
 }
 
-
-# Build Anthropic tool schemas from our function definitions
-def _build_anthropic_tools() -> List[Dict[str, Any]]:
-    """Convert our tool functions to Anthropic tool format"""
-    tools = []
-
-    for func in TOOL_FUNCTIONS:
-        # Get function metadata from docstring and annotations
-        func_name = func.__name__
-        func_doc = func.__doc__ or ""
-        annotations = func.__annotations__
-
-        # Parse docstring to get description and parameter descriptions
-        doc_lines = func_doc.strip().split('\n')
-        description = ""
-        param_descriptions = {}
-        current_section = None
-
-        for line in doc_lines:
-            line = line.strip()
-            if line.lower().startswith('args:'):
-                current_section = 'args'
-                continue
-            elif line.lower().startswith('returns:'):
-                current_section = 'returns'
-                continue
-            elif line.lower().startswith('example:'):
-                current_section = 'example'
-                continue
-
-            if current_section is None and line:
-                description += line + " "
-            elif current_section == 'args' and ':' in line:
-                param_name = line.split(':')[0].strip()
-                param_desc = ':'.join(line.split(':')[1:]).strip()
-                param_descriptions[param_name] = param_desc
-
-        # Build parameters schema
-        properties = {}
-        required = []
-
-        for param_name, param_type in annotations.items():
-            if param_name == 'return':
-                continue
-
-            # Map Python types to JSON schema types
-            json_type = "string"
-            if param_type == int:
-                json_type = "integer"
-            elif param_type == float:
-                json_type = "number"
-            elif param_type == bool:
-                json_type = "boolean"
-            elif param_type == str:
-                json_type = "string"
-
-            properties[param_name] = {
-                "type": json_type,
-                "description": param_descriptions.get(param_name, f"The {param_name} parameter")
-            }
-
-            # Check if parameter has a default value
-            defaults = func.__defaults__ or ()
-            code = func.__code__
-            num_params = code.co_argcount
-            num_defaults = len(defaults)
-            params_without_defaults = num_params - num_defaults
-
-            param_names = code.co_varnames[:num_params]
-            if param_name in param_names:
-                param_index = list(param_names).index(param_name)
-                if param_index < params_without_defaults:
-                    required.append(param_name)
-
-        tool = {
-            "name": func_name,
-            "description": description.strip(),
-            "input_schema": {
-                "type": "object",
-                "properties": properties,
-                "required": required
-            }
-        }
-        tools.append(tool)
-
-    log_debug_message(f"Anthropic tools: {tools}")
-
-    return tools
-
-
 # Map function names to actual functions
 TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
 
@@ -122,7 +46,11 @@ TOOL_MAP = {func.__name__: func for func in TOOL_FUNCTIONS}
 class AnthropicClient(BaseLLMClient):
     """Anthropic LLM client with tool calling and web search support"""
 
-    def __init__(self, api_key: str, model_name: str = "claude-3-haiku-20240307", auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
+    # =========================================================================
+    # SECTION 2: INITIALIZATION & CONFIGURATION
+    # =========================================================================
+
+    def __init__(self, api_key: str, model_name: str = None, auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
         """
         Initialize Anthropic client.
 
@@ -135,23 +63,21 @@ class AnthropicClient(BaseLLMClient):
         super().__init__()  # Initialize base class (cancellation support)
 
         self.client = Anthropic(api_key=api_key)
-        self.model_name = model_name
+        self.model_name = model_name or cfg.ANTHROPIC_MODEL
         self.enable_web_search = enable_web_search
 
-        # Build tools list - custom tools first
-        self.tools = _build_anthropic_tools()
+        # Build base tools list (without web search - added dynamically per request)
+        self.tools = build_anthropic_tools(TOOL_FUNCTIONS)
 
-        # Add web search tool if enabled
-        if self.enable_web_search:
-            self.tools.append(WEB_SEARCH_TOOL)
-            log_debug_message("Anthropic web search tool enabled")
+        log(f"Anthropic web search: {'enabled' if enable_web_search else 'disabled'} (added dynamically when needed)")
 
         self.history: List[Dict[str, Any]] = []
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
-        log_debug_message(f"Anthropic client initialized. Auto function calling: {self.auto_function_calling}")
-        log_debug_message(f"Web search enabled: {self.enable_web_search}")
+        log(f"Anthropic client initialized")
+        log(f"Config: tool_mode={cfg.TOOL_EXECUTION_MODE}, auto_func={self.auto_function_calling} (request may override)")
+        log(f"Web search enabled: {self.enable_web_search}")
 
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
@@ -161,51 +87,111 @@ class AnthropicClient(BaseLLMClient):
         self._ai_cell_tools_cache: Optional[List[Dict[str, Any]]] = None
         self._ai_cell_tool_map_cache: Optional[Dict[str, Any]] = None
 
-    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Execute a tool and return the result as a string."""
-        log_debug_message(f"Anthropic executing tool: {tool_name} with args: {arguments}")
+        # Cache system prompts with cache_control (Layer 1 - static, rarely changes)
+        self._cached_system_prompt: Optional[List[Dict[str, Any]]] = None
+        self._cached_ai_cell_system_prompt: Optional[List[Dict[str, Any]]] = None
 
-        if tool_name not in TOOL_MAP:
-            return json.dumps({"error": f"Unknown tool: {tool_name}"})
-
-        try:
-            result = TOOL_MAP[tool_name](**arguments)
-            return json.dumps(result)
-        except Exception as e:
-            return json.dumps({"error": str(e)})
-
-    def send_message(self, message: str, user_message: str = None, images: Optional[List[ImageData]] = None) -> Union[str, Dict[str, Any]]:
+    def _get_tools_for_request(self, message: str, user_message: str = None) -> List[Dict[str, Any]]:
         """
-        Send a message to Anthropic.
+        Get tools list for this request, conditionally adding web search.
 
         Args:
-            message: The full message (may include context)
-            user_message: Optional - just the user's actual question (unused, for API compatibility)
+            message: The full message
+            user_message: Optional - just the user's question (for keyword detection)
+
+        Returns:
+            List of tools, including web search tool if needed
+        """
+        tools = self.tools.copy()
+
+        # Add web search tool only if keywords suggest it's needed
+        if self._needs_web_search(message, user_message):
+            tools.append(WEB_SEARCH_TOOL)
+            log("🌐 Web search tool added to this request")
+
+        return tools
+
+    def _get_cached_system_prompt(self) -> List[Dict[str, Any]]:
+        """
+        Get system prompt in array format with cache_control (Layer 1 caching).
+
+        Anthropic supports system prompt as array with cache_control:
+        system=[{"type": "text", "text": "...", "cache_control": {"type": "ephemeral"}}]
+
+        This caches the system prompt for 5 minutes, reducing token costs by 90%
+        for repeated requests. System prompts are static and rarely change.
+
+        Returns:
+            List with single text block containing system prompt with cache_control
+        """
+        if self._cached_system_prompt is None:
+            self._cached_system_prompt = [
+                {
+                    "type": "text",
+                    "text": self.SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ]
+            log(f"💾 Cached system prompt: {len(self.SYSTEM_PROMPT)} chars")
+        return self._cached_system_prompt
+
+    def _get_cached_ai_cell_system_prompt(self) -> List[Dict[str, Any]]:
+        """
+        Get AI Cell system prompt in array format with cache_control (Layer 1 caching).
+
+        Returns:
+            List with single text block containing AI Cell system prompt with cache_control
+        """
+        if self._cached_ai_cell_system_prompt is None:
+            self._cached_ai_cell_system_prompt = [
+                {
+                    "type": "text",
+                    "text": self.AI_CELL_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"}
+                }
+            ]
+            log(f"💾 Cached AI Cell system prompt: {len(self.AI_CELL_SYSTEM_PROMPT)} chars")
+        return self._cached_ai_cell_system_prompt
+
+    # =========================================================================
+    # SECTION 3: CHAT PANEL - Main Conversation Interface
+    # =========================================================================
+    # These methods handle the main chat panel conversations with full tool support
+
+    def chat_panel_send(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> Union[str, Dict[str, Any]]:
+        """
+        Send a message to Anthropic with proper caching.
+
+        Args:
+            notebook_context: Formatted notebook context (cached - Layer 2)
+            user_prompt: User's question/prompt (never cached - Layer 3)
             images: Optional list of images for visual analysis
 
-        When auto_function_calling=True:
-            Executes tools automatically and returns final response text
-
-        When auto_function_calling=False:
-            If model wants to call tools: Returns dict with pending_tool_calls
-            If no tools needed: Returns the response text
-
-        Args:
-            message: The user message
+        Two-Layer Caching:
+        - Layer 1: System prompt (cached via _get_cached_system_prompt)
+        - Layer 2: Notebook context (cached here with cache_control)
+        - Layer 3: User prompt (never cached)
 
         Returns:
             str: Final response text (if auto mode or no tools needed)
             dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
         try:
-            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log_debug_message(f"📨 Anthropic send_message() - User: {message[:60]}...")
+            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            log(f"📨 Anthropic chat_panel_send()")
+            log(f"   Context: {len(notebook_context)} chars (Layer 2 - cached)")
+            log(f"   User prompt: {len(user_prompt)} chars (Layer 3 - not cached)")
             if images:
-                log_debug_message(f"📷 Chat panel: {len(images)} image(s) attached")
-            log_debug_message(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                log(f"   Images: {len(images)} attached")
+            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-            # Build content with optional images
-            content = self._build_content_with_images(message, images)
+            # Build content with proper caching layers
+            content = self._build_cached_message_content(notebook_context, user_prompt, images)
 
             # Add user message to history
             self.history.append({
@@ -216,43 +202,57 @@ class AnthropicClient(BaseLLMClient):
             # Build messages (Anthropic system prompt is separate)
             messages = self.history
 
+            # Get tools for this request (conditionally includes web search based on user_prompt)
+            # Combine context + prompt for web search detection
+            full_message = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
+            request_tools = self._get_tools_for_request(full_message, user_prompt)
+
             if self.auto_function_calling:
                 # Auto mode: loop until final response
-                log_debug_message(f"🤖 Anthropic AUTO mode - executing tools automatically")
-                return self._auto_execute_tools(messages)
+                log(f"🤖 Anthropic AUTO mode - executing tools automatically")
+                return self._auto_execute_tools(messages, request_tools)
             else:
                 # Manual mode: return pending tools for approval
-                log_debug_message(f"🤖 Anthropic MANUAL mode - returning tools for approval")
-                return self._get_pending_tools(messages)
+                log(f"🤖 Anthropic MANUAL mode - returning tools for approval")
+                return self._get_pending_tools(messages, request_tools)
 
         except Exception as e:
-            log_debug_message(f"❌ Anthropic error: {e}")
+            log(f"❌ Anthropic error: {e}")
             return f"Anthropic Error: {e}"
 
-    def _auto_execute_tools(self, messages: List[Dict[str, Any]]) -> str:
-        """Execute tools automatically until we get a final response"""
-        max_iterations = 10
+    def _auto_execute_tools(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> str:
+        """
+        Execute tools automatically until we get a final response.
+
+        Args:
+            messages: Conversation messages
+            tools: Tools to use for this request (defaults to self.tools if not provided)
+        """
+        request_tools = tools if tools is not None else self.tools
         iteration = 0
 
-        while iteration < max_iterations:
+        while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
-            log_debug_message(f"🔄 Anthropic iteration {iteration}/{max_iterations}")
+            log(f"🔄 Anthropic iteration {iteration}/{MAX_TOOL_ITERATIONS}")
 
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
-                system=self.SYSTEM_PROMPT,
+                system=self._get_cached_system_prompt(),  # Layer 1: Cached system prompt
                 messages=messages,
-                tools=self.tools
+                tools=request_tools
             )
+
+            # Log cache usage
+            self._log_cache_usage(response)
 
             # Log server tool usage (like web_search)
             for block in response.content:
                 if block.type == "server_tool_use":
-                    log_debug_message(f"🌐 Anthropic web search: {block.name}")
+                    log(f"🌐 Anthropic web search: {block.name}")
                 elif block.type == "web_search_tool_result":
                     result_count = len(block.content) if hasattr(block, 'content') else 0
-                    log_debug_message(f"🌐 Anthropic web search returned {result_count} results")
+                    log(f"🌐 Anthropic web search returned {result_count} results")
 
             # Check if stop_reason is tool_use
             if response.stop_reason == "tool_use":
@@ -267,7 +267,7 @@ class AnthropicClient(BaseLLMClient):
                     if block.type == "tool_use":
                         func_name = block.name
                         func_args = block.input
-                        log_debug_message(f"🔧 Anthropic calling tool: {func_name}")
+                        log(f"🔧 Anthropic calling tool: {func_name}")
                         result = self._execute_tool(func_name, func_args)
 
                         messages.append({
@@ -290,29 +290,39 @@ class AnthropicClient(BaseLLMClient):
                     "role": "assistant",
                     "content": final_response
                 })
-                log_debug_message(f"✅ Anthropic response received - {len(final_response)} chars")
+                log(f"✅ Anthropic response received - {len(final_response)} chars")
                 return final_response
 
-        log_debug_message(f"❌ Anthropic max iterations reached")
+        log(f"❌ Anthropic max iterations reached")
         return "Error: Maximum tool calling iterations reached"
 
-    def _get_pending_tools(self, messages: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
-        """Get pending tool calls without executing them"""
+    def _get_pending_tools(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> Union[str, Dict[str, Any]]:
+        """
+        Get pending tool calls without executing them.
+
+        Args:
+            messages: Conversation messages
+            tools: Tools to use for this request (defaults to self.tools if not provided)
+        """
+        request_tools = tools if tools is not None else self.tools
         response = self.client.messages.create(
             model=self.model_name,
             max_tokens=4096,
-            system=self.SYSTEM_PROMPT,
+            system=self._get_cached_system_prompt(),  # Layer 1: Cached system prompt
             messages=messages,
-            tools=self.tools
+            tools=request_tools
         )
+
+        # Log cache usage
+        self._log_cache_usage(response)
 
         # Log server tool usage (like web_search)
         for block in response.content:
             if block.type == "server_tool_use":
-                log_debug_message(f"🌐 Anthropic web search: {block.name}")
+                log(f"🌐 Anthropic web search: {block.name}")
             elif block.type == "web_search_tool_result":
                 result_count = len(block.content) if hasattr(block, 'content') else 0
-                log_debug_message(f"🌐 Anthropic web search returned {result_count} results")
+                log(f"🌐 Anthropic web search returned {result_count} results")
 
         if response.stop_reason == "tool_use":
             # Store state for later execution
@@ -341,7 +351,7 @@ class AnthropicClient(BaseLLMClient):
                     self._pending_tool_calls.append(tool_info)
 
             tools_names = [t["name"] for t in pending_tools]
-            log_debug_message(f"🔧 Anthropic pending tools: {', '.join(tools_names)}")
+            log(f"🔧 Anthropic pending tools: {', '.join(tools_names)}")
 
             return {
                 "pending_tool_calls": pending_tools,
@@ -358,7 +368,7 @@ class AnthropicClient(BaseLLMClient):
                 "role": "assistant",
                 "content": final_response
             })
-            log_debug_message(f"✅ Anthropic response (no custom tools) - {len(final_response)} chars")
+            log(f"✅ Anthropic response (no custom tools) - {len(final_response)} chars")
             return final_response
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
@@ -413,7 +423,7 @@ class AnthropicClient(BaseLLMClient):
                 response = self.client.messages.create(
                     model=self.model_name,
                     max_tokens=4096,
-                    system=self.SYSTEM_PROMPT,
+                    system=self._get_cached_system_prompt(),  # Layer 1: Cached system prompt
                     messages=messages,
                     tools=self.tools
                 )
@@ -443,7 +453,7 @@ class AnthropicClient(BaseLLMClient):
                             self._pending_tool_calls.append(tool_info)
 
                     tools_names = [t["name"] for t in pending_tools]
-                    log_debug_message(f"🔧 Anthropic wants more tools (manual mode): {', '.join(tools_names)}")
+                    log(f"🔧 Anthropic wants more tools (manual mode): {', '.join(tools_names)}")
 
                     return {
                         "pending_tool_calls": pending_tools,
@@ -465,12 +475,16 @@ class AnthropicClient(BaseLLMClient):
                     self._pending_messages = []
                     self._pending_tool_calls = []
 
-                    log_debug_message(f"✅ Anthropic execute_approved_tools final response - {len(final_response)} chars")
+                    log(f"✅ Anthropic execute_approved_tools final response - {len(final_response)} chars")
                     return final_response
 
         except Exception as e:
-            log_debug_message(f"Error executing approved tools: {e}")
+            log(f"Error executing approved tools: {e}")
             return f"Error executing tools: {e}"
+
+    # =========================================================================
+    # SECTION 4: HISTORY MANAGEMENT
+    # =========================================================================
 
     def clear_history(self) -> None:
         """Clear conversation history"""
@@ -500,11 +514,12 @@ class AnthropicClient(BaseLLMClient):
                 "content": content
             })
 
-    @property
-    def provider_name(self) -> str:
-        return "Anthropic"
+    # =========================================================================
+    # SECTION 5: SIMPLE COMPLETIONS (No Tools)
+    # =========================================================================
+    # These methods are for simple LLM calls without tool execution
 
-    def chat_completion(self, prompt: str, max_tokens: int = 1000) -> str:
+    def simple_completion(self, prompt: str, max_tokens: int = 1000) -> str:
         """
         Simple chat completion without tools.
         Used for summarization and other simple LLM tasks.
@@ -524,88 +539,47 @@ class AnthropicClient(BaseLLMClient):
             )
             return response.content[0].text
         except Exception as e:
-            log_debug_message(f"Anthropic chat_completion error: {e}")
+            log(f"Anthropic simple_completion error: {e}")
             raise
 
-    def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Dict[str, Any]]]:
-        """
-        Build message content with optional images for Anthropic API.
-
-        Args:
-            text: The text message
-            images: Optional list of images
-
-        Returns:
-            String (text only) or list of content blocks (with images)
-        """
-        if not images:
-            return text
-
-        content = []
-
-        # Add images first
-        for idx, img in enumerate(images):
-            log_debug_message(f"📷 Processing image {idx + 1}: keys={list(img.keys())}, mime_type={img.get('mime_type', 'N/A')}")
-            prepared = prepare_image(img)
-            log_debug_message(f"📷 Prepared image {idx + 1}: keys={list(prepared.keys())}, mime_type={prepared.get('mime_type', 'N/A')}, data_len={len(prepared.get('data', ''))}")
-            if "url" in prepared:
-                # Anthropic supports URL-based images
-                content.append({
-                    "type": "image",
-                    "source": {
-                        "type": "url",
-                        "url": prepared["url"]
-                    }
-                })
-            else:
-                # Base64 encoded image
-                content.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": prepared["mime_type"],
-                        "data": prepared["data"]
-                    }
-                })
-
-        log_debug_message(f"📷 Built content with {len(content)} image blocks + text")
-
-        # Add text last
-        content.append({
-            "type": "text",
-            "text": text
-        })
-
-        return content
-
-    def ai_cell_completion(self, prompt: str, images: Optional[List[ImageData]] = None) -> str:
+    def ai_cell_simple(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> str:
         """
         AI Cell completion - with web search but no notebook tools.
         Used for inline Q&A in AI cells. Supports image inputs.
+        Uses prompt caching for notebook context.
 
         Args:
-            prompt: The full prompt including notebook context and user question
+            notebook_context: Formatted notebook context (cacheable - Layer 2)
+            user_prompt: User's question/prompt (never cached - Layer 3)
             images: Optional list of images to analyze
 
         Returns:
             The response text from the LLM (may include web search results)
         """
         try:
-            log_debug_message(f"🤖 Anthropic AI Cell completion starting...")
+            log(f"🤖 Anthropic AI Cell completion starting...")
+            log(f"   Context: {len(notebook_context)} chars (Layer 2 - cached)")
+            log(f"   User prompt: {len(user_prompt)} chars (Layer 3 - not cached)")
             if images:
-                log_debug_message(f"📷 Including {len(images)} image(s)")
+                log(f"📷 Including {len(images)} image(s)")
 
-            # Anthropic has web search via tool - use it if enabled
+            # Anthropic has web search via tool - use it if needed based on user prompt
             tools = []
-            if self.enable_web_search:
+            if self._needs_web_search(user_prompt, user_prompt):
                 tools.append({
                     "type": "web_search_20250305",
                     "name": "web_search",
                     "max_uses": 3
                 })
+                log("🌐 Web search tool added to AI Cell request")
 
-            # Build content with optional images
-            content = self._build_content_with_images(prompt, images)
+            # Build content with proper caching layers (clean approach - no splitting)
+            content = self._build_cached_message_content(notebook_context, user_prompt, images)
 
             response = self.client.messages.create(
                 model=self.model_name,
@@ -614,22 +588,27 @@ class AnthropicClient(BaseLLMClient):
                 tools=tools if tools else None,
             )
 
+            # Log cache usage
+            self._log_cache_usage(response)
+
             # Extract text from response (may have multiple content blocks)
             result = ""
             for block in response.content:
                 if hasattr(block, 'text') and block.text:
                     result += block.text
 
-            log_debug_message(f"🤖 Anthropic AI Cell response: {len(result)} chars")
+            log(f"🤖 Anthropic AI Cell response: {len(result)} chars")
             return result
 
         except Exception as e:
-            log_debug_message(f"Anthropic ai_cell_completion error: {e}")
+            log(f"Anthropic ai_cell_simple error: {e}")
             raise
 
     # =========================================================================
-    # Unified tool execution - Abstract method implementations
+    # SECTION 6: AI CELL - Tool Execution Framework
     # =========================================================================
+    # These methods implement the unified tool execution interface for AI Cells
+    # Used for notebook inspection and code execution tools
 
     def _get_ai_cell_tools(self) -> List[Dict[str, Any]]:
         """
@@ -637,7 +616,7 @@ class AnthropicClient(BaseLLMClient):
         Uses cached tools to avoid rebuilding on each call.
         """
         if self._ai_cell_tools_cache is None:
-            self._ai_cell_tools_cache = self._build_ai_cell_tools_internal()
+            self._ai_cell_tools_cache = build_anthropic_tools(AI_CELL_TOOLS)
         return self._ai_cell_tools_cache
 
     def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
@@ -646,25 +625,46 @@ class AnthropicClient(BaseLLMClient):
             self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
         return self._ai_cell_tool_map_cache
 
-    def _prepare_ai_cell_messages(self, prompt: str, images: Optional[List[ImageData]] = None) -> List[Dict[str, Any]]:
-        """Prepare initial messages for AI Cell in Anthropic format."""
-        content = self._build_content_with_images(prompt, images)
+    def _get_web_search_tool(self) -> Optional[Dict[str, Any]]:
+        """Get Anthropic web search tool definition."""
+        if not self.enable_web_search:
+            return None
+        return {
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 3
+        }
+
+    def _prepare_ai_cell_messages(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Prepare initial messages for AI Cell in Anthropic format with proper caching.
+
+        Args:
+            notebook_context: Formatted notebook context (cacheable - Layer 2)
+            user_prompt: User's question/prompt (never cached - Layer 3)
+            images: Optional images
+        """
+        # Use the clean caching method - no splitting needed!
+        content = self._build_cached_message_content(notebook_context, user_prompt, images)
 
         # Debug: log what we're sending
-        if isinstance(content, list):
-            log_debug_message(f"📷 Sending {len(content)} content blocks to Anthropic")
-            for i, block in enumerate(content):
-                block_type = block.get("type", "unknown")
-                if block_type == "image":
-                    source_type = block.get("source", {}).get("type", "unknown")
-                    mime = block.get("source", {}).get("media_type", "N/A")
-                    data_len = len(block.get("source", {}).get("data", ""))
-                    log_debug_message(f"📷 Block {i}: type=image, source_type={source_type}, mime={mime}, data_len={data_len}")
-                else:
-                    text_preview = str(block.get("text", ""))[:50]
-                    log_debug_message(f"📷 Block {i}: type={block_type}, text_preview='{text_preview}...'")
-        else:
-            log_debug_message(f"📷 Sending text-only content (no images)")
+        log(f"📋 AI Cell messages: {len(content)} content blocks")
+        for i, block in enumerate(content):
+            block_type = block.get("type", "unknown")
+            if block_type == "image":
+                source_type = block.get("source", {}).get("type", "unknown")
+                mime = block.get("source", {}).get("media_type", "N/A")
+                data_len = len(block.get("source", {}).get("data", ""))
+                log(f"   Block {i}: type=image, source_type={source_type}, mime={mime}, data_len={data_len}")
+            else:
+                has_cache = "cache_control" in block
+                text_preview = str(block.get("text", ""))[:50]
+                log(f"   Block {i}: type={block_type}, cached={has_cache}, preview='{text_preview}...'")
 
         return [{"role": "user", "content": content}]
 
@@ -685,11 +685,11 @@ class AnthropicClient(BaseLLMClient):
         thinking_enabled = any(x in self.model_name for x in ["sonnet-4", "opus-4", "sonnet-3-7", "haiku-4"])
 
         if thinking_enabled:
-            log_debug_message(f"💭 Anthropic extended thinking enabled for {self.model_name}")
+            log(f"💭 Anthropic extended thinking enabled for {self.model_name}")
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=16000,  # Need higher limit for thinking
-                system=self.AI_CELL_SYSTEM_PROMPT,
+                system=self._get_cached_ai_cell_system_prompt(),  # Layer 1: Cached AI Cell system prompt
                 messages=messages,
                 tools=tools,
                 thinking={
@@ -698,14 +698,17 @@ class AnthropicClient(BaseLLMClient):
                 }
             )
         else:
-            log_debug_message(f"💭 Extended thinking not supported for {self.model_name}")
+            log(f"💭 Extended thinking not supported for {self.model_name}")
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
-                system=self.AI_CELL_SYSTEM_PROMPT,
+                system=self._get_cached_ai_cell_system_prompt(),  # Layer 1: Cached AI Cell system prompt
                 messages=messages,
                 tools=tools,
             )
+
+        # Log cache usage
+        self._log_cache_usage(response)
 
         # Extract text, thinking, and tool calls from response
         text = ""
@@ -719,7 +722,7 @@ class AnthropicClient(BaseLLMClient):
                 thinking += block.thinking if hasattr(block, 'thinking') else ""
                 # Store the raw block which includes signature field
                 raw_thinking_blocks.append(block)
-                log_debug_message(f"💭 Anthropic thinking block: {len(thinking)} chars")
+                log(f"💭 Anthropic thinking block: {len(thinking)} chars")
             elif hasattr(block, 'text') and block.text:
                 text += block.text
             elif block.type == "tool_use":
@@ -733,7 +736,7 @@ class AnthropicClient(BaseLLMClient):
         is_final = response.stop_reason == "end_turn"
 
         if thinking:
-            log_debug_message(f"💭 Anthropic total thinking: {len(thinking)} chars, raw blocks: {len(raw_thinking_blocks)}")
+            log(f"💭 Anthropic total thinking: {len(thinking)} chars, raw blocks: {len(raw_thinking_blocks)}")
 
         return LLMResponse(
             text=text,
@@ -756,8 +759,6 @@ class AnthropicClient(BaseLLMClient):
         - Thinking blocks MUST include the signature field (for verification)
         - We pass the raw thinking blocks which include the signature
         """
-        from .base import LLMResponse  # Import here to avoid circular import
-
         # Build assistant message content
         # Include raw thinking blocks FIRST (required by Anthropic when thinking is enabled)
         assistant_content = []
@@ -793,81 +794,265 @@ class AnthropicClient(BaseLLMClient):
 
         return messages
 
-    def _build_ai_cell_tools_internal(self) -> List[Dict[str, Any]]:
-        """Build tool schemas for AI Cell tools only (Anthropic format)."""
-        tools = []
-        for func in AI_CELL_TOOLS:
-            func_name = func.__name__
-            func_doc = func.__doc__ or ""
-            annotations = func.__annotations__
+    # =========================================================================
+    # SECTION 7: UTILITIES & HELPERS
+    # =========================================================================
 
-            # Parse docstring
-            doc_lines = func_doc.strip().split('\n')
-            description = ""
-            param_descriptions = {}
-            current_section = None
+    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Execute a tool and return the result as a string."""
+        log(f"Anthropic executing tool: {tool_name} with args: {arguments}")
 
-            for line in doc_lines:
-                line = line.strip()
-                if line.lower().startswith('args:'):
-                    current_section = 'args'
-                    continue
-                elif line.lower().startswith('returns:'):
-                    current_section = 'returns'
-                    continue
-                elif line.lower().startswith('example:'):
-                    current_section = 'example'
-                    continue
+        if tool_name not in TOOL_MAP:
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
-                if current_section is None and line:
-                    description += line + " "
-                elif current_section == 'args' and ':' in line:
-                    param_name = line.split(':')[0].strip()
-                    param_desc = ':'.join(line.split(':')[1:]).strip()
-                    param_descriptions[param_name] = param_desc
+        try:
+            result = TOOL_MAP[tool_name](**arguments)
+            return json.dumps(result)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
-            # Build parameters
-            properties = {}
-            required = []
+    def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Dict[str, Any]]]:
+        """
+        Build message content with optional images for Anthropic API.
 
-            for param_name, param_type in annotations.items():
-                if param_name == 'return':
-                    continue
+        Args:
+            text: The text message
+            images: Optional list of images
 
-                json_type = "string"
-                if param_type == int:
-                    json_type = "integer"
-                elif param_type == float:
-                    json_type = "number"
-                elif param_type == bool:
-                    json_type = "boolean"
+        Returns:
+            String (text only) or list of content blocks (with images)
+        """
+        if not images:
+            return text
 
-                properties[param_name] = {
-                    "type": json_type,
-                    "description": param_descriptions.get(param_name, f"The {param_name} parameter")
-                }
+        content = []
 
-                # Check for required params
-                defaults = func.__defaults__ or ()
-                code = func.__code__
-                num_params = code.co_argcount
-                num_defaults = len(defaults)
-                params_without_defaults = num_params - num_defaults
-                param_names = code.co_varnames[:num_params]
+        # Add images first
+        for idx, img in enumerate(images):
+            log(f"📷 Processing image {idx + 1}: keys={list(img.keys())}, mime_type={img.get('mime_type', 'N/A')}")
+            prepared = prepare_image(img)
+            log(f"📷 Prepared image {idx + 1}: keys={list(prepared.keys())}, mime_type={prepared.get('mime_type', 'N/A')}, data_len={len(prepared.get('data', ''))}")
+            if "url" in prepared:
+                # Anthropic supports URL-based images
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "url",
+                        "url": prepared["url"]
+                    }
+                })
+            else:
+                # Base64 encoded image
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": prepared["mime_type"],
+                        "data": prepared["data"]
+                    }
+                })
 
-                if param_name in param_names:
-                    param_index = list(param_names).index(param_name)
-                    if param_index < params_without_defaults:
-                        required.append(param_name)
+        log(f"📷 Built content with {len(content)} image blocks + text")
 
-            tools.append({
-                "name": func_name,
-                "description": description.strip()[:500],
-                "input_schema": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required
-                }
+        # Add text last
+        content.append({
+            "type": "text",
+            "text": text
+        })
+
+        return content
+
+    def _build_cached_message_content(
+        self,
+        notebook_context: str,
+        user_prompt: str,
+        images: Optional[List[ImageData]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Build message content with proper Layer 2 caching (clean approach).
+
+        Since we receive notebook_context and user_prompt separately (from context_manager),
+        we can apply caching without any string splitting!
+
+        Two-Layer Caching Strategy:
+        - Layer 1: System prompt (cached via _get_cached_system_prompt() - not handled here)
+        - Layer 2: Notebook context (cached here with cache_control)
+        - Layer 3: User prompt (never cached)
+
+        Args:
+            notebook_context: Formatted notebook context (cacheable)
+            user_prompt: User's question/prompt (never cached)
+            images: Optional list of images (never cached)
+
+        Returns:
+            List of content blocks with cache_control on notebook_context
+        """
+        content = []
+
+        # Add images first (if any) - these are dynamic, so no caching
+        if images:
+            for idx, img in enumerate(images):
+                prepared = prepare_image(img)
+                if "url" in prepared:
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "url",
+                            "url": prepared["url"]
+                        }
+                    })
+                else:
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": prepared["mime_type"],
+                            "data": prepared["data"]
+                        }
+                    })
+
+        # Add notebook context with cache_control if it exists and is large enough
+        # Anthropic requires minimum ~1024 tokens for caching
+        if notebook_context and len(notebook_context) >= 1024:
+            content.append({
+                "type": "text",
+                "text": notebook_context,
+                "cache_control": {"type": "ephemeral"}  # 5-minute cache (Layer 2)
+            })
+            log(f"💾 Layer 2 cache: notebook_context={len(notebook_context)} chars (cached)")
+        elif notebook_context:
+            # Context exists but too small to cache
+            content.append({
+                "type": "text",
+                "text": notebook_context
+            })
+            log(f"📝 Layer 2: notebook_context={len(notebook_context)} chars (too small to cache)")
+
+        # Add user prompt without caching (always dynamic - Layer 3)
+        content.append({
+            "type": "text",
+            "text": user_prompt
+        })
+        log(f"📝 Layer 3: user_prompt={len(user_prompt)} chars (never cached)")
+
+        return content
+
+    def _anthropic_build_cached_content(self, message: str, images: Optional[List[ImageData]] = None) -> List[Dict[str, Any]]:
+        """
+        Build message content with Layer 2 caching (notebook context).
+
+        Two-Layer Caching Strategy:
+        - Layer 1: System prompt (cached separately via _get_cached_system_prompt())
+        - Layer 2: Notebook context (cached here - semi-static, changes when cells are edited)
+        - Layer 3: User question (never cached - always dynamic)
+
+        This method handles Layer 2: separates notebook context from user question
+        and applies cache_control to the context. Combined with Layer 1, this means:
+        - First request: System prompt + context are written to cache
+        - Subsequent requests (within 5 min, same context): ~90% token cost savings
+        - When notebook changes: Only context cache is invalidated, system prompt stays cached
+
+        Uses cache_control: {"type": "ephemeral"} for 5-minute caching.
+
+        Args:
+            message: The full message (may include context + user question)
+            images: Optional list of images
+
+        Returns:
+            List of content blocks with cache_control on notebook context (Layer 2)
+        """
+        content = []
+
+        # Add images first (if any) - these are typically dynamic, so no caching
+        if images:
+            for idx, img in enumerate(images):
+                prepared = prepare_image(img)
+                if "url" in prepared:
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "url",
+                            "url": prepared["url"]
+                        }
+                    })
+                else:
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": prepared["mime_type"],
+                            "data": prepared["data"]
+                        }
+                    })
+
+        # Check if message contains notebook context (look for XML tags or context markers)
+        # Context typically starts with <notebook_context> or similar structure
+        has_context = "<notebook_context>" in message or "<cells>" in message or "=== NOTEBOOK CONTEXT ===" in message
+
+        if has_context and len(message) >= 1024:  # Min 1024 tokens for caching
+            # Split context from user question
+            # Look for common separators
+            separators = [
+                "\n\nUser question:",
+                "\n\nQuestion:",
+                "\n\n---\n\n",
+                "</notebook_context>\n\n",
+                "=== USER QUESTION ===",
+            ]
+
+            context_part = message
+            user_part = ""
+
+            for sep in separators:
+                if sep in message:
+                    parts = message.split(sep, 1)
+                    if len(parts) == 2:
+                        context_part = parts[0] + (sep if sep.startswith("</") else "")
+                        user_part = parts[1] if not sep.startswith("</") else sep.lstrip("</").split(">")[0] + ">\n\n" + parts[1]
+                        break
+
+            if user_part:
+                # Add context with cache_control
+                content.append({
+                    "type": "text",
+                    "text": context_part,
+                    "cache_control": {"type": "ephemeral"}  # 5-minute cache
+                })
+                # Add user question without caching (dynamic)
+                content.append({
+                    "type": "text",
+                    "text": user_part
+                })
+                log(f"💾 Layer 2 cache: notebook context={len(context_part)} chars, user question={len(user_part)} chars (uncached)")
+            else:
+                # Couldn't split, cache the whole message if it's large enough
+                content.append({
+                    "type": "text",
+                    "text": message,
+                    "cache_control": {"type": "ephemeral"}
+                })
+                log(f"💾 Layer 2 cache: whole message={len(message)} chars (couldn't split context/question)")
+        else:
+            # No context or too small - just add as text
+            content.append({
+                "type": "text",
+                "text": message
             })
 
-        return tools
+        return content
+
+    def _log_cache_usage(self, response) -> None:
+        """Log cache usage statistics from Anthropic response."""
+        if hasattr(response, 'usage'):
+            usage = response.usage
+            cache_creation = getattr(usage, 'cache_creation_input_tokens', 0)
+            cache_read = getattr(usage, 'cache_read_input_tokens', 0)
+            input_tokens = getattr(usage, 'input_tokens', 0)
+            output_tokens = getattr(usage, 'output_tokens', 0)
+
+            if cache_creation > 0 or cache_read > 0:
+                log(f"💾 Cache: write={cache_creation}, read={cache_read}, input={input_tokens}, output={output_tokens}")
+                if cache_read > 0:
+                    # Calculate savings (cache read = 10% of normal cost)
+                    savings_pct = (cache_read * 0.9) / max(input_tokens, 1) * 100
+                    log(f"💰 Cache savings: ~{savings_pct:.1f}% on input tokens")
