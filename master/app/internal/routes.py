@@ -219,6 +219,71 @@ async def get_all_cells(
         )
 
 
+@router.get("/notebook/{project_id}/cells/full")
+async def get_all_cells_full(
+    project_id: str,
+    x_internal_secret: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all cells with full content and outputs.
+
+    Used by LLM tools: get_notebook_overview(detail="full")
+    Returns complete cell data in a single API call.
+    """
+    project = await verify_internal_secret_and_get_project(project_id, x_internal_secret, db)
+
+    try:
+        notebook_data = await s3_client.load_notebook(project.storage_month, project_id)
+
+        if notebook_data is None:
+            return {"total_cells": 0, "cells": []}
+
+        cells = notebook_data.get("cells", [])
+
+        # Convert to tool-friendly format with full content
+        full_cells = []
+        for idx, cell in enumerate(cells, start=1):
+            source = cell.get("source", "")
+
+            # Format output text
+            output_text = None
+            if cell.get("outputs"):
+                output_parts = []
+                for output in cell.get("outputs", []):
+                    if output.get("output_type") == "stream":
+                        text = output.get("text", "")
+                        if isinstance(text, list):
+                            text = "".join(text)
+                        output_parts.append(text)
+                    elif output.get("output_type") == "execute_result":
+                        data = output.get("data", {})
+                        output_parts.append(data.get("text/plain", ""))
+                    elif output.get("output_type") == "error":
+                        output_parts.append(f"{output.get('ename')}: {output.get('evalue')}")
+                output_text = "\n".join(output_parts) if output_parts else None
+
+            full_cells.append({
+                "cell_number": idx,
+                "id": get_cell_id(cell) or f"cell-{idx}",
+                "type": get_cell_type(cell),
+                "content": source,
+                "output": output_text,
+                "execution_count": cell.get("execution_count"),
+            })
+
+        return {
+            "total_cells": len(cells),
+            "cells": full_cells,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
 @router.post("/notebook/{project_id}/cell/{position}")
 async def insert_cell(
     project_id: str,
