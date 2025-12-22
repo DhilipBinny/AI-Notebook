@@ -82,6 +82,13 @@ services:
       # Ollama Configuration
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3-coder:30b}
+
+      # OpenRouter Configuration
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_OPENAI_URL: ${OPENROUTER_OPENAI_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_OPENAI_MODEL: ${OPENROUTER_OPENAI_MODEL:-openai/gpt-4o}
+      USE_OPENROUTER: ${USE_OPENROUTER:-false}
+      OPENROUTER_MAX_TOKENS: ${OPENROUTER_MAX_TOKENS:-4000}
       # Playground
       PLAYGROUND_IMAGE: ${PLAYGROUND_IMAGE:-ainotebook-playground:latest}
       PLAYGROUND_NETWORK: ${PLAYGROUND_NETWORK:-ainotebook-network}

@@ -334,28 +334,28 @@ class BaseLLMClient(ABC):
             return False
 
         prompt = f"""You are a Router for a Jupyter Notebook AI Assistant.
-Your specific job is to decide: Does this user query require LIVE EXTERNAL WEB SEARCH?
+                Your specific job is to decide: Does this user query require LIVE EXTERNAL WEB SEARCH?
 
-CONTEXT:
-- The Assistant has direct access to the notebook code, cells, and runtime variables.
-- It can inspect dataframes, list variables, and read errors internally.
-- It can write and debug code using its own internal knowledge.
+                CONTEXT:
+                - The Assistant has direct access to the notebook code, cells, and runtime variables.
+                - It can inspect dataframes, list variables, and read errors internally.
+                - It can write and debug code using its own internal knowledge.
 
-RULES - RETURN "NO" (Do NOT Search) for:
-- Questions about "my code", "this cell", "my data", "variable x".
-- Requests to write, fix, or debug Python code (unless asking for external docs).
-- Questions about the notebook structure ("how many cells?").
-- "What is the value of...", "Show me the dataframe...".
+                RULES - RETURN "NO" (Do NOT Search) for:
+                - Questions about "my code", "this cell", "my data", "variable x".
+                - Requests to write, fix, or debug Python code (unless asking for external docs).
+                - Questions about the notebook structure ("how many cells?").
+                - "What is the value of...", "Show me the dataframe...".
 
-RULES - RETURN "YES" (MUST Search) for:
-- Explicit requests ("google this", "search for").
-- Real-time data ("weather", "stock price", "current date").
-- Up-to-date API documentation or library reference ("latest pandas docs").
-- Facts outside the notebook ("who is the CEO of...", "release date of...").
+                RULES - RETURN "YES" (MUST Search) for:
+                - Explicit requests ("google this", "search for").
+                - Real-time data ("weather", "stock price", "current date").
+                - Up-to-date API documentation or library reference ("latest pandas docs").
+                - Facts outside the notebook ("who is the CEO of...", "release date of...").
 
-User Query: "{user_query}"
+                User Query: "{user_query}"
 
-Reply with exactly one word: YES or NO."""
+                Reply with exactly one word: YES or NO."""
 
         try:
             # Use simple_completion for a fast, low-token response
@@ -403,6 +403,42 @@ Reply with exactly one word: YES or NO."""
                 self._on_progress(event_type, data)
             except Exception as e:
                 log(f"Progress callback error: {e}")
+
+    # =========================================================================
+    # Token Counting (override in subclass for provider-specific counting)
+    # =========================================================================
+
+    def count_tokens(self, text: str) -> int:
+        """
+        Count tokens in text. Override for provider-specific counting.
+
+        Default implementation uses tiktoken with cl100k_base encoding.
+        Subclasses can override to use native APIs:
+        - Anthropic: client.messages.count_tokens()
+        - Gemini: client.models.count_tokens()
+
+        Args:
+            text: The text to count tokens for
+
+        Returns:
+            Token count, or 0 if counting fails
+        """
+        try:
+            import tiktoken
+            model_name = getattr(self, 'model_name', None)
+            if model_name:
+                # Extract model from provider format (e.g., "openai/gpt-4o" -> "gpt-4o")
+                if "/" in model_name:
+                    model_name = model_name.split("/")[-1]
+                try:
+                    encoding = tiktoken.encoding_for_model(model_name)
+                except KeyError:
+                    encoding = tiktoken.get_encoding("cl100k_base")
+            else:
+                encoding = tiktoken.get_encoding("cl100k_base")
+            return len(encoding.encode(text))
+        except Exception:
+            return 0
 
     # =========================================================================
     # Abstract methods that providers MUST implement
@@ -471,10 +507,12 @@ Reply with exactly one word: YES or NO."""
 
     @property
     def provider_name(self) -> str:
-        """Return the name of the LLM provider (derived from class name)"""
-        # GeminiClient -> Gemini, AnthropicClient -> Anthropic, etc.
-        name = self.__class__.__name__
-        return name.replace("Client", "")
+        """Return the name of the LLM provider from adapter."""
+        # Delegate to adapter - single source of truth for provider name
+        if hasattr(self, 'adapter') and self.adapter:
+            return self.adapter.provider_name
+        # Fallback: derive from class name (e.g., GeminiClient -> Gemini)
+        return self.__class__.__name__.replace("Client", "")
 
     @abstractmethod
     def simple_completion(self, prompt: str, max_tokens: int = 1000) -> str:
@@ -604,6 +642,392 @@ Reply with exactly one word: YES or NO."""
         return None
 
     # =========================================================================
+    # Abstract method for Chat Panel API calls
+    # =========================================================================
+
+    def _call_chat_api(self, messages: Any, tools: Any) -> Any:
+        """
+        Make a Chat Panel API call to the LLM provider.
+
+        This must be implemented by each provider. Returns the raw API response
+        which will be parsed using self.adapter.from_response().
+
+        Args:
+            messages: Provider-specific message format
+            tools: Provider-specific tool definitions
+
+        Returns:
+            Raw API response object
+        """
+        raise NotImplementedError("Subclasses must implement _call_chat_api")
+
+    def _log_cache_usage(self, response: Any) -> None:
+        """
+        Log cache usage from API response via adapter.
+        Adapter handles provider-specific cache stats extraction.
+        """
+        if hasattr(self, 'adapter') and self.adapter:
+            # Pass model_name for providers that need it (Gemini, OpenAI)
+            model = getattr(self, 'model_name', '')
+            if hasattr(self.adapter, 'log_cache_usage'):
+                try:
+                    # Some adapters need model_name, some don't
+                    import inspect
+                    sig = inspect.signature(self.adapter.log_cache_usage)
+                    if 'model_name' in sig.parameters:
+                        self.adapter.log_cache_usage(response, model)
+                    else:
+                        self.adapter.log_cache_usage(response)
+                except Exception:
+                    pass
+
+    # =========================================================================
+    # Consolidated Chat Panel Tool Execution (shared implementation)
+    # =========================================================================
+    # These methods provide unified tool execution for Anthropic, OpenAI, Ollama.
+    # Gemini uses chat sessions differently and may override these.
+
+    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any], tool_map: Dict[str, Callable]) -> str:
+        """
+        Execute a single tool and return the result as JSON string.
+
+        Args:
+            tool_name: Name of the tool to execute
+            arguments: Arguments to pass to the tool
+            tool_map: Mapping of tool names to callable functions
+
+        Returns:
+            JSON string result
+        """
+        log(f"{self.provider_name} executing tool: {tool_name} with args: {arguments}")
+
+        if tool_name not in tool_map:
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+        try:
+            result = tool_map[tool_name](**arguments)
+            return json.dumps(result)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _chat_auto_execute_tools(
+        self,
+        messages: Any,
+        tools: Any,
+        tool_map: Dict[str, Callable]
+    ) -> str:
+        """
+        Consolidated auto tool execution loop for chat panel.
+
+        Executes tools automatically until we get a final response.
+        Uses adapter for response parsing and tool result formatting.
+
+        Args:
+            messages: Provider-specific message format
+            tools: Provider-specific tool definitions
+            tool_map: Mapping of tool names to callable functions
+
+        Returns:
+            Final response text
+        """
+        from backend.llm_adapters.canonical import CanonicalToolResult
+
+        iteration = 0
+        self._emit_progress("thinking", {"message": "Processing your request..."})
+
+        while iteration < MAX_TOOL_ITERATIONS:
+            iteration += 1
+            log(f"🔄 {self.provider_name} iteration {iteration}/{MAX_TOOL_ITERATIONS}")
+
+            self._emit_progress("thinking", {"message": "Waiting for AI response..."})
+
+            # Provider-specific API call
+            raw_response = self._call_chat_api(messages, tools)
+
+            # Log cache usage if applicable
+            self._log_cache_usage(raw_response)
+
+            # Parse response using adapter
+            response = self.adapter.from_response(raw_response)
+
+            if response.tool_calls:
+                # Build tool results
+                tool_results = []
+                for tc in response.tool_calls:
+                    log(f"🔧 {self.provider_name} calling tool: {tc.name}")
+                    self._emit_progress("tool_call", {"name": tc.name, "args": tc.arguments})
+                    result_str = self._execute_tool(tc.name, tc.arguments, tool_map)
+                    self._emit_progress("tool_result", {"name": tc.name, "result": result_str[:200] if result_str else ""})
+                    tool_results.append(CanonicalToolResult(
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                        result=result_str,
+                        is_error="error" in result_str.lower()
+                    ))
+
+                # Add tool results to messages using adapter
+                messages = self.adapter.add_tool_results(messages, response, tool_results)
+            else:
+                # Final response
+                final_response = response.text or ""
+                self.history.append({
+                    "role": "assistant",
+                    "content": final_response
+                })
+                log(f"✅ {self.provider_name} response received - {len(final_response)} chars")
+                return final_response
+
+        log(f"❌ {self.provider_name} max iterations reached")
+        return "Error: Maximum tool calling iterations reached"
+
+    def _chat_get_pending_tools(
+        self,
+        messages: Any,
+        tools: Any
+    ) -> Union[str, Dict[str, Any]]:
+        """
+        Consolidated pending tools getter for chat panel (manual mode).
+
+        Gets pending tool calls without executing them.
+        Uses adapter for response parsing.
+
+        Args:
+            messages: Provider-specific message format
+            tools: Provider-specific tool definitions
+
+        Returns:
+            str: Final response text if no tools needed
+            dict: {"pending_tool_calls": [...], "response_text": "..."} if tools pending
+        """
+        import copy
+
+        self._emit_progress("thinking", {"message": "Processing your request..."})
+        self._emit_progress("thinking", {"message": "Waiting for AI response..."})
+
+        # Provider-specific API call
+        raw_response = self._call_chat_api(messages, tools)
+
+        self._emit_progress("thinking", {"message": "Processing response..."})
+
+        # Log cache usage if applicable
+        self._log_cache_usage(raw_response)
+
+        # Parse response using adapter
+        response = self.adapter.from_response(raw_response)
+
+        if response.tool_calls:
+            # Store state for later execution
+            self._pending_messages = copy.deepcopy(messages)
+            self._pending_response = response  # Store parsed response for later
+
+            # Build pending tools list for UI
+            pending_tools = []
+            for tc in response.tool_calls:
+                pending_tools.append({
+                    "id": tc.id,
+                    "name": tc.name,
+                    "arguments": tc.arguments
+                })
+
+            # Add assistant message with tool calls to pending messages
+            # (Using adapter to build the message)
+            self._pending_messages = self.adapter.add_tool_results(
+                self._pending_messages,
+                response,
+                []  # No results yet - just adding assistant message
+            )
+            # Remove the empty user message that add_tool_results adds
+            if self._pending_messages and self._pending_messages[-1].get("role") == "user":
+                self._pending_messages.pop()
+
+            tools_names = [t["name"] for t in pending_tools]
+            log(f"🔧 {self.provider_name} pending tools: {', '.join(tools_names)}")
+
+            return {
+                "pending_tool_calls": pending_tools,
+                "response_text": response.text or ""
+            }
+        else:
+            # No tools needed
+            final_response = response.text or ""
+            self.history.append({
+                "role": "assistant",
+                "content": final_response
+            })
+            log(f"✅ {self.provider_name} response (no tools) - {len(final_response)} chars")
+            return final_response
+
+    def _chat_execute_approved_tools(
+        self,
+        approved_tool_calls: List[Dict[str, Any]],
+        tool_map: Dict[str, Callable],
+        tools: Any
+    ) -> Union[str, Dict[str, Any]]:
+        """
+        Consolidated approved tools executor for chat panel.
+
+        Execute approved tool calls and get the response.
+        In manual mode, returns pending tools if more are needed.
+
+        Args:
+            approved_tool_calls: List of approved tools to execute
+            tool_map: Mapping of tool names to callable functions
+            tools: Provider-specific tool definitions (for subsequent calls)
+
+        Returns:
+            str: Final response text if no more tools needed
+            dict: {"pending_tool_calls": [...], "response_text": "..."} if more tools needed
+        """
+        import copy
+        from backend.llm_adapters.canonical import CanonicalToolResult
+
+        if not hasattr(self, '_pending_messages') or not self._pending_messages:
+            return "Error: No pending tool calls to execute"
+
+        messages = copy.deepcopy(self._pending_messages)
+
+        # Execute approved tools and collect results
+        tool_results = []
+        for tool_call in approved_tool_calls:
+            tool_id = tool_call.get("id", "")
+            tool_name = tool_call["name"]
+            tool_args = tool_call.get("arguments", {})
+
+            result_str = self._execute_tool(tool_name, tool_args, tool_map)
+            tool_results.append(CanonicalToolResult(
+                tool_call_id=tool_id,
+                name=tool_name,
+                result=result_str,
+                is_error="error" in result_str.lower()
+            ))
+
+        # Add tool results to messages
+        # We need the response to include tool calls - use stored pending response
+        if hasattr(self, '_pending_response') and self._pending_response:
+            messages = self.adapter.add_tool_results(messages, self._pending_response, tool_results)
+        else:
+            # Fallback: build a minimal response with just the tool call info
+            from backend.llm_adapters.canonical import CanonicalToolCall, CanonicalResponse
+            minimal_response = CanonicalResponse(
+                tool_calls=[
+                    CanonicalToolCall(id=tc["id"], name=tc["name"], arguments=tc.get("arguments", {}))
+                    for tc in approved_tool_calls
+                ]
+            )
+            messages = self.adapter.add_tool_results(messages, minimal_response, tool_results)
+
+        # Check if auto mode or manual mode
+        if self.auto_function_calling:
+            # Auto mode: loop until final response
+            final_response = self._chat_auto_execute_tools(messages, tools, tool_map)
+            self._pending_messages = []
+            self._pending_response = None
+            return final_response
+        else:
+            # Manual mode: make ONE call and check if more tools are needed
+            raw_response = self._call_chat_api(messages, tools)
+            self._log_cache_usage(raw_response)
+            response = self.adapter.from_response(raw_response)
+
+            if response.tool_calls:
+                # Model wants more tools - return them for approval
+                import copy
+                self._pending_messages = copy.deepcopy(messages)
+                self._pending_response = response
+
+                pending_tools = []
+                for tc in response.tool_calls:
+                    pending_tools.append({
+                        "id": tc.id,
+                        "name": tc.name,
+                        "arguments": tc.arguments
+                    })
+
+                tools_names = [t["name"] for t in pending_tools]
+                log(f"🔧 {self.provider_name} wants more tools (manual mode): {', '.join(tools_names)}")
+
+                return {
+                    "pending_tool_calls": pending_tools,
+                    "response_text": response.text or ""
+                }
+            else:
+                # Final response - no more tools
+                final_response = response.text or ""
+
+                self.history.append({
+                    "role": "assistant",
+                    "content": final_response
+                })
+
+                # Clear pending state
+                self._pending_messages = []
+                self._pending_response = None
+
+                log(f"✅ {self.provider_name} execute_approved_tools final response - {len(final_response)} chars")
+                return final_response
+
+    def _append_nudge_to_messages(self, messages: Any, text: str) -> None:
+        """
+        Appends a user message to nudge the LLM after an empty response.
+
+        This is critical for retries - sending the exact same messages will likely
+        produce the exact same (empty) response. Adding a nudge changes the context,
+        forcing the LLM to generate a new path.
+
+        Handles different message formats:
+        - Gemini: google.genai.types.Content objects with 'parts'
+        - Anthropic: Dict with content as list of blocks [{"type": "text", "text": "..."}]
+        - OpenAI/Ollama: Dict with content as string
+
+        Args:
+            messages: The message list (mutated in place)
+            text: The nudge text to append
+        """
+        if not messages:
+            return
+
+        # Check if it's Gemini format (Content objects with 'parts' attribute)
+        if hasattr(messages[0], 'parts'):
+            try:
+                from google.genai import types
+                messages.append(types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=text)]
+                ))
+                log(f"📌 Appended nudge (Gemini format): {text[:50]}...")
+            except ImportError:
+                log("⚠️ Could not import google.genai for nudge")
+
+        # Dict format - need to detect Anthropic vs OpenAI/Ollama
+        elif isinstance(messages[0], dict):
+            # Check if this looks like Anthropic format (content is a list of blocks)
+            # by examining the most recent user message's content
+            is_anthropic_format = False
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content")
+                    # Anthropic uses list of dicts with "type" key
+                    if isinstance(content, list) and len(content) > 0:
+                        if isinstance(content[0], dict) and "type" in content[0]:
+                            is_anthropic_format = True
+                    break
+
+            if is_anthropic_format:
+                # Anthropic format: content is list of blocks
+                messages.append({
+                    "role": "user",
+                    "content": [{"type": "text", "text": text}]
+                })
+                log(f"📌 Appended nudge (Anthropic format): {text[:50]}...")
+            else:
+                # OpenAI/Ollama format: content is string
+                messages.append({"role": "user", "content": text})
+                log(f"📌 Appended nudge (OpenAI/Ollama format): {text[:50]}...")
+
+        else:
+            log(f"⚠️ Unknown message format, cannot append nudge: {type(messages[0])}")
+
+    # =========================================================================
     # Unified AI Cell tool execution loop (shared implementation)
     # =========================================================================
 
@@ -640,9 +1064,24 @@ Reply with exactly one word: YES or NO."""
             if max_iterations is None:
                 max_iterations = MAX_TOOL_ITERATIONS
 
-            log(f"🤖 {self.provider_name} AI Cell with tools starting...")
-            if images:
-                log(f"📷 Including {len(images)} image(s)")
+            # Log AI Cell request with token count using self.count_tokens()
+            from backend.utils.util_func import log_ai_cell
+            full_text = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
+            input_tokens = self.count_tokens(full_text)
+
+            mode = "auto" if self.auto_function_calling else "manual"
+            max_tok = getattr(self, 'max_tokens', None)
+            log_ai_cell(
+                provider=self.provider_name,
+                model=self.model_name,
+                mode=mode,
+                context_chars=len(notebook_context) if notebook_context else 0,
+                prompt_chars=len(user_prompt) if user_prompt else 0,
+                images=len(images) if images else 0,
+                web_search=getattr(self, 'enable_web_search', False),
+                max_tokens=max_tok,
+                input_tokens=input_tokens
+            )
 
             # Get provider-specific tools and tool map
             tools = self._get_ai_cell_tools()
@@ -664,6 +1103,8 @@ Reply with exactly one word: YES or NO."""
 
             # Accumulate thinking across all iterations
             accumulated_thinking = ""
+            empty_response_count = 0  # Track consecutive empty responses
+            MAX_EMPTY_RETRIES = 2  # Allow up to 2 retries on empty response
 
             for iteration in range(max_iterations):
                 # ✅ CANCELLATION CHECK - before each iteration
@@ -674,6 +1115,36 @@ Reply with exactly one word: YES or NO."""
 
                 # Call LLM (provider-specific)
                 response = self._call_llm_for_ai_cell(messages, tools)
+
+                # --- Guard against stalled loops (empty responses) ---
+                if not response.text and not response.tool_calls and not response.thinking:
+                    empty_response_count += 1
+                    log(f"⚠️ LLM returned empty response ({empty_response_count}/{MAX_EMPTY_RETRIES})")
+
+                    if empty_response_count >= MAX_EMPTY_RETRIES:
+                        # Give up after max retries
+                        log("❌ Max empty response retries reached. Giving up.")
+                        return {
+                            "response": "I couldn't generate a response. The model returned empty content (possibly due to content filtering). Please try rephrasing your question.",
+                            "steps": [s.to_dict() for s in steps],
+                            "error": "empty_response"
+                        }
+
+                    # ✅ THE FIX: Nudge the LLM to force a different response path
+                    # Without this, retrying the same request would likely produce the same empty result
+                    nudge_text = (
+                        "Your previous response was empty or filtered. "
+                        "Please provide a valid response with either text content, "
+                        "a tool call, or your reasoning. Try a different approach if needed."
+                    )
+                    self._append_nudge_to_messages(messages, nudge_text)
+
+                    log("🔄 Retrying with nudge injection...")
+                    self._emit_progress("retry", {"reason": "empty_response", "attempt": empty_response_count})
+                    continue  # Next iteration will use the nudged messages
+
+                # Reset empty count on successful response
+                empty_response_count = 0
 
                 # Emit thinking if present and accumulate it
                 if response.thinking:

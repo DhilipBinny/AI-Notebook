@@ -423,6 +423,7 @@ NOTEBOOK CONTEXT:
         - type="md" instead of type="markdown" (saves 6 chars)
         - Content directly inside tags (no nested <preview>)
         - Attributes for metadata instead of nested tags
+        - Raw content (no escaping) - LLMs read text, don't parse XML
 
         XML format is recommended for Claude (specifically trained on XML tags).
         """
@@ -430,35 +431,35 @@ NOTEBOOK CONTEXT:
 
         parts.append(f'<notebook cells="{structured.total_cells}">')
 
-        # Variables section - compact format
+        # Variables section - compact format (raw content)
         if structured.variables:
             vars_list = [f"{k}={v}" for k, v in list(structured.variables.items())[:10]]
             vars_str = ", ".join(vars_list)
             if len(structured.variables) > 10:
                 vars_str += f" (+{len(structured.variables) - 10} more)"
-            parts.append(f'<vars>{self._escape_xml(vars_str)}</vars>')
+            parts.append(f'<vars>{vars_str}</vars>')
 
-        # Imports section - compact inline
+        # Imports section - compact inline (raw content)
         if structured.imports:
             imports_str = ", ".join(sorted(structured.imports)[:12])
             if len(structured.imports) > 12:
                 imports_str += f" (+{len(structured.imports) - 12} more)"
-            parts.append(f'<imports>{self._escape_xml(imports_str)}</imports>')
+            parts.append(f'<imports>{imports_str}</imports>')
 
-        # Errors section (critical - always show)
+        # Errors section (critical - always show, raw content)
         if structured.recent_errors:
             for err in structured.recent_errors[-3:]:
-                parts.append(f'<err cell="{self._escape_xml(err["cell_id"])}">{self._escape_xml(err["error"])}</err>')
+                parts.append(f'<err cell="{err["cell_id"]}">{err["error"]}</err>')
 
-        # Cells section - optimized format
+        # Cells section - optimized format (raw content)
         for cell in structured.cells:
             # Short type names: code->code, markdown->md, ai->ai
             cell_type = "md" if cell["type"] == "markdown" else cell["type"]
             cell_id = cell["cell_id"]
-            preview = self._escape_xml(cell["preview"][:50])
+            preview = cell["preview"][:50]
 
             # Build attributes string
-            attrs = f'id="{self._escape_xml(cell_id)}" type="{cell_type}"'
+            attrs = f'id="{cell_id}" type="{cell_type}"'
 
             # Add output indicator as attribute if present
             if cell["has_error"]:
@@ -471,7 +472,7 @@ NOTEBOOK CONTEXT:
             # For AI cells, include prompt preview in content
             if cell["type"] == "ai":
                 ai_prompt = cell.get("ai_prompt", "")
-                content = self._escape_xml(ai_prompt[:60]) if ai_prompt else preview
+                content = ai_prompt[:60] if ai_prompt else preview
                 parts.append(f'<c {attrs}>{content}</c>')
             else:
                 parts.append(f'<c {attrs}>{preview}</c>')
@@ -482,7 +483,7 @@ NOTEBOOK CONTEXT:
         return '\n'.join(parts)
 
     def _escape_xml(self, text: str) -> str:
-        """Escape special XML characters"""
+        """Escape special XML characters for attributes and short text"""
         if not text:
             return ""
         text = str(text)
@@ -492,6 +493,19 @@ NOTEBOOK CONTEXT:
         text = text.replace('"', '&quot;')
         text = text.replace("'", '&apos;')
         return text
+
+    def _raw_content(self, text: str) -> str:
+        """
+        Return raw content for LLM context (no escaping).
+
+        LLMs don't parse XML - they read text. So we:
+        - Keep structural tags for semantic meaning
+        - Don't escape content (LLM sees clean code)
+        - Accept "invalid XML" since LLM doesn't validate
+
+        This gives the best readability for LLM comprehension.
+        """
+        return text if text else ""
 
     def _format_json_context(self, structured: StructuredContext) -> str:
         """
@@ -698,7 +712,7 @@ NOTEBOOK CONTEXT:
         parts.append(f'<notebook pos="{ai_cell_index + 1}/{total}">')
 
         def format_cell_xml(cell: Dict) -> List[str]:
-            """Format a single cell for XML output"""
+            """Format a single cell for XML output with raw content (no escaping)"""
             cell_parts = []
             cell_type = "md" if cell["type"] == "markdown" else cell["type"]
             near_attr = ' near="1"' if cell["is_immediate"] else ''
@@ -708,12 +722,14 @@ NOTEBOOK CONTEXT:
             if cell["type"] == "ai":
                 ai_prompt = cell.get("ai_prompt", "")
                 resp_attr = ' resp="1"' if cell.get("has_response") else ''
-                cell_parts.append(f'<cell id="{self._escape_xml(cell["id"])}" type="{cell_type}"{near_attr}{resp_attr}>')
+                cell_parts.append(f'<cell id="{cell["id"]}" type="{cell_type}"{near_attr}{resp_attr}>')
                 if ai_prompt:
-                    cell_parts.append(f'<q>{self._escape_xml(ai_prompt)}</q>')
+                    # Raw content - LLM reads text, doesn't parse XML
+                    cell_parts.append(f'<q>{self._raw_content(ai_prompt)}</q>')
             else:
-                cell_parts.append(f'<cell id="{self._escape_xml(cell["id"])}" type="{cell_type}"{near_attr}{out_attr}>')
-                cell_parts.append(f'<src>{self._escape_xml(cell["content"])}</src>')
+                cell_parts.append(f'<cell id="{cell["id"]}" type="{cell_type}"{near_attr}{out_attr}>')
+                # Raw content - clean code for LLM comprehension
+                cell_parts.append(f'<src>{self._raw_content(cell["content"])}</src>')
 
             cell_parts.append('</cell>')
             return cell_parts

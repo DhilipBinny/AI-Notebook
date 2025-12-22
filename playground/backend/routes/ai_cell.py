@@ -20,11 +20,8 @@ from backend.models import (
     AICellCancelResponse,
 )
 from backend.context_manager import ContextManager, ContextFormat
-from backend.session_manager import (
-    get_session_manager,
-    set_current_session,
-)
-from backend.utils.util_func import log, log_request, log_ai_cell
+from backend.session_manager import set_current_session
+from backend.utils.util_func import log, log_request
 from backend.utils.sse_utils import format_sse_event, format_progress_event
 
 router = APIRouter(prefix="/ai-cell", tags=["ai-cell"])
@@ -94,9 +91,8 @@ async def run_ai_cell(
             notebook_context = formatted_ctx.notebook_context
             user_prompt = formatted_ctx.user_prompt
 
-            # Log the full context being sent to LLM
+            # Log the full context being sent to LLM (detailed log_ai_cell is called in base.py)
             total_cells = len(request.context or []) + 1
-            log_ai_cell(provider, ai_cell_index + 1, total_cells)
             log_request(
                 source="AI_CELL",
                 provider=provider,
@@ -115,15 +111,10 @@ async def run_ai_cell(
                     for img in request.images if img.data
                 ] or None
 
-            # Set up session for AI cell tools to access main kernel
-            try:
-                session = get_session_manager().get_or_create_session(session_id)
-                set_current_session(session_id)
-                log(f"Session ready: {session_id}, kernel_alive: {session.kernel.is_alive()}")
-            except RuntimeError as e:
-                log(f"AI Cell session error: {e}")
-                yield format_sse_event("error", {"error": str(e)})
-                return
+            # LAZY KERNEL: Only set session ID - kernel created on-demand by tools
+            # This allows parallel LLM requests (queries without code execution run immediately)
+            set_current_session(session_id)
+            log(f"Session ID set: {session_id} (kernel will be created lazily if needed)")
 
             if streaming_enabled:
                 # === STREAMING MODE: Send real-time progress events ===

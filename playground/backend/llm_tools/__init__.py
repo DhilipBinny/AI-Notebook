@@ -48,10 +48,6 @@ from backend.llm_tools.tool_kernel_utils import (
     runtime_get_last_error,
     runtime_get_dataframe
 )
-from backend.llm_tools.tool_web import (
-    fetch_url_as_markdown,
-    get_library_docs
-)
 
 # List of all tool functions to pass to LLM (Chat Panel - full access)
 TOOL_FUNCTIONS = [
@@ -99,10 +95,6 @@ TOOL_FUNCTIONS = [
     sandbox_reset,
     sandbox_sync_from_main,
     sandbox_status,
-
-    # Web tools (documentation & URL fetching)
-    fetch_url_as_markdown,
-    get_library_docs
 ]
 
 # AI Cell tools - subset for inline AI cell (read-only + sandbox)

@@ -16,27 +16,23 @@ SECTIONS:
 """
 
 import json
-import copy
 from typing import List, Dict, Any, Optional, Union, Callable
 from openai import OpenAI
 
-from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult, MAX_TOOL_ITERATIONS
-from backend.llm_clients.tool_schemas import build_openai_tools
+from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult
+from backend.llm_adapters.tool_schemas import build_openai_tools
 from backend.utils.util_func import log
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
+
+# Import the adapter for gradual migration
+from backend.llm_adapters import OpenAIAdapter, CanonicalToolResult, CanonicalResponse
 
 
 # =============================================================================
 # SECTION 1: MODULE-LEVEL SETUP
 # =============================================================================
 # Constants, tool definitions, and module-level helpers
-
-# Web search tool for OpenAI
-WEB_SEARCH_TOOL = {
-    "type": "web_search_preview",
-    "search_context_size": "medium"  # Options: "low", "medium", "high"
-}
 
 
 def _safe_json_loads(json_str: str, default: Dict = None) -> Dict[str, Any]:
@@ -61,7 +57,7 @@ class OpenAIClient(BaseLLMClient):
     # SECTION 2: INITIALIZATION & CONFIGURATION
     # =========================================================================
 
-    def __init__(self, api_key: str, model_name: str = None, auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
+    def __init__(self, api_key: str, model_name: str = None, auto_function_calling: Optional[bool] = None, enable_web_search: bool = True, max_tokens: int = None):
         """
         Initialize OpenAI client.
 
@@ -70,25 +66,25 @@ class OpenAIClient(BaseLLMClient):
             model_name: Model to use (default: gpt-4o)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
             enable_web_search: Enable web search tool for real-time web info (default: True)
+            max_tokens: Max tokens for responses (default: 4096)
         """
         super().__init__()  # Initialize base class (cancellation support)
 
         self.client = OpenAI(api_key=api_key)
         self.model_name = model_name or cfg.OPENAI_MODEL
         self.enable_web_search = enable_web_search
+        self.max_tokens = max_tokens  # None = use model default
+
+        # Initialize the adapter for format translation
+        self.adapter = OpenAIAdapter()
 
         # Build base tools list (without web search - added dynamically per request)
         self.tools = build_openai_tools(TOOL_FUNCTIONS)
-
-        log(f"OpenAI web search: {'enabled' if enable_web_search else 'disabled'} (added dynamically when needed)")
 
         self.history: List[Dict[str, Any]] = []
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
-        log(f"OpenAI client initialized")
-        log(f"Config: tool_mode={cfg.TOOL_EXECUTION_MODE}, auto_func={self.auto_function_calling} (request may override)")
-        log(f"Web search enabled: {self.enable_web_search}")
 
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
@@ -97,6 +93,14 @@ class OpenAIClient(BaseLLMClient):
         # Cache AI Cell tools (built once)
         self._ai_cell_tools_cache: Optional[List[Dict[str, Any]]] = None
         self._ai_cell_tool_map_cache: Optional[Dict[str, Callable]] = None
+
+        log(f"{self._provider_display_name} client initialized: {self.model_name}")
+        log(f"Config: tool_mode={cfg.TOOL_EXECUTION_MODE}, auto_func={self.auto_function_calling}, max_tokens={self.max_tokens}")
+
+    @property
+    def _provider_display_name(self) -> str:
+        """Get display name for logging. Override in subclasses if needed."""
+        return self.adapter.provider_name
 
     def _get_tools_for_request(self, message: str, user_message: str = None) -> List[Dict[str, Any]]:
         """
@@ -113,10 +117,31 @@ class OpenAIClient(BaseLLMClient):
 
         # Add web search tool only if keywords suggest it's needed
         if self._needs_web_search(message, user_message):
-            tools.append(WEB_SEARCH_TOOL)
+            tools.append(self.adapter.get_web_search_tool())
             log("🌐 Web search tool added to this request")
 
         return tools
+
+    def _call_chat_api(self, messages: Any, tools: Any) -> Any:
+        """
+        Make OpenAI Chat API call. Used by base class consolidated methods.
+
+        Args:
+            messages: OpenAI message format
+            tools: OpenAI tool definitions
+
+        Returns:
+            Raw OpenAI API response
+        """
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        if self.max_tokens:
+            kwargs["max_tokens"] = self.max_tokens
+        return self.client.chat.completions.create(**kwargs)
 
     # =========================================================================
     # SECTION 3: CHAT PANEL - Main Conversation Interface
@@ -130,7 +155,7 @@ class OpenAIClient(BaseLLMClient):
         images: Optional[List[ImageData]] = None
     ) -> Union[str, Dict[str, Any]]:
         """
-        Send a message to OpenAI.
+        Send a message to the LLM.
 
         Args:
             notebook_context: Formatted notebook context
@@ -141,194 +166,53 @@ class OpenAIClient(BaseLLMClient):
             str: Final response text (if auto mode or no tools needed)
             dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
+        provider = self._provider_display_name
         try:
-            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log(f"📨 OpenAI chat_panel_send()")
-            log(f"   Context: {len(notebook_context)} chars")
-            log(f"   User prompt: {len(user_prompt)} chars")
-            if images:
-                log(f"   Images: {len(images)} attached")
-            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            from backend.utils.util_func import log_chat
 
-            # Combine context and user_prompt for OpenAI
-            if notebook_context:
-                message = f"{notebook_context}\n\n{user_prompt}"
-            else:
-                message = user_prompt
+            mode = "auto" if self.auto_function_calling else "manual"
+
+            # Count tokens using self.count_tokens() (inherited from base class)
+            full_text = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
+            input_tokens = self.count_tokens(full_text)
+
+            log_chat(
+                provider=provider,
+                model=self.model_name,
+                mode=mode,
+                context_chars=len(notebook_context),
+                prompt_chars=len(user_prompt),
+                images=len(images) if images else 0,
+                web_search=self.enable_web_search,
+                max_tokens=self.max_tokens,
+                input_tokens=input_tokens
+            )
+
+            # Combine context and user_prompt
+            message = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
 
             # Build content with optional images
             content = self._build_content_with_images(message, images)
 
             # Add user message to history
-            self.history.append({
-                "role": "user",
-                "content": content
-            })
+            self.history.append({"role": "user", "content": content})
 
             # Build messages with system prompt
-            messages = [
-                {"role": "system", "content": self.SYSTEM_PROMPT}
-            ] + self.history
+            messages = [{"role": "system", "content": self.SYSTEM_PROMPT}] + self.history
 
             # Get tools for this request (conditionally includes web search)
             request_tools = self._get_tools_for_request(message, user_prompt)
 
             if self.auto_function_calling:
-                # Auto mode: loop until final response
-                log(f"🤖 OpenAI AUTO mode - executing tools automatically")
-                return self._auto_execute_tools(messages, request_tools)
+                log(f"🤖 {provider} AUTO mode - executing tools automatically")
+                return self._chat_auto_execute_tools(messages, request_tools, TOOL_MAP)
             else:
-                # Manual mode: return pending tools for approval
-                log(f"🤖 OpenAI MANUAL mode - returning tools for approval")
-                return self._get_pending_tools(messages, request_tools)
+                log(f"🤖 {provider} MANUAL mode - returning tools for approval")
+                return self._chat_get_pending_tools(messages, request_tools)
 
         except Exception as e:
-            log(f"❌ OpenAI error: {e}")
-            return f"OpenAI Error: {e}"
-
-    def _auto_execute_tools(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> str:
-        """
-        Execute tools automatically until we get a final response.
-
-        Args:
-            messages: Conversation messages
-            tools: Tools to use for this request (defaults to self.tools if not provided)
-        """
-        request_tools = tools if tools is not None else self.tools
-        iteration = 0
-
-        while iteration < MAX_TOOL_ITERATIONS:
-            iteration += 1
-            log(f"🔄 OpenAI iteration {iteration}/{MAX_TOOL_ITERATIONS}")
-
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                tools=request_tools,
-                tool_choice="auto"
-            )
-
-            # Log cache usage
-            self._log_cache_usage(response)
-
-            response_message = response.choices[0].message
-
-            if response_message.tool_calls:
-                # Add assistant message with tool calls
-                messages.append({
-                    "role": "assistant",
-                    "content": response_message.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            }
-                        }
-                        for tc in response_message.tool_calls
-                    ]
-                })
-
-                # Execute each tool call
-                for tool_call in response_message.tool_calls:
-                    func_name = tool_call.function.name
-                    func_args = _safe_json_loads(tool_call.function.arguments)
-                    log(f"🔧 OpenAI calling tool: {func_name}")
-                    result = self._execute_tool(func_name, func_args)
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": result
-                    })
-            else:
-                # Final response
-                final_response = response_message.content or ""
-                self.history.append({
-                    "role": "assistant",
-                    "content": final_response
-                })
-                log(f"✅ OpenAI response received - {len(final_response)} chars")
-                return final_response
-
-        log(f"❌ OpenAI max iterations reached")
-        return "Error: Maximum tool calling iterations reached"
-
-    def _get_pending_tools(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> Union[str, Dict[str, Any]]:
-        """
-        Get pending tool calls without executing them.
-
-        Args:
-            messages: Conversation messages
-            tools: Tools to use for this request (defaults to self.tools if not provided)
-        """
-        request_tools = tools if tools is not None else self.tools
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            tools=request_tools,
-            tool_choice="auto"
-        )
-
-        # Log cache usage
-        self._log_cache_usage(response)
-
-        response_message = response.choices[0].message
-
-        if response_message.tool_calls:
-            # Store state for later execution
-            self._pending_messages = copy.deepcopy(messages)
-            self._pending_tool_calls = []
-
-            pending_tools = []
-            for tc in response_message.tool_calls:
-                tool_info = {
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": _safe_json_loads(tc.function.arguments)
-                }
-                pending_tools.append(tool_info)
-                self._pending_tool_calls.append({
-                    "id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments  # Keep as string for OpenAI
-                })
-
-            # Store assistant message for later
-            self._pending_messages.append({
-                "role": "assistant",
-                "content": response_message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
-                        }
-                    }
-                    for tc in response_message.tool_calls
-                ]
-            })
-
-            tools_names = [t["name"] for t in pending_tools]
-            log(f"🔧 OpenAI pending tools: {', '.join(tools_names)}")
-
-            return {
-                "pending_tool_calls": pending_tools,
-                "response_text": response_message.content or ""
-            }
-        else:
-            # No tools needed
-            final_response = response_message.content or ""
-            self.history.append({
-                "role": "assistant",
-                "content": final_response
-            })
-            log(f"✅ OpenAI response (no tools) - {len(final_response)} chars")
-            return final_response
+            log(f"❌ {provider} error: {e}")
+            return f"{provider} Error: {e}"
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
         """
@@ -336,6 +220,8 @@ class OpenAIClient(BaseLLMClient):
 
         In manual mode, if the model wants more tools after execution,
         returns them for user approval instead of auto-executing.
+
+        Uses consolidated base class method for tool execution.
 
         Args:
             approved_tool_calls: List of approved tools to execute
@@ -345,99 +231,7 @@ class OpenAIClient(BaseLLMClient):
             str: Final response text if no more tools needed
             dict: {"pending_tool_calls": [...], "response_text": "..."} if more tools needed
         """
-        try:
-            if not self._pending_messages:
-                return "Error: No pending tool calls to execute"
-
-            messages = copy.deepcopy(self._pending_messages)
-
-            # Execute approved tools and add results
-            for tool_call in approved_tool_calls:
-                tool_id = tool_call.get("id", "")
-                tool_name = tool_call["name"]
-                tool_args = tool_call.get("arguments", {})
-
-                result = self._execute_tool(tool_name, tool_args)
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_id,
-                    "content": result
-                })
-
-            # Check if auto mode or manual mode
-            if self.auto_function_calling:
-                # Auto mode: loop until final response
-                final_response = self._auto_execute_tools(messages)
-                self._pending_messages = []
-                self._pending_tool_calls = []
-                return final_response
-            else:
-                # Manual mode: make ONE call and check if more tools are needed
-                response = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=[{"role": "system", "content": self.SYSTEM_PROMPT}] + messages,
-                    tools=self.tools
-                )
-
-                choice = response.choices[0]
-
-                if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-                    # Model wants more tools - return them for approval
-                    # First, add the assistant's tool call message to pending
-                    self._pending_messages = messages
-                    self._pending_messages.append({
-                        "role": "assistant",
-                        "content": choice.message.content or "",
-                        "tool_calls": [
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments
-                                }
-                            } for tc in choice.message.tool_calls
-                        ]
-                    })
-                    self._pending_tool_calls = []
-
-                    pending_tools = []
-                    for tc in choice.message.tool_calls:
-                        tool_info = {
-                            "id": tc.id,
-                            "name": tc.function.name,
-                            "arguments": _safe_json_loads(tc.function.arguments)
-                        }
-                        pending_tools.append(tool_info)
-                        self._pending_tool_calls.append(tool_info)
-
-                    tools_names = [t["name"] for t in pending_tools]
-                    log(f"🔧 OpenAI wants more tools (manual mode): {', '.join(tools_names)}")
-
-                    return {
-                        "pending_tool_calls": pending_tools,
-                        "response_text": choice.message.content or ""
-                    }
-                else:
-                    # Final response - no more tools
-                    final_response = choice.message.content or ""
-
-                    self.history.append({
-                        "role": "assistant",
-                        "content": final_response
-                    })
-
-                    # Clear pending state
-                    self._pending_messages = []
-                    self._pending_tool_calls = []
-
-                    log(f"✅ OpenAI execute_approved_tools final response - {len(final_response)} chars")
-                    return final_response
-
-        except Exception as e:
-            log(f"Error executing approved tools: {e}")
-            return f"Error executing tools: {e}"
+        return self._chat_execute_approved_tools(approved_tool_calls, TOOL_MAP, self.tools)
 
     # =========================================================================
     # SECTION 4: HISTORY MANAGEMENT
@@ -518,7 +312,7 @@ class OpenAIClient(BaseLLMClient):
             The response text from the LLM
         """
         try:
-            log(f"🤖 OpenAI AI Cell completion starting...")
+            log(f"🤖 {self._provider_display_name} AI Cell completion starting...")
             log(f"   Context: {len(notebook_context)} chars")
             log(f"   User prompt: {len(user_prompt)} chars")
             if images:
@@ -531,18 +325,19 @@ class OpenAIClient(BaseLLMClient):
             content = self._build_content_with_images(full_prompt, images)
 
             # OpenAI doesn't have native web search, so just do completion
-            # Could integrate with a search API in the future
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": content}],
-                max_tokens=4096,
-            )
+            kwargs = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": content}],
+            }
+            if self.max_tokens:
+                kwargs["max_tokens"] = self.max_tokens
+            response = self.client.chat.completions.create(**kwargs)
 
             # Log cache usage
             self._log_cache_usage(response)
 
             result = response.choices[0].message.content or ""
-            log(f"🤖 OpenAI AI Cell response: {len(result)} chars")
+            log(f"🤖 {self._provider_display_name} AI Cell response: {len(result)} chars")
             return result
 
         except Exception as e:
@@ -571,10 +366,10 @@ class OpenAIClient(BaseLLMClient):
         return self._ai_cell_tool_map_cache
 
     def _get_web_search_tool(self) -> Optional[Dict[str, Any]]:
-        """Get OpenAI web search tool (Bing Search Preview)."""
+        """Get OpenAI web search tool (Bing Search Preview) via adapter."""
         if not self.enable_web_search:
             return None
-        return WEB_SEARCH_TOOL
+        return self.adapter.get_web_search_tool()
 
     def _prepare_ai_cell_messages(
         self,
@@ -616,13 +411,15 @@ class OpenAIClient(BaseLLMClient):
         Returns:
             LLMResponse with text, tool_calls, and is_final flag
         """
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-            max_tokens=4096,
-        )
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        if self.max_tokens:
+            kwargs["max_tokens"] = self.max_tokens
+        response = self.client.chat.completions.create(**kwargs)
 
         # Log cache usage
         self._log_cache_usage(response)
@@ -654,54 +451,37 @@ class OpenAIClient(BaseLLMClient):
         """
         Add tool results to messages for the next OpenAI API call.
 
-        OpenAI requires:
-        1. Assistant message with tool_calls
-        2. Tool messages with results (one per tool call)
+        Now uses the adapter for centralized format handling.
         """
-        # Build assistant message with tool calls
-        assistant_tool_calls = []
-        for tc in response.tool_calls:
-            assistant_tool_calls.append({
-                "id": tc.id,
-                "type": "function",
-                "function": {
-                    "name": tc.name,
-                    "arguments": json.dumps(tc.arguments)
-                }
-            })
+        from backend.llm_adapters.canonical import CanonicalToolCall as CanonicalTC
 
-        messages.append({
-            "role": "assistant",
-            "content": None,
-            "tool_calls": assistant_tool_calls
-        })
+        # Convert LLMResponse to CanonicalResponse for adapter
+        canonical_response = CanonicalResponse(
+            text=response.text,
+            tool_calls=[
+                CanonicalTC(id=tc.id, name=tc.name, arguments=tc.arguments)
+                for tc in response.tool_calls
+            ],
+            is_final=response.is_final
+        )
 
-        # Add tool result messages
-        for tr in tool_results:
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tr.tool_call_id,
-                "content": tr.result
-            })
+        # Convert ToolResult to CanonicalToolResult for adapter
+        canonical_results = [
+            CanonicalToolResult(
+                tool_call_id=tr.tool_call_id,
+                name=tr.name,
+                result=tr.result,
+                is_error=tr.is_error
+            )
+            for tr in tool_results
+        ]
 
-        return messages
+        # Use adapter to add tool results (handles OpenAI-specific format)
+        return self.adapter.add_tool_results(messages, canonical_response, canonical_results)
 
     # =========================================================================
     # SECTION 7: UTILITIES & HELPERS
     # =========================================================================
-
-    def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Execute a tool and return the result as a string."""
-        log(f"OpenAI executing tool: {tool_name} with args: {arguments}")
-
-        if tool_name not in TOOL_MAP:
-            return json.dumps({"error": f"Unknown tool: {tool_name}"})
-
-        try:
-            result = TOOL_MAP[tool_name](**arguments)
-            return json.dumps(result)
-        except Exception as e:
-            return json.dumps({"error": str(e)})
 
     def _build_content_with_images(self, text: str, images: Optional[List[ImageData]] = None) -> Union[str, List[Dict[str, Any]]]:
         """
@@ -749,28 +529,3 @@ class OpenAIClient(BaseLLMClient):
         })
 
         return content
-
-    def _log_cache_usage(self, response) -> None:
-        """
-        Log cache usage statistics from OpenAI response.
-        OpenAI automatically caches prompts >= 1024 tokens.
-        GPT-4o: 50% discount, GPT-4.1: 75% discount on cached tokens.
-        """
-        if hasattr(response, 'usage') and response.usage:
-            usage = response.usage
-            input_tokens = getattr(usage, 'prompt_tokens', 0)
-            output_tokens = getattr(usage, 'completion_tokens', 0)
-
-            # Check for cached tokens in prompt_tokens_details
-            cached_tokens = 0
-            if hasattr(usage, 'prompt_tokens_details') and usage.prompt_tokens_details:
-                cached_tokens = getattr(usage.prompt_tokens_details, 'cached_tokens', 0)
-
-            if cached_tokens > 0:
-                # Calculate savings (cached = 50% of normal for GPT-4o, 75% for GPT-4.1)
-                discount = 0.75 if "4.1" in self.model_name else 0.5
-                savings_pct = (cached_tokens * discount) / max(input_tokens, 1) * 100
-                log(f"💾 OpenAI Cache: cached={cached_tokens}, input={input_tokens}, output={output_tokens}")
-                log(f"💰 Cache savings: ~{savings_pct:.1f}% on input tokens ({int(discount*100)}% discount)")
-            else:
-                log(f"📊 OpenAI Usage: input={input_tokens}, output={output_tokens} (no cache hit)")

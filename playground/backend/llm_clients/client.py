@@ -38,11 +38,27 @@ def get_llm_client(provider: Optional[str] = None, auto_function_calling: Option
 
     if provider == "ollama":
         from backend.llm_clients.ollama import OllamaClient
-        return OllamaClient(
-            base_url=cfg.OLLAMA_URL,
-            model_name=cfg.OLLAMA_MODEL,
-            auto_function_calling=auto_function_calling
-        )
+        from backend.utils.util_func import log
+
+        # Check if OpenRouter is explicitly enabled
+        if cfg.USE_OPENROUTER:
+            if not cfg.OPENROUTER_API_KEY:
+                raise ValueError("USE_OPENROUTER is enabled but OPENROUTER_API_KEY not configured")
+            log(f"Using OpenRouter: {cfg.OPENROUTER_OPENAI_URL} ({cfg.OPENROUTER_OPENAI_MODEL}) max_tokens={cfg.OPENROUTER_MAX_TOKENS}")
+            return OllamaClient(
+                base_url=cfg.OPENROUTER_OPENAI_URL,
+                model_name=cfg.OPENROUTER_OPENAI_MODEL,
+                api_key=cfg.OPENROUTER_API_KEY,
+                max_tokens=cfg.OPENROUTER_MAX_TOKENS,
+                auto_function_calling=auto_function_calling
+            )
+        else:
+            log(f"Using Ollama: {cfg.OLLAMA_URL} ({cfg.OLLAMA_MODEL})")
+            return OllamaClient(
+                base_url=cfg.OLLAMA_URL,
+                model_name=cfg.OLLAMA_MODEL,
+                auto_function_calling=auto_function_calling
+            )
 
     elif provider == "gemini":
         if not cfg.GEMINI_API_KEY:

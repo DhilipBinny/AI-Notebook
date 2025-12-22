@@ -104,7 +104,7 @@ if hasattr(sys, 'last_type') and sys.last_type is not None:
     elif _ename == "FileNotFoundError":
         _error_info["simplified"] = f"FileNotFoundError: {_evalue}. The file or path doesn't exist."
     elif _ename == "ZeroDivisionError":
-        _error_info["simplified"] = f"ZeroDivisionError: You tried to divide by zero."
+        _error_info["simplified"] = "ZeroDivisionError: You tried to divide by zero."
     elif _ename == "SyntaxError":
         _error_info["simplified"] = f"SyntaxError: {_evalue}. There's a syntax error in your code."
     else:

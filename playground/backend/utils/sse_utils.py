@@ -1,5 +1,14 @@
 """
 SSE Utilities - Helper functions for Server-Sent Events formatting
+
+Event Types:
+- thinking: Status message (e.g., "Analyzing...")
+- llm_thinking: LLM's internal reasoning (extended thinking)
+- tool_call: Tool is being called with arguments
+- tool_result: Tool execution result
+- pending_tools: Tools awaiting user approval (chat only)
+- done: Final response with all data
+- error: Error occurred
 """
 
 import json
@@ -61,5 +70,9 @@ def format_progress_event(event_type: str, event_data: Optional[Dict[str, Any]])
                 "message": "Finalizing response..."
             })
         return None
+
+    elif event_type == "pending_tools":
+        # Chat-specific: tools awaiting user approval
+        return format_sse_event("pending_tools", event_data)
 
     return None

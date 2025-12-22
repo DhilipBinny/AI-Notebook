@@ -93,18 +93,20 @@ Unlike traditional notebook sync approaches, our platform uses a **lazy load** p
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2. LLM Tool Functions
+### 2. LLM Tool Functions (25 Tools)
 
 The AI assistant has access to powerful notebook manipulation tools:
 
-| Tool | Description |
-|------|-------------|
-| `get_notebook_overview()` | Get structure and preview of all cells |
-| `get_cell_content(index)` | Read full content of specific cell |
-| `update_cell_content(index, content)` | Modify cell content |
-| `insert_cell(position, content, type)` | Add new cells |
-| `execute_cell(index)` | Run code cell and get output |
-| `execute_python_code(code)` | Run arbitrary Python code |
+| Category | Tools |
+|----------|-------|
+| **Kernel** | `execute_python_code` |
+| **Cells** | `get_notebook_overview`, `get_cell_content`, `update_cell_content`, `delete_cell`, `multi_delete_cells`, `multi_insert_cells`, `insert_cell_after`, `insert_cell_at_position`, `execute_cell` |
+| **Files** | `list_project_files`, `file_info`, `read_text_file`, `preview_data_file`, `write_text_file`, `delete_file` |
+| **Pip** | `pip_install`, `pip_uninstall`, `pip_list`, `pip_show`, `pip_search_installed`, `extract_missing_modules` |
+| **Runtime** | `runtime_list_variables`, `runtime_get_variable`, `runtime_get_dataframe`, `runtime_list_functions`, `runtime_list_imports`, `runtime_kernel_status`, `runtime_get_last_error` |
+| **Sandbox** | `sandbox_execute`, `sandbox_reset`, `sandbox_pip_install`, `sandbox_sync_from_main`, `sandbox_status` |
+
+See [PLAYGROUND_ARCHITECTURE.md](PLAYGROUND_ARCHITECTURE.md) for detailed tool documentation.
 
 ### 3. Tool Execution Modes
 
@@ -395,11 +397,14 @@ Playgrounds:
   GET    /api/projects/{id}/playground/logs   Container logs
   POST   /api/projects/{id}/playground/activity Heartbeat
 
-Chat:
-  GET    /api/projects/{id}/chat              Get history
-  POST   /api/projects/{id}/chat              Send message
-  POST   /api/projects/{id}/chat/execute-tools Execute approved tools
-  DELETE /api/projects/{id}/chat              Clear history
+Chat (SSE Streaming):
+  GET    /api/projects/{id}/chat                    Get history
+  POST   /api/projects/{id}/chat/stream             Send message (SSE)
+  POST   /api/projects/{id}/chat/execute-tools/stream Execute tools (SSE)
+  DELETE /api/projects/{id}/chat                    Clear history
+
+AI Cell (SSE Streaming):
+  POST   /api/projects/{id}/chat/ai-cell/run        Run AI cell (SSE)
 ```
 
 ### Master API (Internal - Playground Facing)
@@ -417,15 +422,35 @@ Headers: X-Internal-Secret: {PLAYGROUND_INTERNAL_SECRET}
 ### Playground API (Container Internal)
 
 ```
-  GET    /health                  Health check
-  GET    /status                  Detailed status
-  POST   /chat                    LLM chat
-  POST   /chat/execute-tools      Execute tool calls
-  POST   /llm/provider            Switch LLM provider
-  GET    /llm/tool-mode           Get tool mode
-  POST   /llm/tool-mode           Set tool mode
-  WS     /ws/execute              Code execution streaming
+Health:
+  GET    /health                       Health check (no auth)
+  GET    /status                       Detailed status
+
+Session:
+  POST   /session/create               Create session
+  GET    /session/{id}                 Get session info
+  DELETE /session/{id}                 Delete session
+  POST   /session/{id}/kernel/start    Start kernel
+  POST   /session/{id}/kernel/stop     Stop kernel
+  POST   /session/{id}/kernel/restart  Restart kernel
+
+Execution:
+  POST   /execute                      Execute code
+  WS     /ws/execute                   Streaming execution
+
+Chat (SSE):
+  POST   /chat/stream                  LLM chat with tools
+  POST   /chat/execute-tools/stream    Execute approved tools
+
+AI Cell (SSE):
+  POST   /ai-cell/run                  AI cell execution
+  POST   /ai-cell/cancel               Cancel execution
+
+LLM:
+  POST   /llm/complete                 Simple completion (no tools)
 ```
+
+See [PLAYGROUND_ARCHITECTURE.md](PLAYGROUND_ARCHITECTURE.md) for detailed API documentation.
 
 ---
 
@@ -528,9 +553,12 @@ See individual service `.env` files:
 
 ## Related Documentation
 
+- [Playground Architecture](PLAYGROUND_ARCHITECTURE.md) - Detailed playground backend docs
 - [Database Schema](DATABASE.md) - Table definitions, relationships
 - [Implementation Details](IMPLEMENTATION.md) - Technical decisions, code patterns
 - [Lazy Load Architecture](NOTEBOOK_LAZY_LOAD_ARCHITECTURE.md) - LLM tool data flow
+- [Context Management](CONTEXT_MANAGEMENT.md) - Tiered context system
+- [Playground Security](PLAYGROUND_SECURITY.md) - Security considerations
 - [Implementation Plan](IMPLEMENTATION_PLAN.md) - Original planning document
 
 ---

@@ -189,6 +189,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
   const [showChat, setShowChat] = useState(true)
+  const [chatStreamStatus, setChatStreamStatus] = useState<string | null>(null)  // Real-time SSE status
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
   const [confirmPopup, setConfirmPopup] = useState<{
     title: string
@@ -1838,163 +1839,231 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
 
     setChatLoading(true)
+    setChatStreamStatus('Analyzing...')
     setChatMessages((prev) => [...prev, { role: 'user', content: message, images }])
 
-    try {
-      // Auto-save notebook before sending message (ensure LLM sees latest edits via Master API)
-      if (isDirty) {
-        await saveNotebook()
-      }
+    // Auto-save notebook before sending message (ensure LLM sees latest edits via Master API)
+    if (isDirty) {
+      await saveNotebook()
+    }
 
-      // Send ALL cell IDs - backend loads content from S3 and creates tiered context
-      const allCellIds = cells.map(c => c.id)
+    // Send ALL cell IDs - backend loads content from S3 and creates tiered context
+    const allCellIds = cells.map(c => c.id)
 
-      // Call chat API - backend loads cell content from S3 notebook
-      const response = await chat.sendMessage(projectId, message, allCellIds, toolMode, llmProvider, contextFormat, images)
-
-      if (response.success) {
-        // Handle pending tools
-        if (response.pending_tool_calls.length > 0) {
-          setPendingTools(response.pending_tool_calls)
+    // Use SSE for real-time streaming
+    chat.sendMessageWithSSE(
+      projectId,
+      message,
+      allCellIds,
+      projectId,  // sessionId = projectId (same kernel session)
+      toolMode,
+      llmProvider,
+      contextFormat,
+      images,
+      // onEvent: Handle real-time SSE events
+      (event) => {
+        switch (event.type) {
+          case 'thinking':
+            setChatStreamStatus((event.data as { message?: string }).message || 'Thinking...')
+            break
+          case 'tool_call':
+            setChatStreamStatus(`Running tool: ${(event.data as { name?: string }).name || 'unknown'}...`)
+            break
+          case 'tool_result':
+            setChatStreamStatus('Processing result...')
+            break
+          case 'pending_tools':
+            setChatStreamStatus('Awaiting approval...')
+            break
         }
+      },
+      // onDone: Handle completion
+      (response) => {
+        setChatStreamStatus(null)
+        setChatLoading(false)
 
-        // Add assistant response
-        if (response.response) {
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: response.response,
-              steps: response.steps,
-            },
-          ])
-        }
+        if (response.success) {
+          // Handle pending tools
+          if (response.pending_tool_calls.length > 0) {
+            setPendingTools(response.pending_tool_calls)
+          }
 
-        // Only reload from S3 if WebSocket is not connected (fallback)
-        // When WebSocket is connected, we get real-time updates automatically
-        if (notebookUpdates.status !== 'connected') {
-          console.log('[Chat] WebSocket not connected, reloading notebook from S3')
-          await reloadNotebook()
+          // Add assistant response
+          if (response.response) {
+            setChatMessages((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                content: response.response,
+                steps: response.steps,
+              },
+            ])
+          }
+
+          // Only reload from S3 if WebSocket is not connected (fallback)
+          if (notebookUpdates.status !== 'connected') {
+            console.log('[Chat] WebSocket not connected, reloading notebook from S3')
+            reloadNotebook()
+          }
+        } else {
+          const errorMsg = response.error || 'Unknown error'
+          if (errorMsg.includes('playground') || errorMsg.includes('kernel') ||
+              errorMsg.includes('not running') || errorMsg.includes('Connection refused') ||
+              errorMsg.includes('container')) {
+            setChatMessages((prev) => prev.slice(0, -1))
+            setErrorPopup(`Cannot process request: ${errorMsg}\n\nPlease make sure the playground is running.`)
+          } else {
+            setChatMessages((prev) => [
+              ...prev,
+              { role: 'assistant', content: `Error: ${errorMsg}` },
+            ])
+          }
         }
-      } else {
-        // Check if it's a playground/kernel error - show popup instead of saving to chat
-        const errorMsg = response.error || 'Unknown error'
+      },
+      // onError: Handle errors
+      (error) => {
+        console.error('Chat SSE error:', error)
+        setChatStreamStatus(null)
+        setChatLoading(false)
+
+        const errorMsg = error || 'Unknown error'
         if (errorMsg.includes('playground') || errorMsg.includes('kernel') ||
             errorMsg.includes('not running') || errorMsg.includes('Connection refused') ||
             errorMsg.includes('container')) {
-          // Remove the user message we just added since we can't process it
           setChatMessages((prev) => prev.slice(0, -1))
           setErrorPopup(`Cannot process request: ${errorMsg}\n\nPlease make sure the playground is running.`)
         } else {
-          setChatMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `Error: ${errorMsg}` },
-          ])
+          setChatMessages((prev) => prev.slice(0, -1))
+          setErrorPopup('Failed to connect to the AI service.\n\nPlease make sure the playground is running and try again.')
         }
       }
-    } catch (err) {
-      console.error('Chat error:', err)
-      // Remove the user message we just added since we can't process it
-      setChatMessages((prev) => prev.slice(0, -1))
-      setErrorPopup('Failed to connect to the AI service.\n\nPlease make sure the playground is running and try again.')
-    } finally {
-      setChatLoading(false)
-    }
+    )
   }, [projectId, cells, toolMode, llmProvider, contextFormat, playground, isDirty, saveNotebook, reloadNotebook, notebookUpdates.status])
 
-  const handleApproveTools = useCallback(async (tools: PendingToolCall[]) => {
+  const handleApproveTools = useCallback((tools: PendingToolCall[]) => {
     setChatLoading(true)
-    try {
-      const response = await chat.executeTools(projectId, tools, toolMode, llmProvider, contextFormat)
+    setChatStreamStatus('Executing tools...')
 
-      if (response.success) {
-        // Check for more pending tools
-        if (response.pending_tool_calls.length > 0) {
-          setPendingTools(response.pending_tool_calls)
+    // Use SSE for real-time streaming
+    chat.executeToolsWithSSE(
+      projectId,
+      tools,
+      projectId,  // sessionId = projectId (same kernel session)
+      toolMode,
+      llmProvider,
+      contextFormat,
+      // onEvent: Handle real-time SSE events
+      (event) => {
+        switch (event.type) {
+          case 'thinking':
+            setChatStreamStatus((event.data as { message?: string }).message || 'Processing...')
+            break
+          case 'tool_executing':
+            setChatStreamStatus(`Executing: ${(event.data as { name?: string }).name || 'tool'}...`)
+            break
+          case 'tool_result':
+            setChatStreamStatus('Tool completed, processing...')
+            break
+          case 'pending_tools':
+            setChatStreamStatus('More tools need approval...')
+            break
+        }
+      },
+      // onDone: Handle completion
+      (response) => {
+        setChatStreamStatus(null)
+        setChatLoading(false)
 
-          // For intermediate steps, update the last assistant message instead of adding new one
-          if (response.response) {
-            setChatMessages((prev) => {
-              const newMessages = [...prev]
-              const lastIdx = newMessages.length - 1
+        if (response.success) {
+          // Check for more pending tools
+          if (response.pending_tool_calls.length > 0) {
+            setPendingTools(response.pending_tool_calls)
 
-              // If last message is assistant, update it with accumulated steps
-              if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                const existingSteps = newMessages[lastIdx].steps || []
-                newMessages[lastIdx] = {
-                  ...newMessages[lastIdx],
-                  content: response.response,
-                  steps: [...existingSteps, ...(response.steps || [])],
+            // For intermediate steps, update the last assistant message instead of adding new one
+            if (response.response) {
+              setChatMessages((prev) => {
+                const newMessages = [...prev]
+                const lastIdx = newMessages.length - 1
+
+                // If last message is assistant, update it with accumulated steps
+                if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                  const existingSteps = newMessages[lastIdx].steps || []
+                  newMessages[lastIdx] = {
+                    ...newMessages[lastIdx],
+                    content: response.response,
+                    steps: [...existingSteps, ...(response.steps || [])],
+                  }
+                } else {
+                  // First assistant response after user message
+                  newMessages.push({
+                    role: 'assistant',
+                    content: response.response,
+                    steps: response.steps,
+                  })
                 }
-              } else {
-                // First assistant response after user message
-                newMessages.push({
-                  role: 'assistant',
-                  content: response.response,
-                  steps: response.steps,
-                })
-              }
-              return newMessages
-            })
+                return newMessages
+              })
+            }
+          } else {
+            // Final response - no more pending tools
+            setPendingTools([])
+
+            // Update the last assistant message with final response and all steps
+            if (response.response) {
+              setChatMessages((prev) => {
+                const newMessages = [...prev]
+                const lastIdx = newMessages.length - 1
+
+                // If last message is assistant, update it with final response
+                if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
+                  const existingSteps = newMessages[lastIdx].steps || []
+                  newMessages[lastIdx] = {
+                    ...newMessages[lastIdx],
+                    content: response.response,
+                    steps: [...existingSteps, ...(response.steps || [])],
+                  }
+                } else {
+                  // Only assistant response
+                  newMessages.push({
+                    role: 'assistant',
+                    content: response.response,
+                    steps: response.steps,
+                  })
+                }
+                return newMessages
+              })
+            }
+          }
+
+          // Only reload from S3 if WebSocket is not connected (fallback)
+          if (notebookUpdates.status !== 'connected') {
+            console.log('[Chat] WebSocket not connected, reloading notebook from S3')
+            reloadNotebook()
           }
         } else {
-          // Final response - no more pending tools
+          const errorMsg = response.error || 'Tool execution failed'
+          if (errorMsg.includes('playground') || errorMsg.includes('kernel') ||
+              errorMsg.includes('not running') || errorMsg.includes('Connection refused') ||
+              errorMsg.includes('container')) {
+            setErrorPopup(`Tool execution failed: ${errorMsg}\n\nPlease make sure the playground is running.`)
+          } else {
+            setChatMessages((prev) => [
+              ...prev,
+              { role: 'assistant', content: `Error: ${errorMsg}` },
+            ])
+          }
           setPendingTools([])
-
-          // Update the last assistant message with final response and all steps
-          if (response.response) {
-            setChatMessages((prev) => {
-              const newMessages = [...prev]
-              const lastIdx = newMessages.length - 1
-
-              // If last message is assistant, update it with final response
-              if (lastIdx >= 0 && newMessages[lastIdx].role === 'assistant') {
-                const existingSteps = newMessages[lastIdx].steps || []
-                newMessages[lastIdx] = {
-                  ...newMessages[lastIdx],
-                  content: response.response,
-                  steps: [...existingSteps, ...(response.steps || [])],
-                }
-              } else {
-                // Only assistant response
-                newMessages.push({
-                  role: 'assistant',
-                  content: response.response,
-                  steps: response.steps,
-                })
-              }
-              return newMessages
-            })
-          }
         }
-
-        // Only reload from S3 if WebSocket is not connected (fallback)
-        // When WebSocket is connected, we get real-time updates automatically
-        if (notebookUpdates.status !== 'connected') {
-          console.log('[Chat] WebSocket not connected, reloading notebook from S3')
-          await reloadNotebook()
-        }
-      } else {
-        const errorMsg = response.error || 'Tool execution failed'
-        if (errorMsg.includes('playground') || errorMsg.includes('kernel') ||
-            errorMsg.includes('not running') || errorMsg.includes('Connection refused') ||
-            errorMsg.includes('container')) {
-          setErrorPopup(`Tool execution failed: ${errorMsg}\n\nPlease make sure the playground is running.`)
-        } else {
-          setChatMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `Error: ${errorMsg}` },
-          ])
-        }
+      },
+      // onError: Handle errors
+      (error) => {
+        console.error('Tool execution SSE error:', error)
+        setChatStreamStatus(null)
+        setChatLoading(false)
+        setErrorPopup(`Failed to execute tools: ${error}\n\nPlease make sure the playground is running and try again.`)
         setPendingTools([])
       }
-    } catch (err) {
-      console.error('Tool execution error:', err)
-      setErrorPopup('Failed to execute tools.\n\nPlease make sure the playground is running and try again.')
-      setPendingTools([])
-    } finally {
-      setChatLoading(false)
-    }
+    )
   }, [projectId, toolMode, llmProvider, contextFormat, reloadNotebook, notebookUpdates.status])
 
   const handleRejectTools = useCallback(() => {
@@ -2355,6 +2424,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               onSummarize={handleSummarize}
               isSummarizing={isSummarizing}
               onScrollToCell={handleScrollToCell}
+              streamStatus={chatStreamStatus}
               onPanelClick={() => {
                 if (isEditMode) {
                   setIsEditMode(false)

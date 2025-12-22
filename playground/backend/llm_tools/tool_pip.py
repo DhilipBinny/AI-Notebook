@@ -267,7 +267,7 @@ def pip_list() -> dict:
     Example:
         To list all packages: pip_list()
     """
-    log(f"==> pip_list() called from LLM")
+    log("==> pip_list() called from LLM")
 
     list_code = '''
 import subprocess
@@ -479,7 +479,7 @@ def extract_missing_modules(error_message: str) -> dict:
         result = extract_missing_modules(error)
         # result: {"modules": ["pandas"], "suggested_packages": ["pandas"]}
     """
-    log(f"==> extract_missing_modules called from LLM")
+    log("==> extract_missing_modules called from LLM")
 
     if not error_message:
         return {

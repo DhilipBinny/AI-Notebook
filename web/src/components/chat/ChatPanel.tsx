@@ -49,6 +49,7 @@ interface ChatPanelProps {
   isSummarizing: boolean
   onScrollToCell?: (cellId: string) => void
   onPanelClick?: () => void
+  streamStatus?: string | null  // Real-time SSE status (e.g., "Analyzing...", "Running tool: X...")
 }
 
 // Theme-aware colors for chat panel - uses CSS variables
@@ -108,6 +109,7 @@ export default function ChatPanel({
   isSummarizing,
   onScrollToCell,
   onPanelClick,
+  streamStatus,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set())
@@ -868,7 +870,7 @@ export default function ChatPanel({
           </div>
         )}
 
-        {/* Loading indicator */}
+        {/* Loading indicator with real-time SSE status */}
         {isLoading && (
           <div className="flex justify-start animate-fadeIn">
             <div className="flex items-start gap-2.5">
@@ -882,7 +884,7 @@ export default function ChatPanel({
                     <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--nb-accent-code)', animationDelay: '150ms' }}></span>
                     <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--nb-accent-code)', animationDelay: '300ms' }}></span>
                   </div>
-                  <span className="text-sm">Thinking...</span>
+                  <span className="text-sm">{streamStatus || 'Thinking...'}</span>
                 </div>
               </div>
             </div>

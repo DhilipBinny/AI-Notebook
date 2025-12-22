@@ -85,6 +85,18 @@ class DockerClient:
             if settings.anthropic_api_key:
                 env["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
 
+            # OpenRouter configuration for OpenAI
+            if settings.use_openrouter:
+                env["USE_OPENROUTER"] = "true"
+            if settings.openrouter_api_key:
+                env["OPENROUTER_API_KEY"] = settings.openrouter_api_key
+            if settings.openrouter_openai_url:
+                env["OPENROUTER_OPENAI_URL"] = settings.openrouter_openai_url
+            if settings.openrouter_openai_model:
+                env["OPENROUTER_OPENAI_MODEL"] = settings.openrouter_openai_model
+            if settings.openrouter_max_tokens:
+                env["OPENROUTER_MAX_TOKENS"] = str(settings.openrouter_max_tokens)
+
             # Add LLM model configurations
             if settings.gemini_model:
                 env["GEMINI_MODEL"] = settings.gemini_model

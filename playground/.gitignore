@@ -21,3 +21,6 @@ venv/
 # Temporary files
 _tmp_backups/
 *.log
+
+# Backup directories
+backend/llm_clients_backup_*/

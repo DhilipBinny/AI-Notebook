@@ -33,6 +33,14 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
+# === OpenRouter Configuration (OpenAI-compatible API) ===
+# Set USE_OPENROUTER=true to route OpenAI requests through OpenRouter
+USE_OPENROUTER = os.environ.get("USE_OPENROUTER", "false").lower() == "true"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_OPENAI_URL = os.environ.get("OPENROUTER_OPENAI_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_OPENAI_MODEL = os.environ.get("OPENROUTER_OPENAI_MODEL", "openai/gpt-4o")
+OPENROUTER_MAX_TOKENS = int(os.environ.get("OPENROUTER_MAX_TOKENS", "4000"))
+
 # === Function Calling Behavior ===
 # Tool execution mode:
 #   "auto" - LLM automatically executes tools without user approval
@@ -101,8 +109,9 @@ def get_provider_info():
             "model": GEMINI_MODEL
         },
         "openai": {
-            "configured": bool(OPENAI_API_KEY),
-            "model": OPENAI_MODEL
+            "configured": bool(OPENAI_API_KEY) or (USE_OPENROUTER and bool(OPENROUTER_API_KEY)),
+            "model": OPENROUTER_OPENAI_MODEL if USE_OPENROUTER else OPENAI_MODEL,
+            "via_openrouter": USE_OPENROUTER
         },
         "anthropic": {
             "configured": bool(ANTHROPIC_API_KEY),

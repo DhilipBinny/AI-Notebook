@@ -277,8 +277,48 @@ async def delete_chat(
         )
 
 
-@router.post("", response_model=ChatResponse)
-async def send_message(
+# =============================================================================
+# DEPRECATED: JSON ENDPOINTS - Replaced by SSE streaming endpoints below
+# =============================================================================
+# These endpoints have been replaced by /stream and /execute-tools/stream
+# which provide real-time progress updates via Server-Sent Events.
+# Kept commented for reference.
+
+# @router.post("", response_model=ChatResponse)
+# async def send_message(
+#     project_id: str,
+#     request: ChatMessageCreate,
+#     tool_mode: str = "manual",
+#     llm_provider: str = "gemini",
+#     context_format: str = "xml",
+#     chat_id: str = "default",
+#     current_user: User = Depends(get_current_active_user),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     """Send a message to the AI assistant (JSON response)."""
+#     ...  # Original implementation commented out
+
+# @router.post("/execute-tools", response_model=ChatResponse)
+# async def execute_tools(
+#     project_id: str,
+#     request: ExecuteToolsRequest,
+#     tool_mode: str = "manual",
+#     llm_provider: str = "gemini",
+#     context_format: str = "xml",
+#     chat_id: str = "default",
+#     current_user: User = Depends(get_current_active_user),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     """Execute approved tool calls (JSON response)."""
+#     ...  # Original implementation commented out
+
+
+# =============================================================================
+# SSE STREAMING ENDPOINTS
+# =============================================================================
+
+@router.post("/stream")
+async def send_message_stream(
     project_id: str,
     request: ChatMessageCreate,
     tool_mode: str = "manual",
@@ -289,24 +329,17 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Send a message to the AI assistant.
+    Send a message to the AI assistant with SSE streaming.
 
-    The assistant can:
-    - Answer questions about selected cells
-    - Write and edit code
-    - Execute cells (with approval in manual mode)
-    - Create documentation
+    Proxies to playground's /chat/stream endpoint for real-time progress events.
 
-    Args:
-        project_id: Project ID
-        request: Message and context
-        tool_mode: "auto", "manual", or "ai_decide"
-        llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
-        context_format: Context format for LLM ("xml" or "plain")
-        chat_id: Chat ID (default: "default")
-
-    Returns:
-        ChatResponse with AI response and any pending tool calls
+    SSE Events:
+    - event: thinking - Status message
+    - event: tool_call - Tool being called
+    - event: tool_result - Tool execution result
+    - event: pending_tools - Tools awaiting approval
+    - event: done - Final response
+    - event: error - Error occurred
     """
     # Verify project ownership
     project_service = ProjectService(db)
@@ -322,12 +355,16 @@ async def send_message(
     playground_service = PlaygroundService(db)
     playground = await playground_service.get_by_project_id(project_id)
 
+    if not playground or playground.status.value != "running":
+        async def error_stream():
+            yield f"event: error\ndata: {json.dumps({'error': 'Playground is not running. Start the playground to enable AI assistance.'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+
     # Load cell content from S3 if cell IDs provided
-    context: List[CellContext] = []
+    context_list = []
     if request.context_cell_ids:
         notebook_data = await notebook_s3_client.load_notebook(project.storage_month, project_id)
         if notebook_data and "cells" in notebook_data:
-            # Build lookup by cell_id
             cell_id_set = set(request.context_cell_ids)
             for idx, cell in enumerate(notebook_data["cells"]):
                 cell_id = cell.get("metadata", {}).get("cell_id", "")
@@ -335,7 +372,6 @@ async def send_message(
                     cell_type = cell.get("cell_type", "code")
                     ai_data = cell.get("ai_data", {})
 
-                    # For AI cells, use ai_data content; for others, use source
                     if cell_type == "ai" and ai_data:
                         content = ai_data.get("user_prompt", "") or cell.get("source", "")
                         ai_prompt = ai_data.get("user_prompt", "")
@@ -345,55 +381,78 @@ async def send_message(
                         ai_prompt = None
                         ai_response = None
 
-                    context.append(CellContext(
-                        cell_id=cell_id,
-                        type=cell_type,
-                        content=content,
-                        output=None,  # Don't include outputs
-                        cell_number=idx + 1,
-                        ai_prompt=ai_prompt,
-                        ai_response=ai_response,
-                    ))
+                    context_list.append({
+                        "id": cell_id,
+                        "type": cell_type,
+                        "content": content,
+                        "output": None,
+                        "cellNumber": idx + 1,
+                        "ai_prompt": ai_prompt,
+                        "ai_response": ai_response,
+                    })
 
-    # Update playground activity (user is actively using it)
-    if playground:
-        await playground_service.update_activity(playground)
+    # Update playground activity
+    await playground_service.update_activity(playground)
 
-    # Convert images to dict format for forwarding
+    # Convert images
     images_data = None
     if request.images:
         images_data = [
-            {
-                "data": img.data,
-                "mime_type": img.mime_type,
-                "url": img.url,
-                "filename": img.filename,
-            }
+            {"data": img.data, "mime_type": img.mime_type, "url": img.url, "filename": img.filename}
             for img in request.images
-            if img.data or img.url  # Only include images with actual content
+            if img.data or img.url
         ]
         if not images_data:
             images_data = None
 
-    # Send message
-    chat_service = ChatService(project.storage_month)
-    response = await chat_service.send_message(
-        project=project,
-        playground=playground,
-        message=request.message,
-        context=context,
-        tool_mode=tool_mode,
-        llm_provider=llm_provider,
-        context_format=context_format,
-        chat_id=chat_id,
-        images=images_data,
+    # Stream SSE response from playground
+    async def stream_sse():
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{playground.internal_url}/chat/stream",
+                    headers={"X-Internal-Secret": playground.internal_secret},
+                    json={
+                        "message": request.message,
+                        "context": context_list,
+                        "session_id": project_id,
+                        "context_format": context_format,
+                        "llm_provider": llm_provider,
+                        "tool_mode": tool_mode,
+                        "images": images_data,
+                    },
+                    timeout=300,
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_text.decode()}'})}\n\n"
+                        return
+
+                    async for line in response.aiter_lines():
+                        if line:
+                            yield f"{line}\n"
+                        else:
+                            yield "\n"
+
+        except httpx.TimeoutException:
+            yield f"event: error\ndata: {json.dumps({'error': 'Request timed out'})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        stream_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
-    return response
 
-
-@router.post("/execute-tools", response_model=ChatResponse)
-async def execute_tools(
+@router.post("/execute-tools/stream")
+async def execute_tools_stream(
     project_id: str,
     request: ExecuteToolsRequest,
     tool_mode: str = "manual",
@@ -404,17 +463,17 @@ async def execute_tools(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Execute approved tool calls.
+    Execute approved tool calls with SSE streaming.
 
-    After the AI returns pending tool calls, the user can approve them
-    and call this endpoint to execute the approved tools.
+    Proxies to playground's /chat/execute-tools/stream endpoint.
 
-    Args:
-        project_id: Project ID
-        request: Approved tools to execute
-        tool_mode: "auto", "manual", or "ai_decide"
-        llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
-        chat_id: Chat ID (default: "default")
+    SSE Events:
+    - event: thinking - Status message
+    - event: tool_executing - Tool being executed
+    - event: tool_result - Tool execution result
+    - event: pending_tools - More tools need approval
+    - event: done - Final response
+    - event: error - Error occurred
     """
     # Verify project ownership
     project_service = ProjectService(db)
@@ -430,28 +489,53 @@ async def execute_tools(
     playground_service = PlaygroundService(db)
     playground = await playground_service.get_by_project_id(project_id)
 
-    if playground is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No playground running",
-        )
+    if not playground or playground.status.value != "running":
+        async def error_stream():
+            yield f"event: error\ndata: {json.dumps({'error': 'Playground is not running'})}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
 
-    # Update playground activity (user is actively using it)
+    # Update playground activity
     await playground_service.update_activity(playground)
 
-    # Execute tools
-    chat_service = ChatService(project.storage_month)
-    response = await chat_service.execute_tools(
-        project=project,
-        playground=playground,
-        approved_tools=request.approved_tools,
-        tool_mode=tool_mode,
-        llm_provider=llm_provider,
-        context_format=context_format,
-        chat_id=chat_id,
-    )
+    # Stream SSE response from playground
+    async def stream_sse():
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{playground.internal_url}/chat/execute-tools/stream",
+                    headers={"X-Internal-Secret": playground.internal_secret},
+                    json={
+                        "session_id": project_id,
+                        "approved_tools": [t.model_dump() for t in request.approved_tools],
+                    },
+                    timeout=300,
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_text.decode()}'})}\n\n"
+                        return
 
-    return response
+                    async for line in response.aiter_lines():
+                        if line:
+                            yield f"{line}\n"
+                        else:
+                            yield "\n"
+
+        except httpx.TimeoutException:
+            yield f"event: error\ndata: {json.dumps({'error': 'Request timed out'})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        stream_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.delete("", status_code=status.HTTP_200_OK)

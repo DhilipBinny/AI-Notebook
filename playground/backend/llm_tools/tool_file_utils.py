@@ -658,7 +658,7 @@ def delete_directory(dir_path: str, recursive: bool = False) -> dict:
         if "not empty" in str(e).lower() or "directory not empty" in str(e).lower():
             return {
                 "success": False,
-                "error": f"Directory is not empty. Use recursive=True to delete with contents."
+                "error": "Directory is not empty. Use recursive=True to delete with contents."
             }
         return {
             "success": False,

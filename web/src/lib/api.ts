@@ -300,38 +300,237 @@ export const chat = {
     return data
   },
 
-  sendMessage: async (
-    projectId: string,
-    message: string,
-    contextCellIds: string[],
-    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
-    llmProvider: string = 'gemini',
-    contextFormat: 'xml' | 'json' | 'plain' = 'xml',
-    images?: ImageInput[]
-  ): Promise<ChatResponse> => {
-    const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
-      message,
-      context_cell_ids: contextCellIds,
-      images,
-    })
-    return data
-  },
+  // DEPRECATED: Use sendMessageWithSSE() instead - JSON endpoint replaced by SSE streaming
+  // sendMessage: async (
+  //   projectId: string,
+  //   message: string,
+  //   contextCellIds: string[],
+  //   toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
+  //   llmProvider: string = 'gemini',
+  //   contextFormat: 'xml' | 'json' | 'plain' = 'xml',
+  //   images?: ImageInput[]
+  // ): Promise<ChatResponse> => {
+  //   const { data } = await api.post(`/projects/${projectId}/chat?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+  //     message,
+  //     context_cell_ids: contextCellIds,
+  //     images,
+  //   })
+  //   return data
+  // },
 
-  executeTools: async (
-    projectId: string,
-    approvedTools: PendingToolCall[],
-    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
-    llmProvider: string = 'gemini',
-    contextFormat: 'xml' | 'json' | 'plain' = 'xml'
-  ): Promise<ChatResponse> => {
-    const { data } = await api.post(`/projects/${projectId}/chat/execute-tools?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
-      approved_tools: approvedTools,
-    })
-    return data
-  },
+  // DEPRECATED: Use executeToolsWithSSE() instead - JSON endpoint replaced by SSE streaming
+  // executeTools: async (
+  //   projectId: string,
+  //   approvedTools: PendingToolCall[],
+  //   toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
+  //   llmProvider: string = 'gemini',
+  //   contextFormat: 'xml' | 'json' | 'plain' = 'xml'
+  // ): Promise<ChatResponse> => {
+  //   const { data } = await api.post(`/projects/${projectId}/chat/execute-tools?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+  //     approved_tools: approvedTools,
+  //   })
+  //   return data
+  // },
 
   clearHistory: async (projectId: string): Promise<void> => {
     await api.delete(`/projects/${projectId}/chat`)
+  },
+
+  // SSE Streaming version of sendMessage - provides real-time progress events
+  sendMessageWithSSE: (
+    projectId: string,
+    message: string,
+    contextCellIds: string[],
+    sessionId: string,
+    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
+    llmProvider: string = 'gemini',
+    contextFormat: 'xml' | 'json' | 'plain' = 'xml',
+    images?: ImageInput[],
+    onEvent?: (event: { type: string; data: Record<string, unknown> }) => void,
+    onDone?: (result: ChatResponse & { has_pending_tools?: boolean }) => void,
+    onError?: (error: string) => void
+  ): AbortController => {
+    const controller = new AbortController()
+    const token = localStorage.getItem('access_token')
+
+    const body = JSON.stringify({
+      message,
+      context_cell_ids: contextCellIds,
+      session_id: sessionId,
+      tool_mode: toolMode,
+      images: images || undefined,
+    })
+
+    fetch(`/api/projects/${projectId}/chat/stream?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body,
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('No response body')
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let currentEvent = ''
+        let currentData = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7)
+            } else if (line.startsWith('data: ')) {
+              currentData = line.slice(6)
+            } else if (line === '' && currentEvent && currentData) {
+              try {
+                const data = JSON.parse(currentData)
+
+                if (currentEvent === 'done') {
+                  onDone?.({
+                    success: data.success ?? true,
+                    response: data.response || '',
+                    pending_tool_calls: data.pending_tool_calls || [],
+                    steps: data.steps || [],
+                    updates: data.updates || [],
+                    has_pending_tools: data.has_pending_tools || false,
+                  })
+                } else if (currentEvent === 'error') {
+                  onError?.(data.error || 'Unknown error')
+                } else {
+                  console.log('[Chat SSE] Event:', currentEvent, data)
+                  onEvent?.({ type: currentEvent, data })
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE data:', currentData, e)
+              }
+
+              currentEvent = ''
+              currentData = ''
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError?.(err.message || 'Connection failed')
+        }
+      })
+
+    return controller
+  },
+
+  // SSE Streaming version of executeTools - provides real-time progress events
+  executeToolsWithSSE: (
+    projectId: string,
+    approvedTools: PendingToolCall[],
+    sessionId: string,
+    toolMode: 'auto' | 'manual' | 'ai_decide' = 'manual',
+    llmProvider: string = 'gemini',
+    contextFormat: 'xml' | 'json' | 'plain' = 'xml',
+    onEvent?: (event: { type: string; data: Record<string, unknown> }) => void,
+    onDone?: (result: ChatResponse & { has_pending_tools?: boolean }) => void,
+    onError?: (error: string) => void
+  ): AbortController => {
+    const controller = new AbortController()
+    const token = localStorage.getItem('access_token')
+
+    const body = JSON.stringify({
+      session_id: sessionId,
+      approved_tools: approvedTools,
+    })
+
+    fetch(`/api/projects/${projectId}/chat/execute-tools/stream?tool_mode=${toolMode}&llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body,
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('No response body')
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let currentEvent = ''
+        let currentData = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7)
+            } else if (line.startsWith('data: ')) {
+              currentData = line.slice(6)
+            } else if (line === '' && currentEvent && currentData) {
+              try {
+                const data = JSON.parse(currentData)
+
+                if (currentEvent === 'done') {
+                  onDone?.({
+                    success: data.success ?? true,
+                    response: data.response || '',
+                    pending_tool_calls: data.pending_tool_calls || [],
+                    steps: data.steps || [],
+                    updates: data.updates || [],
+                    has_pending_tools: data.has_pending_tools || false,
+                  })
+                } else if (currentEvent === 'error') {
+                  onError?.(data.error || 'Unknown error')
+                } else {
+                  console.log('[Chat Execute SSE] Event:', currentEvent, data)
+                  onEvent?.({ type: currentEvent, data })
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE data:', currentData, e)
+              }
+
+              currentEvent = ''
+              currentData = ''
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError?.(err.message || 'Connection failed')
+        }
+      })
+
+    return controller
   },
 
   // Run AI Cell with unified SSE streaming response

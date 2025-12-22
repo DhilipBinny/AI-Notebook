@@ -24,10 +24,13 @@ from google.genai import types
 from typing import List, Dict, Any, Optional, Union, Callable
 
 from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult, CancelledException
-from backend.llm_clients.tool_schemas import build_gemini_tool_schema
+from backend.llm_adapters.tool_schemas import build_gemini_tool_schema
 from backend.utils.util_func import log
 from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
 import backend.config as cfg
+
+# Import the adapter for gradual migration
+from backend.llm_adapters import GeminiAdapter, CanonicalToolResult, CanonicalResponse
 
 
 # =============================================================================
@@ -66,6 +69,9 @@ class GeminiClient(BaseLLMClient):
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name or cfg.GEMINI_MODEL
         self.enable_web_search = enable_web_search
+
+        # Initialize the adapter for format translation
+        self.adapter = GeminiAdapter()
 
         # Use config value if not explicitly set
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
@@ -154,6 +160,25 @@ class GeminiClient(BaseLLMClient):
             parameters=schema["parameters"]
         )
 
+    def count_tokens(self, text: str) -> int:
+        """
+        Count tokens using Gemini's native API.
+
+        Args:
+            text: The text to count tokens for
+
+        Returns:
+            Token count, or 0 if counting fails
+        """
+        try:
+            token_count = self.client.models.count_tokens(
+                model=self.model_name,
+                contents=text
+            )
+            return token_count.total_tokens
+        except Exception:
+            return 0
+
     # =========================================================================
     # SECTION 3: CHAT PANEL - Main Conversation Interface
     # =========================================================================
@@ -184,13 +209,26 @@ class GeminiClient(BaseLLMClient):
             dict: {"pending_tool_calls": [...], "response_text": "..."} (if manual mode with tools)
         """
         try:
-            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            log(f"📨 Gemini chat_panel_send()")
-            log(f"   Context: {len(notebook_context)} chars")
-            log(f"   User prompt: {len(user_prompt)} chars")
-            if images:
-                log(f"   Images: {len(images)} attached")
-            log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            from backend.utils.util_func import log_chat
+            mode = "auto" if self.auto_function_calling else "manual"
+
+            # Count tokens using self.count_tokens()
+            full_text = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
+            input_tokens = self.count_tokens(full_text)
+
+            log_chat(
+                provider="Gemini",
+                model=self.model_name,
+                mode=mode,
+                context_chars=len(notebook_context),
+                prompt_chars=len(user_prompt),
+                images=len(images) if images else 0,
+                web_search=self.enable_web_search,
+                input_tokens=input_tokens
+            )
+
+            # Emit thinking progress
+            self._emit_progress("thinking", {"message": "Processing your request..."})
 
             # Combine context and user_prompt for Gemini (automatic caching handles efficiency)
             if notebook_context:
@@ -201,23 +239,27 @@ class GeminiClient(BaseLLMClient):
             # Phase 1: Check if web search is needed (use user_prompt for keyword detection)
             search_context = ""
             if self._needs_web_search(message, user_prompt):
+                self._emit_progress("thinking", {"message": "Searching the web..."})
                 search_context = self._gemini_do_google_search(user_prompt)
 
             # Phase 2: Send to main chat with function tools
             if search_context:
                 # Inject search results into the message
                 enhanced_message = f"{search_context}\n\nUser question: {message}\n\nPlease answer based on the search results above and your knowledge."
-                log(f"🤖 [PHASE 2] Sending to Gemini WITH search context")
+                log("🤖 [PHASE 2] Sending to Gemini WITH search context")
             else:
                 enhanced_message = message
-                log(f"🤖 [PHASE 2] Sending to Gemini (no search)")
+                log("🤖 [PHASE 2] Sending to Gemini (no search)")
 
             # Build content with optional images
             content = self._build_content_with_images(enhanced_message, images)
 
+            self._emit_progress("thinking", {"message": "Waiting for AI response..."})
+
             try:
                 response = self.chat.send_message(message=content)
-                log(f"✅ Gemini response received")
+                log("✅ Gemini response received")
+                self._emit_progress("thinking", {"message": "Processing response..."})
             except KeyError as e:
                 # Gemini SDK throws KeyError when it tries to call a hallucinated tool
                 # that doesn't exist in our function_map
@@ -229,7 +271,7 @@ class GeminiClient(BaseLLMClient):
                 retry_message = f"{enhanced_message}\n\n(Note: Use only the available tools. There is no '{tool_name}' tool.)"
                 content = self._build_content_with_images(retry_message, images)
                 response = self.chat.send_message(message=content)
-                log(f"✅ Gemini retry response received")
+                log("✅ Gemini retry response received")
 
             # Log cache usage
             self._log_cache_usage(response)
@@ -253,17 +295,17 @@ class GeminiClient(BaseLLMClient):
                         if hasattr(part, 'function_response') and part.function_response:
                             log(f"🔧 Part {i} function_response: {part.function_response.name}")
                 else:
-                    log(f"Candidate has no content parts")
+                    log("Candidate has no content parts")
 
             # If auto mode, tools are already executed - just return text
             if self.auto_function_calling:
-                log(f"Auto mode - returning text")
+                log("Auto mode - returning text")
                 # Check for MALFORMED_FUNCTION_CALL and retry without tools
                 if hasattr(response, 'candidates') and response.candidates:
                     candidate = response.candidates[0]
                     finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
                     if str(finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
-                        log(f"⚠️ MALFORMED_FUNCTION_CALL detected - retrying without tools")
+                        log("⚠️ MALFORMED_FUNCTION_CALL detected - retrying without tools")
                         # Restart chat and retry with simpler prompt
                         self._gemini_start_chat()
                         simple_prompt = f"Please answer this question directly based on the context provided. Do not use any tools.\n\n{enhanced_message}"
@@ -271,7 +313,7 @@ class GeminiClient(BaseLLMClient):
                             # Make a simple call without expecting tool use
                             simple_response = self.chat.send_message(message=simple_prompt)
                             if simple_response.text:
-                                log(f"✅ Retry without tools succeeded")
+                                log("✅ Retry without tools succeeded")
                                 return simple_response.text
                         except Exception as retry_err:
                             log(f"⚠️ Retry failed: {retry_err}")
@@ -281,7 +323,7 @@ class GeminiClient(BaseLLMClient):
                 # Handle case where tools were executed but no text was returned
                 if not response.text:
                     # Check if any tools were executed by looking at chat history
-                    log(f"⚠️ No text in response, but tools may have been executed")
+                    log("⚠️ No text in response, but tools may have been executed")
                     return "I've completed the requested actions. Please check your notebook for the changes."
 
                 return response.text or ""
@@ -524,7 +566,7 @@ class GeminiClient(BaseLLMClient):
             The response text from the LLM (may include web search results)
         """
         try:
-            log(f"🤖 Gemini AI Cell completion starting...")
+            log("🤖 Gemini AI Cell completion starting...")
             log(f"   Context: {len(notebook_context)} chars")
             log(f"   User prompt: {len(user_prompt)} chars")
             if images:
@@ -542,7 +584,7 @@ class GeminiClient(BaseLLMClient):
             # Build the final prompt with search context if available
             if search_context:
                 enhanced_prompt = f"{search_context}\n\n{full_prompt}"
-                log(f"🤖 AI Cell: Using web search context")
+                log("🤖 AI Cell: Using web search context")
             else:
                 enhanced_prompt = full_prompt
 
@@ -594,10 +636,10 @@ class GeminiClient(BaseLLMClient):
         return self._ai_cell_tool_map_cache
 
     def _get_web_search_tool(self) -> Optional[Any]:
-        """Get Gemini web search tool (Google Search)."""
+        """Get Gemini web search tool (Google Search) via adapter."""
         if not self.enable_web_search:
             return None
-        return types.Tool(google_search=types.GoogleSearch())
+        return self.adapter.get_web_search_tool()
 
     def _prepare_ai_cell_messages(
         self,
@@ -652,7 +694,7 @@ class GeminiClient(BaseLLMClient):
                 thinking_budget=8192,  # Allow up to 8K tokens for thinking
                 include_thoughts=True  # Include thought summaries in response
             )
-            log(f"💭 Gemini thinking mode enabled (budget: 8192 tokens)")
+            log("💭 Gemini thinking mode enabled (budget: 8192 tokens)")
 
         config = types.GenerateContentConfig(
             system_instruction=self.AI_CELL_SYSTEM_PROMPT,
@@ -704,7 +746,7 @@ class GeminiClient(BaseLLMClient):
 
                     # Check for malformed function call (after extracting any content from this chunk)
                     if str(last_finish_reason) == "FinishReason.MALFORMED_FUNCTION_CALL":
-                        log(f"⚠️ Gemini AI Cell: MALFORMED_FUNCTION_CALL detected")
+                        log("⚠️ Gemini AI Cell: MALFORMED_FUNCTION_CALL detected")
                         log(f"⚠️ Full candidate: {candidate}")
                         log(f"⚠️ Candidate type: {type(candidate)}")
                         log(f"⚠️ Candidate attributes: {dir(candidate)}")
@@ -726,9 +768,9 @@ class GeminiClient(BaseLLMClient):
                                     if hasattr(part, 'text') and part.text:
                                         log(f"⚠️ Partial text: {part.text[:500]}")
                             else:
-                                log(f"⚠️ No parts in content")
+                                log("⚠️ No parts in content")
                         else:
-                            log(f"⚠️ No content in candidate")
+                            log("⚠️ No content in candidate")
 
                         # Also check for any error message
                         if hasattr(candidate, 'safety_ratings'):
@@ -768,37 +810,34 @@ class GeminiClient(BaseLLMClient):
         """
         Add tool results to messages for the next Gemini API call.
 
-        Gemini requires:
-        1. Model message with function_call parts
-        2. User message with function_response parts
+        Now uses the adapter for centralized format handling.
         """
-        # Build model message with function calls
-        function_call_parts = []
-        for tc in response.tool_calls:
-            function_call_parts.append(types.Part.from_function_call(
-                name=tc.name,
-                args=tc.arguments
-            ))
+        from backend.llm_adapters.canonical import CanonicalToolCall as CanonicalTC
 
-        messages.append(types.Content(role="model", parts=function_call_parts))
+        # Convert LLMResponse to CanonicalResponse for adapter
+        canonical_response = CanonicalResponse(
+            text=response.text,
+            tool_calls=[
+                CanonicalTC(id=tc.id, name=tc.name, arguments=tc.arguments)
+                for tc in response.tool_calls
+            ],
+            thinking=response.thinking,
+            is_final=response.is_final
+        )
 
-        # Build user message with function responses
-        function_response_parts = []
-        for tr in tool_results:
-            # Parse result JSON back to dict for Gemini
-            try:
-                result_dict = json.loads(tr.result)
-            except json.JSONDecodeError:
-                result_dict = {"result": tr.result}
-
-            function_response_parts.append(types.Part.from_function_response(
+        # Convert ToolResult to CanonicalToolResult for adapter
+        canonical_results = [
+            CanonicalToolResult(
+                tool_call_id=tr.tool_call_id,
                 name=tr.name,
-                response=result_dict
-            ))
+                result=tr.result,
+                is_error=tr.is_error
+            )
+            for tr in tool_results
+        ]
 
-        messages.append(types.Content(role="user", parts=function_response_parts))
-
-        return messages
+        # Use adapter to add tool results (handles Gemini-specific format)
+        return self.adapter.add_tool_results(messages, canonical_response, canonical_results)
 
     # =========================================================================
     # SECTION 7: UTILITIES & HELPERS
@@ -896,24 +935,3 @@ class GeminiClient(BaseLLMClient):
         parts.append(types.Part.from_text(text=text))
 
         return parts
-
-    def _log_cache_usage(self, response) -> None:
-        """
-        Log cache usage statistics from Gemini response.
-        Gemini 2.5 has implicit caching enabled by default (since May 2025).
-        Cached tokens get 75-90% discount.
-        """
-        if hasattr(response, 'usage_metadata') and response.usage_metadata:
-            usage = response.usage_metadata
-            input_tokens = getattr(usage, 'prompt_token_count', 0) or 0
-            output_tokens = getattr(usage, 'candidates_token_count', 0) or 0
-            cached_tokens = getattr(usage, 'cached_content_token_count', 0) or 0
-
-            if cached_tokens > 0:
-                # Gemini 2.5: 90% discount, Gemini 2.0: 75% discount
-                discount = 0.90 if "2.5" in self.model_name else 0.75
-                savings_pct = (cached_tokens * discount) / max(input_tokens, 1) * 100
-                log(f"💾 Gemini Cache: cached={cached_tokens}, input={input_tokens}, output={output_tokens}")
-                log(f"💰 Cache savings: ~{savings_pct:.1f}% on input tokens ({int(discount*100)}% discount)")
-            else:
-                log(f"📊 Gemini Usage: input={input_tokens}, output={output_tokens} (no cache hit)")

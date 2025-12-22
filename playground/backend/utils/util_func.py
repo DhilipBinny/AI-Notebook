@@ -111,24 +111,96 @@ def log_request(
     print(f"{'='*80}\n")
 
 
-def log_chat(model: str, mode: str, context_cells: int) -> None:
-    """Log chat request header."""
-    print(f"")
-    print(f"{YELLOW}╔══════════════════════════════════════════════════════════════════════╗{RESET}")
-    print(f"{YELLOW}║{RESET} {WHITE}{BOLD}💬 CHAT REQUEST{RESET}                                                       {YELLOW}║{RESET}")
-    print(f"{YELLOW}╠══════════════════════════════════════════════════════════════════════╣{RESET}")
-    print(f"{YELLOW}║{RESET} 🧠 Model: {CYAN}{model:12}{RESET} │ ⚙️  Mode: {CYAN}{mode:8}{RESET} │ 📝 Context: {CYAN}{context_cells:3}{RESET} cells {YELLOW}║{RESET}")
-    print(f"{YELLOW}╚══════════════════════════════════════════════════════════════════════╝{RESET}")
+def log_chat(
+    provider: str,
+    model: str,
+    mode: str = "auto",
+    context_chars: int = 0,
+    prompt_chars: int = 0,
+    images: int = 0,
+    web_search: bool = False,
+    max_tokens: int = None,
+    input_tokens: int = None
+) -> None:
+    """
+    Log chat panel request header with colored box.
+
+    Args:
+        provider: LLM provider (Gemini, OpenAI, Anthropic, Ollama, OpenRouter)
+        model: Model name
+        mode: Tool mode (auto/manual)
+        context_chars: Size of notebook context
+        prompt_chars: Size of user prompt
+        images: Number of images attached
+        web_search: Whether web search is enabled
+        max_tokens: Max tokens (for OpenRouter)
+        input_tokens: Actual input token count (if available)
+    """
+    # Handle None values safely
+    provider = provider or "Unknown"
+    model = model or "Unknown"
+    mode = mode or "auto"
+    context_chars = context_chars or 0
+    prompt_chars = prompt_chars or 0
+    input_tokens = input_tokens or 0
+
+    # Build info line
+    web_str = "🔍 on" if web_search else "🔍 off"
+    tokens_str = f"🎯 {max_tokens}" if max_tokens else web_str
+
+    print()
+    print(f"{YELLOW}╔══════════════════════════════════════════════════════════════════════════════╗{RESET}")
+    print(f"{YELLOW}║{RESET} {WHITE}{BOLD}💬 CHAT PANEL{RESET}                                                                {YELLOW}║{RESET}")
+    print(f"{YELLOW}╠══════════════════════════════════════════════════════════════════════════════╣{RESET}")
+    print(f"{YELLOW}║{RESET} 🧠 {CYAN}{provider:<12}{RESET} │ 📦 {CYAN}{model:<24}{RESET} │ ⚙️ {CYAN}{mode:<6}{RESET} │ {tokens_str:<8} {YELLOW}║{RESET}")
+    print(f"{YELLOW}║{RESET} 📝 Context: {CYAN}{context_chars:>6}{RESET} chars │ 💬 Prompt: {CYAN}{prompt_chars:>6}{RESET} chars │ 🔢 {CYAN}{input_tokens:>6}{RESET} tokens {YELLOW}║{RESET}")
+    print(f"{YELLOW}╚══════════════════════════════════════════════════════════════════════════════╝{RESET}")
 
 
-def log_ai_cell(provider: str, cell_position: int, total_cells: int) -> None:
-    """Log AI cell request header."""
-    print(f"")
-    print(f"{BLUE}╔══════════════════════════════════════════════════════════════════════╗{RESET}")
-    print(f"{BLUE}║{RESET} {WHITE}{BOLD}🤖 AI CELL REQUEST{RESET}                                                    {BLUE}║{RESET}")
-    print(f"{BLUE}╠══════════════════════════════════════════════════════════════════════╣{RESET}")
-    print(f"{BLUE}║{RESET} 🧠 Provider: {CYAN}{provider:10}{RESET} │ 📍 Position: Cell {CYAN}#{cell_position}{RESET} of {CYAN}{total_cells}{RESET}        {BLUE}║{RESET}")
-    print(f"{BLUE}╚══════════════════════════════════════════════════════════════════════╝{RESET}")
+def log_ai_cell(
+    provider: str,
+    model: str,
+    mode: str = "auto",
+    context_chars: int = 0,
+    prompt_chars: int = 0,
+    images: int = 0,
+    web_search: bool = False,
+    max_tokens: int = None,
+    input_tokens: int = None
+) -> None:
+    """
+    Log AI cell request header with colored box (blue borders).
+
+    Args:
+        provider: LLM provider (Gemini, OpenAI, Anthropic, Ollama, OpenRouter)
+        model: Model name
+        mode: Tool mode (auto/manual)
+        context_chars: Size of notebook context
+        prompt_chars: Size of user prompt
+        images: Number of images attached
+        web_search: Whether web search is enabled
+        max_tokens: Max tokens (for OpenRouter)
+        input_tokens: Actual input token count
+    """
+    # Handle None values safely
+    provider = provider or "Unknown"
+    model = model or "Unknown"
+    mode = mode or "auto"
+    context_chars = context_chars or 0
+    prompt_chars = prompt_chars or 0
+    input_tokens = input_tokens or 0
+
+    # Build info line
+    web_str = "🔍 on" if web_search else "🔍 off"
+    tokens_str = f"🎯 {max_tokens}" if max_tokens else web_str
+
+    print()
+    print(f"{BLUE}╔══════════════════════════════════════════════════════════════════════════════╗{RESET}")
+    print(f"{BLUE}║{RESET} {WHITE}{BOLD}🤖 AI CELL{RESET}                                                                  {BLUE}║{RESET}")
+    print(f"{BLUE}╠══════════════════════════════════════════════════════════════════════════════╣{RESET}")
+    print(f"{BLUE}║{RESET} 🧠 {CYAN}{provider:<12}{RESET} │ 📦 {CYAN}{model:<24}{RESET} │ ⚙️ {CYAN}{mode:<6}{RESET} │ {tokens_str:<8} {BLUE}║{RESET}")
+    print(f"{BLUE}║{RESET} 📝 Context: {CYAN}{context_chars:>6}{RESET} chars │ 💬 Prompt: {CYAN}{prompt_chars:>6}{RESET} chars │ 🔢 {CYAN}{input_tokens:>6}{RESET} tokens {BLUE}║{RESET}")
+    print(f"{BLUE}╚══════════════════════════════════════════════════════════════════════════════╝{RESET}")
 
 
 def log_user(message: str) -> None:
@@ -145,13 +217,13 @@ def log_resp(response: str) -> None:
 
 def log_resp_box(response: str) -> None:
     """Log full LLM response with header."""
-    print(f"")
+    print()
     print(f"{GREEN}╔══════════════════════════════════════════════════════════════════════╗{RESET}")
     print(f"{GREEN}║ 🤖 LLM RESPONSE ({len(response)} chars)                                          {GREEN}║{RESET}")
     print(f"{GREEN}╚══════════════════════════════════════════════════════════════════════╝{RESET}")
     print(f"{GREEN}{response if response else '(empty)'}{RESET}")
     print(f"{GREEN}{'─' * 72}{RESET}")
-    print(f"")
+    print()
 
 
 # =============================================================================

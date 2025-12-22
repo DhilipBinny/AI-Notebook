@@ -12,6 +12,7 @@ ipykernel==6.29.5
 openai>=1.0.0          # OpenAI + Ollama (compatible API)
 anthropic>=0.18.0       # Anthropic Claude
 google-genai>=1.0.0         # Google Gemini (new SDK with Google Search)
+tiktoken>=0.5.0        # OpenAI token counting
 
 # Config
 # In Docker: env vars passed from master-api

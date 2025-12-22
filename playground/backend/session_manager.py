@@ -330,15 +330,21 @@ def set_current_session(session_id: str):
 
 def get_current_session() -> Optional[Session]:
     """
-    Get the current session for LLM tools.
+    Get the current session for LLM tools (LAZY KERNEL).
 
     Returns the session associated with the current request context.
+    Creates the session/kernel on first access (lazy initialization).
+    This allows LLM calls to run in parallel - kernel is only created
+    when tools actually need to execute code.
+
     Thread-safe for concurrent requests.
     """
     session_id = _current_session_id.get()
     if session_id is None:
         return None
-    return get_session_manager().get_session(session_id)
+    # LAZY: Create session with kernel only when first accessed by a tool
+    # This allows parallel LLM requests - kernel created on-demand
+    return get_session_manager().get_or_create_session(session_id)
 
 
 def clear_current_session():
