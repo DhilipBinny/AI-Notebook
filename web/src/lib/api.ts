@@ -683,4 +683,113 @@ export const notebooks = {
   // Note: syncToPlayground removed - LLM tools now fetch from Master API directly
 }
 
+// File info from backend
+interface FileInfo {
+  name: string
+  path: string
+  size: number
+  is_directory: boolean
+  modified_at: string | null
+}
+
+interface FileListResponse {
+  success: boolean
+  project_id: string
+  files: FileInfo[]
+  total_size: number
+}
+
+interface FileUploadResponse {
+  success: boolean
+  project_id: string
+  files: { name: string; path: string; size: number }[]
+  message: string
+}
+
+interface FileSaveResponse {
+  success: boolean
+  project_id: string
+  files_saved: number
+  total_size: number
+  message: string
+}
+
+interface FileRestoreResponse {
+  success: boolean
+  project_id: string
+  files_restored: number
+  message: string
+}
+
+export const files = {
+  // List files in workspace
+  list: async (projectId: string, path?: string): Promise<FileListResponse> => {
+    const url = path
+      ? `/projects/${projectId}/files?path=${encodeURIComponent(path)}`
+      : `/projects/${projectId}/files`
+    const { data } = await api.get(url)
+    return data
+  },
+
+  // Upload a single file
+  upload: async (projectId: string, file: File, path?: string): Promise<FileUploadResponse> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (path) {
+      formData.append('path', path)
+    }
+    const { data } = await api.post(`/projects/${projectId}/files`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  // Upload multiple files
+  uploadMultiple: async (projectId: string, files: File[], path?: string): Promise<FileUploadResponse> => {
+    const formData = new FormData()
+    files.forEach((file) => formData.append('files', file))
+    if (path) {
+      formData.append('path', path)
+    }
+    const { data } = await api.post(`/projects/${projectId}/files/upload-multiple`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  // Download a file - returns blob URL
+  download: async (projectId: string, filePath: string): Promise<string> => {
+    const response = await api.get(`/projects/${projectId}/files/download/${encodeURIComponent(filePath)}`, {
+      responseType: 'blob',
+    })
+    return URL.createObjectURL(response.data)
+  },
+
+  // Delete files
+  delete: async (projectId: string, paths: string[]): Promise<{ success: boolean; deleted: string[]; message: string }> => {
+    const { data } = await api.delete(`/projects/${projectId}/files`, {
+      data: { paths },
+    })
+    return data
+  },
+
+  // Save workspace to S3
+  saveToS3: async (projectId: string): Promise<FileSaveResponse> => {
+    const { data } = await api.post(`/projects/${projectId}/files/save`)
+    return data
+  },
+
+  // Restore workspace from S3
+  restoreFromS3: async (projectId: string): Promise<FileRestoreResponse> => {
+    const { data } = await api.post(`/projects/${projectId}/files/restore`)
+    return data
+  },
+
+  // List saved files in S3 (works without running playground)
+  listSaved: async (projectId: string): Promise<FileListResponse> => {
+    const { data } = await api.get(`/projects/${projectId}/files/saved`)
+    return data
+  },
+}
+
 export default api

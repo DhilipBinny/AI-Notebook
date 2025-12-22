@@ -32,6 +32,7 @@ from app.playgrounds.routes import router as playgrounds_router
 from app.chat.routes import router as chat_router
 from app.notebooks.routes import router as notebooks_router
 from app.internal.routes import router as internal_router
+from app.files.routes import router as files_router
 
 # Import playground service for cleanup
 from app.playgrounds.service import PlaygroundService
@@ -144,6 +145,7 @@ app.include_router(workspaces_router, prefix="/api")
 app.include_router(playgrounds_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(notebooks_router, prefix="/api")
+app.include_router(files_router, prefix="/api")  # File management endpoints
 app.include_router(internal_router, prefix="/api")  # Internal endpoints for playground
 
 

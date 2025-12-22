@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { auth, projects, playgrounds, chat, notebooks } from '@/lib/api'
+import { auth, projects, playgrounds, chat, notebooks, files } from '@/lib/api'
 import { useAuthStore, useProjectsStore, useNotebookStore } from '@/lib/store'
 import Cell from '@/components/notebook/Cell'
 import AICell from '@/components/notebook/AICell'
 import NotebookToolbar from '@/components/notebook/NotebookToolbar'
 import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
+import FilePanel from '@/components/files/FilePanel'
 import { useKernel } from '@/hooks/useKernel'
 import { useNotebookUpdates } from '@/hooks/useNotebookUpdates'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -21,6 +22,7 @@ import {
   RefreshCw,
   Plus,
   AlertTriangle,
+  FolderOpen,
 } from 'lucide-react'
 
 // Configure marked for PDF export
@@ -189,6 +191,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
   const [showChat, setShowChat] = useState(true)
+  const [showFiles, setShowFiles] = useState(false)  // File panel visibility
   const [chatStreamStatus, setChatStreamStatus] = useState<string | null>(null)  // Real-time SSE status
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
   const [confirmPopup, setConfirmPopup] = useState<{
@@ -2194,6 +2197,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           </div>
           {isDirty && <span className="text-amber-400 text-sm flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> Unsaved</span>}
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowFiles(!showFiles)}
+            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm ${
+              showFiles
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'text-gray-400 hover:text-white hover:bg-white/10'
+            }`}
+            title="Toggle file browser"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span className="hidden sm:inline">Files</span>
+          </button>
+        </div>
       </header>
 
       {/* Toolbar */}
@@ -2230,6 +2247,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
+        {/* File panel - left side */}
+        {showFiles && (
+          <div className="w-[240px] min-w-[200px] max-w-[300px] flex-shrink-0">
+            <FilePanel
+              projectId={projectId}
+              isPlaygroundRunning={playground?.status === 'running'}
+              onClose={() => setShowFiles(false)}
+            />
+          </div>
+        )}
+
         {/* Notebook panel wrapper */}
         <div className="flex-1 relative" style={{ backgroundColor: 'var(--nb-bg-primary)' }}>
           {/* Notebook scroll area */}

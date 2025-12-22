@@ -96,6 +96,17 @@ class PlaygroundService:
 
             if is_ready:
                 playground.status = PlaygroundStatus.RUNNING
+
+                # Auto-restore workspace files from S3
+                try:
+                    await self._restore_workspace_files(
+                        container_name,
+                        project.storage_month,
+                        project.id,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to restore workspace files: {e}")
+                    # Don't fail the playground start, just log the warning
             else:
                 playground.status = PlaygroundStatus.ERROR
                 playground.error_message = "Container failed to start within timeout"
@@ -248,6 +259,37 @@ class PlaygroundService:
 
         await self.db.delete(playground)
         await self.db.flush()
+
+    async def _restore_workspace_files(
+        self,
+        container_name: str,
+        storage_month: str,
+        project_id: str,
+    ) -> None:
+        """
+        Restore workspace files from S3 to container on startup.
+
+        Args:
+            container_name: Docker container name
+            storage_month: Storage month folder (mm-yyyy)
+            project_id: Project ID
+        """
+        from app.files.service import file_service
+
+        restored_files, total_size, errors = await file_service.restore_from_s3(
+            container_name,
+            storage_month,
+            project_id,
+        )
+
+        if restored_files:
+            logger.info(
+                f"Restored {len(restored_files)} files ({total_size} bytes) "
+                f"for project {project_id}"
+            )
+
+        if errors:
+            logger.warning(f"File restore errors for project {project_id}: {errors}")
 
 
 # Import here to avoid circular imports
