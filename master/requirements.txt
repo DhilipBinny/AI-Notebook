@@ -31,6 +31,9 @@ httpx==0.28.1
 # Docker SDK
 docker==7.1.0
 
+# Encryption
+cryptography>=42.0.0
+
 # Utilities
 python-dotenv==1.0.1
 uuid6==2024.7.10

@@ -16,6 +16,8 @@ from .password import verify_password, hash_password
 from app.users.models import User
 from app.users.service import UserService
 from app.users.schemas import UserCreate
+from app.invitations.service import InvitationService
+from app.credits.service import CreditService
 
 
 class AuthService:
@@ -30,6 +32,7 @@ class AuthService:
         email: str,
         password: str,
         name: Optional[str] = None,
+        invite_code: Optional[str] = None,
     ) -> tuple[User, TokenPair]:
         """
         Register a new user.
@@ -38,15 +41,33 @@ class AuthService:
             email: User email
             password: Plain text password
             name: Optional display name
+            invite_code: Invitation code (required if REQUIRE_INVITE_CODE is set)
 
         Returns:
             Tuple of (user, token_pair)
 
         Raises:
-            ValueError: If email already exists
+            ValueError: If email already exists or invite code is invalid
         """
+        # Validate invite code if required
+        invitation = None
+        if settings.require_invite_code:
+            if not invite_code:
+                raise ValueError("Invitation code is required")
+            invitation_service = InvitationService(self.db)
+            invitation = await invitation_service.validate_code(invite_code, email=email)
+
         user_data = UserCreate(email=email, password=password, name=name)
         user = await self.user_service.create(user_data)
+
+        # Redeem invitation after successful user creation
+        if invitation:
+            invitation_service = InvitationService(self.db)
+            await invitation_service.redeem(invitation, user.id)
+
+        # Initialize credits for new user
+        credit_service = CreditService(self.db)
+        await credit_service.initialize_credits(user.id)
 
         # Create tokens
         tokens = create_token_pair(user.id)

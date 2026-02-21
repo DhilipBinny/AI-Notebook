@@ -74,6 +74,23 @@ async def get_current_active_user(
     return user
 
 
+async def get_current_admin_user(
+    user: User = Depends(get_current_active_user),
+) -> User:
+    """
+    Dependency to get the current admin user.
+
+    Raises:
+        HTTPException 403: If user is not an admin
+    """
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user
+
+
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),

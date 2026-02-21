@@ -42,6 +42,7 @@ class UserResponse(UserBase):
     max_projects: int
     is_active: bool
     is_verified: bool
+    is_admin: bool = False
     created_at: datetime
     last_login_at: Optional[datetime]
 

@@ -123,10 +123,20 @@ class OllamaClient(OpenAIClient):
                     messages=messages,
                     max_tokens=self.max_tokens,
                 )
+                # Extract usage for fallback path
+                fallback_usage = None
+                if hasattr(response, 'usage') and response.usage:
+                    usage_obj = response.usage
+                    fallback_usage = {
+                        "input_tokens": getattr(usage_obj, 'prompt_tokens', 0),
+                        "output_tokens": getattr(usage_obj, 'completion_tokens', 0),
+                        "cached_tokens": 0,
+                    }
                 return LLMResponse(
                     text=response.choices[0].message.content or "",
                     tool_calls=[],
-                    is_final=True
+                    is_final=True,
+                    usage=fallback_usage
                 )
             raise
 
@@ -140,8 +150,19 @@ class OllamaClient(OpenAIClient):
                     arguments=_safe_json_loads(tc.function.arguments)
                 ))
 
+        # Extract usage stats
+        usage = None
+        if hasattr(response, 'usage') and response.usage:
+            usage_obj = response.usage
+            usage = {
+                "input_tokens": getattr(usage_obj, 'prompt_tokens', 0),
+                "output_tokens": getattr(usage_obj, 'completion_tokens', 0),
+                "cached_tokens": 0,
+            }
+
         return LLMResponse(
             text=message.content or "",
             tool_calls=tool_calls,
-            is_final=len(tool_calls) == 0
+            is_final=len(tool_calls) == 0,
+            usage=usage
         )

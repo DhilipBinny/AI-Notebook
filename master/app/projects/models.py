@@ -45,7 +45,7 @@ class Project(Base):
     # Kept for backward compatibility with existing database
     llm_provider = Column(
         SQLEnum(LLMProvider, values_callable=lambda obj: [e.value for e in obj]),
-        default=LLMProvider.GEMINI,
+        default=LLMProvider.OLLAMA,
         nullable=False
     )
     llm_model = Column(String(100), nullable=True)
@@ -65,7 +65,7 @@ class Project(Base):
     # Relationships
     owner = relationship("User", back_populates="projects")
     workspace = relationship("Workspace", back_populates="projects")
-    playground = relationship("Playground", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    playground = relationship("Playground", back_populates="project", uselist=False)
 
     def __repr__(self) -> str:
         return f"<Project {self.name}>"

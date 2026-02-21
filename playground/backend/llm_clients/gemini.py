@@ -708,6 +708,7 @@ class GeminiClient(BaseLLMClient):
         thinking = ""
         tool_calls = []
         last_finish_reason = None
+        last_usage_metadata = None
 
         try:
             response_stream = self.client.models.generate_content_stream(
@@ -719,6 +720,10 @@ class GeminiClient(BaseLLMClient):
             for chunk in response_stream:
                 # ✅ CANCELLATION CHECK - between each chunk
                 self._check_cancelled()
+
+                # Track usage metadata (last chunk has accumulated totals)
+                if hasattr(chunk, 'usage_metadata') and chunk.usage_metadata:
+                    last_usage_metadata = chunk.usage_metadata
 
                 if chunk.candidates and len(chunk.candidates) > 0:
                     candidate = chunk.candidates[0]
@@ -782,11 +787,20 @@ class GeminiClient(BaseLLMClient):
                         if thinking:
                             log(f"💭 Gemini thinking before error: {len(thinking)} chars")
 
+                        # Extract usage even on error
+                        error_usage = None
+                        if last_usage_metadata:
+                            error_usage = {
+                                "input_tokens": getattr(last_usage_metadata, 'prompt_token_count', 0) or 0,
+                                "output_tokens": getattr(last_usage_metadata, 'candidates_token_count', 0) or 0,
+                                "cached_tokens": getattr(last_usage_metadata, 'cached_content_token_count', 0) or 0,
+                            }
                         return LLMResponse(
                             text="I encountered an error while trying to analyze your notebook. Please try a more specific question.",
                             tool_calls=[],
                             is_final=True,
-                            thinking=thinking  # Include thinking even on error
+                            thinking=thinking,  # Include thinking even on error
+                            usage=error_usage
                         )
 
         except CancelledException:
@@ -799,11 +813,21 @@ class GeminiClient(BaseLLMClient):
         if thinking:
             log(f"💭 Gemini total thinking: {len(thinking)} chars")
 
+        # Extract usage from last chunk's metadata
+        usage = None
+        if last_usage_metadata:
+            usage = {
+                "input_tokens": getattr(last_usage_metadata, 'prompt_token_count', 0) or 0,
+                "output_tokens": getattr(last_usage_metadata, 'candidates_token_count', 0) or 0,
+                "cached_tokens": getattr(last_usage_metadata, 'cached_content_token_count', 0) or 0,
+            }
+
         return LLMResponse(
             text=text,
             tool_calls=tool_calls,
             is_final=is_final,
-            thinking=thinking
+            thinking=thinking,
+            usage=usage
         )
 
     def _add_tool_results_to_messages(self, messages: List[types.Content], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[types.Content]:

@@ -561,6 +561,9 @@ async def chat_with_llm_stream(
             if session_for_steps:
                 session_for_steps.clear_llm_steps()
 
+            # Extract usage from client
+            usage_data = getattr(client, '_last_usage', None)
+
             # Process response
             pending_tools = []
             llm_steps = []
@@ -657,25 +660,31 @@ async def chat_with_llm_stream(
                     "response_text": response_text,
                 })
                 # Also send done event to signal stream end
-                yield format_sse_event("done", {
+                done_data = {
                     "success": True,
                     "response": response_text,
                     "pending_tool_calls": pending_tools,
                     "steps": [{"type": s["type"], "name": s.get("name"), "content": s["content"]} for s in llm_steps],
                     "updates": updates,
                     "has_pending_tools": True,
-                })
+                }
+                if usage_data:
+                    done_data["usage"] = usage_data
+                yield format_sse_event("done", done_data)
             else:
                 # Final response
                 log_resp_box(response_text)
-                yield format_sse_event("done", {
+                done_data = {
                     "success": True,
                     "response": response_text,
                     "pending_tool_calls": [],
                     "steps": [{"type": s["type"], "name": s.get("name"), "content": s["content"]} for s in llm_steps],
                     "updates": updates,
                     "has_pending_tools": False,
-                })
+                }
+                if usage_data:
+                    done_data["usage"] = usage_data
+                yield format_sse_event("done", done_data)
 
         except Exception as e:
             import traceback
@@ -846,32 +855,41 @@ async def execute_tools_stream(
             llm_steps = session.get_llm_steps()
             updates = session.get_notebook_updates()
 
+            # Extract usage
+            et_usage_data = getattr(client, '_last_usage', None)
+
             # Send final event
             if pending_tools:
                 yield format_sse_event("pending_tools", {
                     "tools": pending_tools,
                     "response_text": response_text,
                 })
-                yield format_sse_event("done", {
+                et_done_data = {
                     "success": True,
                     "response": response_text,
                     "pending_tool_calls": pending_tools,
                     "steps": [{"type": s["type"], "name": s.get("name"), "content": s["content"]} for s in llm_steps],
                     "updates": updates,
                     "has_pending_tools": True,
-                })
+                }
+                if et_usage_data:
+                    et_done_data["usage"] = et_usage_data
+                yield format_sse_event("done", et_done_data)
             else:
                 # Final response - clear pending state
                 session.pending_client = None
                 log_resp_box(response_text)
-                yield format_sse_event("done", {
+                et_done_data = {
                     "success": True,
                     "response": response_text,
                     "pending_tool_calls": [],
                     "steps": [{"type": s["type"], "name": s.get("name"), "content": s["content"]} for s in llm_steps],
                     "updates": updates,
                     "has_pending_tools": False,
-                })
+                }
+                if et_usage_data:
+                    et_done_data["usage"] = et_usage_data
+                yield format_sse_event("done", et_done_data)
 
         except Exception as e:
             import traceback

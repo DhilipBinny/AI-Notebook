@@ -171,6 +171,7 @@ async def run_ai_cell(
             llm_steps = result.get("steps", [])
             was_cancelled = result.get("cancelled", False)
             thinking_content = result.get("thinking", "")
+            usage_data = result.get("usage")
 
             final_data = {
                 "success": not was_cancelled,
@@ -180,7 +181,9 @@ async def run_ai_cell(
                 "cancelled": was_cancelled,
                 "thinking": thinking_content if thinking_content else None,
             }
-            log(f"SSE sending done event (thinking: {len(thinking_content)} chars)")
+            if usage_data:
+                final_data["usage"] = usage_data
+            log(f"SSE sending done event (thinking: {len(thinking_content)} chars, usage: {usage_data})")
             yield format_sse_event("done", final_data)
 
         except CancelledException:

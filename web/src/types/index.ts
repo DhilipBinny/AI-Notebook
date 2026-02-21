@@ -6,8 +6,34 @@ export interface User {
   max_projects: number
   is_active: boolean
   is_verified: boolean
+  is_admin: boolean
   created_at: string
   updated_at: string
+}
+
+export interface Invitation {
+  id: string
+  code: string
+  email?: string
+  max_uses: number
+  used_count: number
+  created_by: string
+  expires_at?: string
+  is_active: boolean
+  note?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface InvitationUse {
+  id: string
+  invitation_id: string
+  user_id: string
+  used_at: string
+}
+
+export interface InvitationDetail extends Invitation {
+  uses: InvitationUse[]
 }
 
 export interface Project {
@@ -38,7 +64,8 @@ export interface Workspace {
 
 export interface Playground {
   id: string
-  project_id: string
+  user_id?: string
+  project_id?: string
   container_id: string
   container_name: string
   status: 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
@@ -48,6 +75,72 @@ export interface Playground {
   started_at: string
   last_activity_at: string
   url?: string
+}
+
+export interface ApiKey {
+  id: string
+  provider: string
+  api_key_hint: string
+  model_override?: string
+  is_active: boolean
+  is_validated: boolean
+  last_validated_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ProviderInfo {
+  provider: string
+  display_name: string
+  has_key: boolean
+  models: string[]
+}
+
+export interface CreditBalance {
+  user_id: string
+  balance_cents: number
+  balance_dollars: number
+  total_deposited_cents: number
+  total_consumed_cents: number
+  last_charged_at?: string
+}
+
+export interface UsageRecord {
+  id: number
+  provider: string
+  model: string
+  request_type: string
+  input_tokens: number
+  output_tokens: number
+  cost_cents: number
+  is_own_key: boolean
+  created_at: string
+}
+
+export interface LLMPricing {
+  id: number
+  provider: string
+  model: string
+  input_cost_per_1m_cents: number
+  output_cost_per_1m_cents: number
+  margin_multiplier: number
+  is_active: boolean
+}
+
+export interface NotebookTemplate {
+  id: string
+  name: string
+  description?: string
+  category?: string
+  thumbnail_url?: string
+  difficulty_level: 'beginner' | 'intermediate' | 'advanced'
+  estimated_minutes?: number
+  tags?: string[]
+  is_public: boolean
+  created_by?: string
+  sort_order: number
+  created_at: string
+  updated_at: string
 }
 
 // Image input for AI Cell (pasted or uploaded images)

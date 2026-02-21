@@ -112,8 +112,10 @@ export function useNotebookUpdates(
 
     // Build WebSocket URL - connect to Master API's internal WebSocket
     // Use same origin (goes through nginx proxy)
+    // WebSocket auth requires JWT token as query parameter (can't use headers)
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${wsProtocol}//${window.location.host}/api/internal/ws/notebook/${projectId}`
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/internal/ws/notebook/${projectId}${token ? `?token=${token}` : ''}`
 
     console.log('[NotebookUpdates] Connecting to:', wsUrl)
 

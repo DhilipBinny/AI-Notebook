@@ -143,6 +143,8 @@ class LLMResponse:
     # Raw thinking blocks for providers that require them in conversation history
     # (e.g., Anthropic extended thinking needs signature field preserved)
     raw_thinking_blocks: List[Any] = field(default_factory=list)
+    # Usage statistics: input_tokens, output_tokens, cached_tokens
+    usage: Optional[Dict[str, int]] = None
 
 
 @dataclass
@@ -236,6 +238,7 @@ class BaseLLMClient(ABC):
         self._cancel_requested = False
         self._on_progress: Optional[Callable[[str, Any], None]] = None
         self.enable_web_search = True  # Default: web search enabled
+        self._last_usage: Optional[Dict[str, Any]] = None  # Usage stats from last call
 
     # =========================================================================
     # Web Search Detection (shared implementation)
@@ -306,14 +309,8 @@ class BaseLLMClient(ABC):
         else:
             log(f"🔍 Weighted: NOT NEEDED (score={score} [{breakdown_str}])")
 
-        # Also call LLM classifier for comparison (for tuning purposes)
-        llm_result = self._needs_web_search_llm(text)
-
-        # Log comparison
-        agreement = "✅ AGREE" if weighted_result == llm_result else "❌ DISAGREE"
-        log(f"🔍 Comparison: Weighted={weighted_result}, LLM={llm_result} [{agreement}]")
-
-        # Use weighted scoring result for actual decision (faster, no extra API call cost)
+        # NOTE: Previously called _needs_web_search_llm() here for comparison logging,
+        # but that wasted API tokens on every message. Removed — use weighted scoring only.
         return weighted_result
 
     def _needs_web_search_llm(self, user_query: str) -> bool:
@@ -421,7 +418,7 @@ class BaseLLMClient(ABC):
             text: The text to count tokens for
 
         Returns:
-            Token count, or 0 if counting fails
+            Token count (uses char/4 estimate as fallback if tiktoken fails)
         """
         try:
             import tiktoken
@@ -438,7 +435,9 @@ class BaseLLMClient(ABC):
                 encoding = tiktoken.get_encoding("cl100k_base")
             return len(encoding.encode(text))
         except Exception:
-            return 0
+            # Fallback: ~4 chars per token is a reasonable estimate
+            # Returning 0 would hide context overflow issues
+            return max(1, len(text) // 4)
 
     # =========================================================================
     # Abstract methods that providers MUST implement
@@ -735,6 +734,9 @@ class BaseLLMClient(ABC):
         iteration = 0
         self._emit_progress("thinking", {"message": "Processing your request..."})
 
+        # Accumulate usage across iterations
+        total_usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
             log(f"🔄 {self.provider_name} iteration {iteration}/{MAX_TOOL_ITERATIONS}")
@@ -749,6 +751,12 @@ class BaseLLMClient(ABC):
 
             # Parse response using adapter
             response = self.adapter.from_response(raw_response)
+
+            # Accumulate usage from this iteration
+            if response.usage:
+                total_usage["input_tokens"] += response.usage.get("input_tokens", 0)
+                total_usage["output_tokens"] += response.usage.get("output_tokens", 0)
+                total_usage["cached_tokens"] += response.usage.get("cached_tokens", 0)
 
             if response.tool_calls:
                 # Build tool results
@@ -774,10 +782,21 @@ class BaseLLMClient(ABC):
                     "role": "assistant",
                     "content": final_response
                 })
-                log(f"✅ {self.provider_name} response received - {len(final_response)} chars")
+                # Store accumulated usage for retrieval
+                self._last_usage = {
+                    "provider": self.provider_name.lower(),
+                    "model": getattr(self, 'model_name', ''),
+                    **total_usage,
+                }
+                log(f"✅ {self.provider_name} response received - {len(final_response)} chars (usage: {total_usage})")
                 return final_response
 
         log(f"❌ {self.provider_name} max iterations reached")
+        self._last_usage = {
+            "provider": self.provider_name.lower(),
+            "model": getattr(self, 'model_name', ''),
+            **total_usage,
+        }
         return "Error: Maximum tool calling iterations reached"
 
     def _chat_get_pending_tools(
@@ -814,6 +833,16 @@ class BaseLLMClient(ABC):
 
         # Parse response using adapter
         response = self.adapter.from_response(raw_response)
+
+        # Store usage from initial call
+        if response.usage:
+            self._last_usage = {
+                "provider": self.provider_name.lower(),
+                "model": getattr(self, 'model_name', ''),
+                "input_tokens": response.usage.get("input_tokens", 0),
+                "output_tokens": response.usage.get("output_tokens", 0),
+                "cached_tokens": response.usage.get("cached_tokens", 0),
+            }
 
         if response.tool_calls:
             # Store state for later execution
@@ -916,10 +945,21 @@ class BaseLLMClient(ABC):
             )
             messages = self.adapter.add_tool_results(messages, minimal_response, tool_results)
 
+        # Accumulate usage from previous calls
+        prev_usage = getattr(self, '_last_usage', {})
+        accumulated_input = prev_usage.get("input_tokens", 0)
+        accumulated_output = prev_usage.get("output_tokens", 0)
+        accumulated_cached = prev_usage.get("cached_tokens", 0)
+
         # Check if auto mode or manual mode
         if self.auto_function_calling:
             # Auto mode: loop until final response
             final_response = self._chat_auto_execute_tools(messages, tools, tool_map)
+            # _chat_auto_execute_tools already sets _last_usage, merge with previous
+            if hasattr(self, '_last_usage') and self._last_usage:
+                self._last_usage["input_tokens"] += accumulated_input
+                self._last_usage["output_tokens"] += accumulated_output
+                self._last_usage["cached_tokens"] += accumulated_cached
             self._pending_messages = []
             self._pending_response = None
             return final_response
@@ -928,6 +968,20 @@ class BaseLLMClient(ABC):
             raw_response = self._call_chat_api(messages, tools)
             self._log_cache_usage(raw_response)
             response = self.adapter.from_response(raw_response)
+
+            # Accumulate usage
+            if response.usage:
+                accumulated_input += response.usage.get("input_tokens", 0)
+                accumulated_output += response.usage.get("output_tokens", 0)
+                accumulated_cached += response.usage.get("cached_tokens", 0)
+
+            self._last_usage = {
+                "provider": self.provider_name.lower(),
+                "model": getattr(self, 'model_name', ''),
+                "input_tokens": accumulated_input,
+                "output_tokens": accumulated_output,
+                "cached_tokens": accumulated_cached,
+            }
 
             if response.tool_calls:
                 # Model wants more tools - return them for approval
@@ -1101,8 +1155,9 @@ class BaseLLMClient(ABC):
             # Prepare initial messages
             messages = self._prepare_ai_cell_messages(notebook_context, user_prompt, images)
 
-            # Accumulate thinking across all iterations
+            # Accumulate thinking and usage across all iterations
             accumulated_thinking = ""
+            total_usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
             empty_response_count = 0  # Track consecutive empty responses
             MAX_EMPTY_RETRIES = 2  # Allow up to 2 retries on empty response
 
@@ -1116,6 +1171,12 @@ class BaseLLMClient(ABC):
                 # Call LLM (provider-specific)
                 response = self._call_llm_for_ai_cell(messages, tools)
 
+                # Accumulate usage from this iteration
+                if response.usage:
+                    total_usage["input_tokens"] += response.usage.get("input_tokens", 0)
+                    total_usage["output_tokens"] += response.usage.get("output_tokens", 0)
+                    total_usage["cached_tokens"] += response.usage.get("cached_tokens", 0)
+
                 # --- Guard against stalled loops (empty responses) ---
                 if not response.text and not response.tool_calls and not response.thinking:
                     empty_response_count += 1
@@ -1127,7 +1188,8 @@ class BaseLLMClient(ABC):
                         return {
                             "response": "I couldn't generate a response. The model returned empty content (possibly due to content filtering). Please try rephrasing your question.",
                             "steps": [s.to_dict() for s in steps],
-                            "error": "empty_response"
+                            "error": "empty_response",
+                            "usage": {"provider": self.provider_name.lower(), "model": getattr(self, 'model_name', ''), **total_usage},
                         }
 
                     # ✅ THE FIX: Nudge the LLM to force a different response path
@@ -1154,12 +1216,13 @@ class BaseLLMClient(ABC):
 
                 # Check if we have a final response (no more tool calls)
                 if response.is_final or not response.tool_calls:
-                    log(f"🤖 AI Cell response: {len(response.text)} chars, {len(steps)} steps, thinking: {len(accumulated_thinking)} chars")
+                    log(f"🤖 AI Cell response: {len(response.text)} chars, {len(steps)} steps, thinking: {len(accumulated_thinking)} chars, usage: {total_usage}")
                     self._emit_progress("iteration_end", {"final": True})
                     return {
                         "response": response.text or "I've analyzed your notebook. Please let me know if you need more specific information.",
                         "steps": [s.to_dict() for s in steps],
-                        "thinking": accumulated_thinking.strip() if accumulated_thinking else ""
+                        "thinking": accumulated_thinking.strip() if accumulated_thinking else "",
+                        "usage": {"provider": self.provider_name.lower(), "model": getattr(self, 'model_name', ''), **total_usage},
                     }
 
                 # Execute tools
@@ -1222,7 +1285,8 @@ class BaseLLMClient(ABC):
             log(f"🤖 AI Cell max iterations reached ({max_iterations})")
             return {
                 "response": "I've analyzed your notebook but reached the maximum number of tool calls. Please ask a more specific question.",
-                "steps": [s.to_dict() for s in steps]
+                "steps": [s.to_dict() for s in steps],
+                "usage": {"provider": self.provider_name.lower(), "model": getattr(self, 'model_name', ''), **total_usage},
             }
 
         except CancelledException:

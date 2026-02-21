@@ -41,6 +41,7 @@ async def register(
             email=request.email,
             password=request.password,
             name=request.name,
+            invite_code=request.invite_code,
         )
 
         # Audit log: successful registration

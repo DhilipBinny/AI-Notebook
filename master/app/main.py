@@ -20,6 +20,10 @@ from app.projects.models import Project
 from app.workspaces.models import Workspace
 from app.playgrounds.models import Playground
 from app.auth.models import Session
+from app.invitations.models import Invitation, InvitationUse
+from app.api_keys.models import UserApiKey
+from app.credits.models import UserCredit, LLMPricing, UsageRecord
+from app.templates.models import NotebookTemplate
 # Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
 
 # Import routers
@@ -33,6 +37,10 @@ from app.chat.routes import router as chat_router
 from app.notebooks.routes import router as notebooks_router
 from app.internal.routes import router as internal_router
 from app.files.routes import router as files_router
+from app.invitations.routes import router as invitations_router
+from app.api_keys.routes import router as api_keys_router
+from app.credits.routes import router as credits_router
+from app.templates.routes import router as templates_router
 
 # Import playground service for cleanup
 from app.playgrounds.service import PlaygroundService
@@ -147,6 +155,10 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(notebooks_router, prefix="/api")
 app.include_router(files_router, prefix="/api")  # File management endpoints
 app.include_router(internal_router, prefix="/api")  # Internal endpoints for playground
+app.include_router(invitations_router, prefix="/api")  # Admin invitation management
+app.include_router(api_keys_router, prefix="/api")  # User API key management
+app.include_router(credits_router, prefix="/api")  # Credits and usage tracking
+app.include_router(templates_router, prefix="/api")  # Notebook templates
 
 
 @app.get("/health")

@@ -13,12 +13,14 @@ from pydantic import BaseModel
 import httpx
 import json
 
-from app.db.session import get_db
+from app.db.session import get_db, AsyncSessionLocal
 from app.auth.dependencies import get_current_active_user
 from app.users.models import User
 from app.projects.service import ProjectService
 from app.playgrounds.service import PlaygroundService
 from app.notebooks.s3_client import s3_client as notebook_s3_client
+from app.api_keys.service import ApiKeyService
+from app.credits.service import CreditService
 from .service import ChatService
 from .schemas import (
     ChatMessageCreate,
@@ -353,7 +355,7 @@ async def send_message_stream(
 
     # Get playground
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_project_id(project_id)
+    playground = await playground_service.get_by_user_id(current_user.id)
 
     if not playground or playground.status.value != "running":
         async def error_stream():
@@ -394,6 +396,33 @@ async def send_message_stream(
     # Update playground activity
     await playground_service.update_activity(playground)
 
+    # Fetch user's API keys for injection
+    api_key_service = ApiKeyService(db)
+    user_keys = await api_key_service.get_all_decrypted_keys(current_user.id)
+    proxy_headers = {"X-Internal-Secret": playground.internal_secret}
+    key_header_map = {
+        "openai": "X-User-OpenAI-Key",
+        "anthropic": "X-User-Anthropic-Key",
+        "gemini": "X-User-Gemini-Key",
+    }
+    for provider, key in user_keys.items():
+        header = key_header_map.get(provider)
+        if header:
+            proxy_headers[header] = key
+    # Tell playground whether this is the user's own key for the requested provider
+    is_own_key = llm_provider in user_keys
+    proxy_headers["X-User-Is-Own-Key"] = "true" if is_own_key else "false"
+
+    # Pre-flight credit check (skip if using own key)
+    if not is_own_key:
+        credit_service = CreditService(db)
+        estimated_cost = await credit_service.estimate_cost(llm_provider, "", 2000)
+        has_credits = await credit_service.check_sufficient_credits(current_user.id, estimated_cost)
+        if not has_credits:
+            async def no_credits_stream():
+                yield f"event: error\ndata: {json.dumps({'error': 'Insufficient credits. Please add credits or use your own API key.'})}\n\n"
+            return StreamingResponse(no_credits_stream(), media_type="text/event-stream")
+
     # Convert images
     images_data = None
     if request.images:
@@ -405,14 +434,17 @@ async def send_message_stream(
         if not images_data:
             images_data = None
 
-    # Stream SSE response from playground
+    # Capture variables for post-flight usage recording
+    user_id = current_user.id
+
+    # Stream SSE response from playground with post-flight usage recording
     async def stream_sse():
         try:
             async with httpx.AsyncClient() as client:
                 async with client.stream(
                     "POST",
                     f"{playground.internal_url}/chat/stream",
-                    headers={"X-Internal-Secret": playground.internal_secret},
+                    headers=proxy_headers,
                     json={
                         "message": request.message,
                         "context": context_list,
@@ -431,6 +463,34 @@ async def send_message_stream(
 
                     async for line in response.aiter_lines():
                         if line:
+                            # Intercept done events to record usage
+                            if line.startswith("data:") and '"usage"' in line:
+                                try:
+                                    data_str = line[len("data:"):].strip()
+                                    data = json.loads(data_str)
+                                    usage = data.get("usage")
+                                    if usage and data.get("success"):
+                                        # Record usage in background
+                                        async with AsyncSessionLocal() as usage_db:
+                                            cs = CreditService(usage_db)
+                                            await cs.record_usage_and_deduct(
+                                                user_id=user_id,
+                                                project_id=project_id,
+                                                provider=usage.get("provider", llm_provider),
+                                                model=usage.get("model", ""),
+                                                request_type="chat",
+                                                input_tokens=usage.get("input_tokens", 0),
+                                                output_tokens=usage.get("output_tokens", 0),
+                                                cached_tokens=usage.get("cached_tokens", 0),
+                                                is_own_key=is_own_key,
+                                            )
+                                            credit = await cs.get_balance(user_id)
+                                            await usage_db.commit()
+                                        # Append balance to the done event
+                                        data["credits_remaining_cents"] = credit.balance_cents if credit else 0
+                                        line = f"data: {json.dumps(data)}"
+                                except Exception:
+                                    pass  # Don't break SSE stream on usage recording errors
                             yield f"{line}\n"
                         else:
                             yield "\n"
@@ -487,7 +547,7 @@ async def execute_tools_stream(
 
     # Get playground
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_project_id(project_id)
+    playground = await playground_service.get_by_user_id(current_user.id)
 
     if not playground or playground.status.value != "running":
         async def error_stream():
@@ -497,14 +557,28 @@ async def execute_tools_stream(
     # Update playground activity
     await playground_service.update_activity(playground)
 
-    # Stream SSE response from playground
+    # Inject user API keys
+    api_key_service = ApiKeyService(db)
+    user_keys = await api_key_service.get_all_decrypted_keys(current_user.id)
+    et_proxy_headers = {"X-Internal-Secret": playground.internal_secret}
+    for provider, key in user_keys.items():
+        header = {"openai": "X-User-OpenAI-Key", "anthropic": "X-User-Anthropic-Key", "gemini": "X-User-Gemini-Key"}.get(provider)
+        if header:
+            et_proxy_headers[header] = key
+    is_own_key_et = llm_provider in user_keys
+    et_proxy_headers["X-User-Is-Own-Key"] = "true" if is_own_key_et else "false"
+
+    # Capture variables for post-flight usage recording
+    et_user_id = current_user.id
+
+    # Stream SSE response from playground with post-flight usage recording
     async def stream_sse():
         try:
             async with httpx.AsyncClient() as client:
                 async with client.stream(
                     "POST",
                     f"{playground.internal_url}/chat/execute-tools/stream",
-                    headers={"X-Internal-Secret": playground.internal_secret},
+                    headers=et_proxy_headers,
                     json={
                         "session_id": project_id,
                         "approved_tools": [t.model_dump() for t in request.approved_tools],
@@ -518,6 +592,32 @@ async def execute_tools_stream(
 
                     async for line in response.aiter_lines():
                         if line:
+                            # Intercept done events to record usage
+                            if line.startswith("data:") and '"usage"' in line:
+                                try:
+                                    data_str = line[len("data:"):].strip()
+                                    data = json.loads(data_str)
+                                    usage = data.get("usage")
+                                    if usage and data.get("success"):
+                                        async with AsyncSessionLocal() as usage_db:
+                                            cs = CreditService(usage_db)
+                                            await cs.record_usage_and_deduct(
+                                                user_id=et_user_id,
+                                                project_id=project_id,
+                                                provider=usage.get("provider", llm_provider),
+                                                model=usage.get("model", ""),
+                                                request_type="chat",
+                                                input_tokens=usage.get("input_tokens", 0),
+                                                output_tokens=usage.get("output_tokens", 0),
+                                                cached_tokens=usage.get("cached_tokens", 0),
+                                                is_own_key=is_own_key_et,
+                                            )
+                                            credit = await cs.get_balance(et_user_id)
+                                            await usage_db.commit()
+                                        data["credits_remaining_cents"] = credit.balance_cents if credit else 0
+                                        line = f"data: {json.dumps(data)}"
+                                except Exception:
+                                    pass
                             yield f"{line}\n"
                         else:
                             yield "\n"
@@ -608,7 +708,7 @@ async def run_ai_cell(
 
     # Get playground
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_project_id(project_id)
+    playground = await playground_service.get_by_user_id(current_user.id)
 
     if not playground or playground.status.value != "running":
         return AICellResponse(
@@ -687,14 +787,38 @@ async def run_ai_cell(
         if not images_data:
             images_data = None
 
-    # Stream SSE response from playground to frontend
+    # Inject user API keys
+    api_key_service = ApiKeyService(db)
+    user_keys = await api_key_service.get_all_decrypted_keys(current_user.id)
+    ai_proxy_headers = {"X-Internal-Secret": playground.internal_secret}
+    for provider, key in user_keys.items():
+        header = {"openai": "X-User-OpenAI-Key", "anthropic": "X-User-Anthropic-Key", "gemini": "X-User-Gemini-Key"}.get(provider)
+        if header:
+            ai_proxy_headers[header] = key
+    is_own_key_ai = llm_provider in user_keys
+    ai_proxy_headers["X-User-Is-Own-Key"] = "true" if is_own_key_ai else "false"
+
+    # Pre-flight credit check (skip if using own key)
+    if not is_own_key_ai:
+        credit_service = CreditService(db)
+        estimated_cost = await credit_service.estimate_cost(llm_provider, "", 1000)
+        has_credits = await credit_service.check_sufficient_credits(current_user.id, estimated_cost)
+        if not has_credits:
+            async def no_credits_stream():
+                yield f"event: error\ndata: {json.dumps({'error': 'Insufficient credits. Please add credits or use your own API key.'})}\n\n"
+            return StreamingResponse(no_credits_stream(), media_type="text/event-stream")
+
+    # Capture for post-flight
+    ai_user_id = current_user.id
+
+    # Stream SSE response from playground to frontend with post-flight usage recording
     async def stream_sse():
         try:
             async with httpx.AsyncClient() as client:
                 async with client.stream(
                     "POST",
                     f"{playground.internal_url}/ai-cell/run",
-                    headers={"X-Internal-Secret": playground.internal_secret},
+                    headers=ai_proxy_headers,
                     json={
                         "prompt": request.prompt,
                         "context": context_list,
@@ -715,6 +839,32 @@ async def run_ai_cell(
                     # Stream SSE events from playground to frontend
                     async for line in response.aiter_lines():
                         if line:
+                            # Intercept done events to record usage
+                            if line.startswith("data:") and '"usage"' in line:
+                                try:
+                                    data_str = line[len("data:"):].strip()
+                                    data = json.loads(data_str)
+                                    usage = data.get("usage")
+                                    if usage and data.get("success"):
+                                        async with AsyncSessionLocal() as usage_db:
+                                            cs = CreditService(usage_db)
+                                            await cs.record_usage_and_deduct(
+                                                user_id=ai_user_id,
+                                                project_id=project_id,
+                                                provider=usage.get("provider", llm_provider),
+                                                model=usage.get("model", ""),
+                                                request_type="ai_cell",
+                                                input_tokens=usage.get("input_tokens", 0),
+                                                output_tokens=usage.get("output_tokens", 0),
+                                                cached_tokens=usage.get("cached_tokens", 0),
+                                                is_own_key=is_own_key_ai,
+                                            )
+                                            credit = await cs.get_balance(ai_user_id)
+                                            await usage_db.commit()
+                                        data["credits_remaining_cents"] = credit.balance_cents if credit else 0
+                                        line = f"data: {json.dumps(data)}"
+                                except Exception:
+                                    pass
                             yield f"{line}\n"
                         else:
                             yield "\n"

@@ -364,8 +364,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         const project = await projects.get(projectId)
         setCurrentProject(project)
 
-        // Get existing playground status
-        const pg = await playgrounds.get(projectId)
+        // Get existing playground status (user-scoped)
+        const pg = await playgrounds.getStatus()
         setPlayground(pg)
 
         // If playground not running, still load notebook but show error popup
@@ -554,7 +554,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
 
     // Send initial heartbeat
-    playgrounds.updateActivity(projectId).catch((err) => {
+    playgrounds.updateActivity().catch((err) => {
       console.warn('Failed to send activity heartbeat:', err)
     })
 
@@ -562,7 +562,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const heartbeatInterval = setInterval(() => {
       // Check if tab is visible before sending heartbeat
       if (document.visibilityState === 'visible') {
-        playgrounds.updateActivity(projectId).catch((err) => {
+        playgrounds.updateActivity().catch((err) => {
           console.warn('Failed to send activity heartbeat:', err)
         })
       }
@@ -590,7 +590,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const handleStopPlayground = async () => {
     setPlaygroundLoading(true)
     try {
-      await playgrounds.stop(projectId)
+      await playgrounds.stop()
       setPlayground((prev) => prev ? { ...prev, status: 'stopped' } : null)
     } catch (err) {
       console.error('Failed to stop playground:', err)
@@ -1789,7 +1789,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         setPlaygroundLoading(true)
         try {
           // Stop the playground
-          await playgrounds.stop(projectId)
+          await playgrounds.stop()
           // Wait a bit for cleanup
           await new Promise(resolve => setTimeout(resolve, 1000))
           // Start a new playground

@@ -64,8 +64,7 @@ class ToolCallValidator:
         Args:
             provider: LLM provider to use ('gemini', 'openai', 'ollama').
         """
-        self.provider = provider 
-        # or cfg.LLM_PROVIDER # If None, uses cfg.LLM_PROVIDER.
+        self.provider = provider or cfg.LLM_PROVIDER
         self.model = None
         self._init_provider()
 

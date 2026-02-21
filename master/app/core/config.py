@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     # xx
     #--------------------------------------------------------------------------------------
 
+    # Invite system
+    require_invite_code: bool = Field(default=False, alias="REQUIRE_INVITE_CODE")
+
+    # Encryption key for user API keys (Fernet)
+    encryption_key: Optional[str] = Field(default=None, alias="ENCRYPTION_KEY")
+
     # User limits
     default_max_projects: int = Field(default=5, alias="DEFAULT_MAX_PROJECTS")
 

@@ -40,8 +40,11 @@ class DockerClient:
             try:
                 self.client.api.remove_container(container_name, force=True)
                 logger.info(f"Force removed container {container_name} via API")
-            except Exception:
-                pass
+            except Exception as inner_e:
+                logger.error(
+                    f"Failed to force-remove container {container_name}: {inner_e}. "
+                    f"Container may be orphaned — manual cleanup required."
+                )
 
     def create_container(
         self,
@@ -132,7 +135,7 @@ class DockerClient:
                 network=settings.playground_network,
                 labels={
                     "app": "ainotebook-playground",
-                    "project_id": project_id,
+                    "project_id": project_id,  # Active project at creation
                 },
                 restart_policy={"Name": "unless-stopped"},
             )

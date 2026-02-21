@@ -23,15 +23,16 @@ class PlaygroundCreate(BaseModel):
 class PlaygroundResponse(BaseModel):
     """Schema for playground response."""
     id: str
-    project_id: str
+    user_id: str
+    project_id: Optional[str] = None
     container_name: str
     status: PlaygroundStatus
-    error_message: Optional[str]
+    error_message: Optional[str] = None
     memory_limit_mb: int
     cpu_limit: float
     started_at: datetime
     last_activity_at: datetime
-    stopped_at: Optional[datetime]
+    stopped_at: Optional[datetime] = None
 
     # URL for client to connect (proxied through nginx)
     url: Optional[str] = None
@@ -48,3 +49,8 @@ class PlaygroundStartResponse(BaseModel):
 class PlaygroundStopResponse(BaseModel):
     """Response when stopping a playground."""
     message: str = "Playground stopped successfully"
+
+
+class PlaygroundSwitchRequest(BaseModel):
+    """Request to switch active project."""
+    project_id: str

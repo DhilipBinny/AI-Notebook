@@ -21,6 +21,7 @@ from app.users.schemas import UserCreateOAuth
 from app.audit import audit_log, AuditStatus
 from .jwt import create_token_pair
 from .service import AuthService
+from app.credits.service import CreditService
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ async def google_login(request: Request):
             detail="Google OAuth is not configured"
         )
 
-    # Build callback URL
+    # Build callback URL from configured base URL (prevents host header injection)
     redirect_uri = f"{settings.oauth_redirect_base_url}/api/auth/google/callback"
 
     logger.info(f"Google OAuth: Redirecting to Google (callback: {redirect_uri})")
@@ -112,7 +113,7 @@ async def google_callback(
         )
         await db.commit()
 
-        # Redirect to frontend with error
+        # Redirect to frontend with error (use configured base URL)
         frontend_url = settings.oauth_redirect_base_url
         return RedirectResponse(
             url=f"{frontend_url}/auth/login?error=oauth_failed&message={str(e)}"
@@ -166,6 +167,14 @@ async def google_callback(
                     url=f"{frontend_url}/auth/login?error=oauth_failed&message=Email+already+linked+to+another+provider"
                 )
         else:
+            # Block new user creation if invite-only mode is enabled
+            if settings.require_invite_code:
+                logger.warning(f"Google OAuth: New user {email} blocked — invite-only mode")
+                frontend_url = settings.oauth_redirect_base_url
+                return RedirectResponse(
+                    url=f"{frontend_url}/auth/login?error=oauth_failed&message=Registration+requires+an+invitation+code.+Please+register+with+your+invite+code+first."
+                )
+
             # Create new user
             logger.info(f"Google OAuth: Creating new user {email}")
             user_data = UserCreateOAuth(
@@ -176,6 +185,10 @@ async def google_callback(
                 avatar_url=picture,
             )
             user = await user_service.create_oauth(user_data)
+
+            # Initialize credits for new OAuth user
+            credit_service = CreditService(db)
+            await credit_service.initialize_credits(user.id)
 
     # Update last login
     await user_service.update_last_login(user)
@@ -201,8 +214,7 @@ async def google_callback(
     # Commit the transaction (user, session, and audit log)
     await db.commit()
 
-    # Redirect to frontend with tokens
-    # Use oauth_redirect_base_url which is the main entry point (nginx)
+    # Redirect to frontend with tokens (use configured base URL)
     frontend_url = settings.oauth_redirect_base_url
 
     logger.info(f"Google OAuth: Successfully authenticated {email}, redirecting to frontend")

@@ -470,7 +470,8 @@ class AnthropicClient(BaseLLMClient):
             tool_calls=tool_calls,
             is_final=canonical.is_final,
             thinking=canonical.thinking,
-            raw_thinking_blocks=canonical.raw_provider_blocks
+            raw_thinking_blocks=canonical.raw_provider_blocks,
+            usage=canonical.usage if canonical.usage else None
         )
 
     def _add_tool_results_to_messages(self, messages: List[Dict[str, Any]], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[Dict[str, Any]]:

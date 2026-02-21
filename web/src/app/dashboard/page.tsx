@@ -114,23 +114,43 @@ export default function DashboardPage() {
     { name: 'Gray', value: '#6B7280' },
   ]
 
-  const fetchPlaygroundStatus = useCallback(async (projectId: string) => {
+  const fetchPlaygroundStatus = useCallback(async (projectId?: string) => {
     try {
-      const pg = await playgrounds.get(projectId)
-      setPlaygroundStatuses(prev => ({
-        ...prev,
-        [projectId]: {
-          status: pg?.status || 'stopped',
-          loading: false,
-          memory_limit_mb: pg?.memory_limit_mb,
-          cpu_limit: pg?.cpu_limit,
-        }
-      }))
+      // User-scoped: get the user's single playground
+      const pg = await playgrounds.getStatus()
+      if (pg && pg.project_id) {
+        setPlaygroundStatuses(prev => {
+          const newStatuses: typeof prev = {}
+          // Mark all projects as stopped first
+          for (const key of Object.keys(prev)) {
+            newStatuses[key] = { status: 'stopped', loading: false }
+          }
+          // Mark the active project with actual status
+          newStatuses[pg.project_id!] = {
+            status: pg.status || 'stopped',
+            loading: false,
+            memory_limit_mb: pg.memory_limit_mb,
+            cpu_limit: pg.cpu_limit,
+          }
+          return newStatuses
+        })
+      } else {
+        // No running playground - mark all as stopped
+        setPlaygroundStatuses(prev => {
+          const newStatuses: typeof prev = {}
+          for (const key of Object.keys(prev)) {
+            newStatuses[key] = { status: 'stopped', loading: false }
+          }
+          return newStatuses
+        })
+      }
     } catch {
-      setPlaygroundStatuses(prev => ({
-        ...prev,
-        [projectId]: { status: 'stopped', loading: false }
-      }))
+      if (projectId) {
+        setPlaygroundStatuses(prev => ({
+          ...prev,
+          [projectId]: { status: 'stopped', loading: false }
+        }))
+      }
     }
   }, [])
 
@@ -183,39 +203,49 @@ export default function DashboardPage() {
     if (projectList.length === 0) return
 
     const pollStatuses = async () => {
-      // Only poll for projects that are currently shown as running or starting
-      const projectsToCheck = projectList.filter(p => {
-        const status = playgroundStatuses[p.id]
-        return status?.status === 'running' || status?.status === 'starting'
-      })
+      // Only poll if any project is running or starting
+      const hasActivePlayground = Object.values(playgroundStatuses).some(
+        s => s.status === 'running' || s.status === 'starting'
+      )
+      if (!hasActivePlayground) return
 
-      for (const project of projectsToCheck) {
-        try {
-          const pg = await playgrounds.get(project.id)
-          const newStatus = pg?.status || 'stopped'
-          const currentStatus = playgroundStatuses[project.id]?.status
-
-          // Only update if status actually changed
-          if (currentStatus !== newStatus) {
-            setPlaygroundStatuses(prev => ({
-              ...prev,
-              [project.id]: {
-                status: newStatus,
-                loading: false,
-                memory_limit_mb: pg?.memory_limit_mb,
-                cpu_limit: pg?.cpu_limit,
+      try {
+        const pg = await playgrounds.getStatus()
+        if (pg && pg.project_id) {
+          setPlaygroundStatuses(prev => {
+            const newStatuses: typeof prev = {}
+            for (const key of Object.keys(prev)) {
+              if (key === pg.project_id) {
+                newStatuses[key] = {
+                  status: pg.status || 'stopped',
+                  loading: false,
+                  memory_limit_mb: pg.memory_limit_mb,
+                  cpu_limit: pg.cpu_limit,
+                }
+              } else if (prev[key]?.status !== 'stopped') {
+                newStatuses[key] = { status: 'stopped', loading: false }
+              } else {
+                newStatuses[key] = prev[key]
               }
-            }))
-          }
-        } catch {
-          // If we can't fetch status, assume stopped
-          if (playgroundStatuses[project.id]?.status !== 'stopped') {
-            setPlaygroundStatuses(prev => ({
-              ...prev,
-              [project.id]: { status: 'stopped', loading: false }
-            }))
-          }
+            }
+            return newStatuses
+          })
+        } else {
+          // No active playground - mark all as stopped
+          setPlaygroundStatuses(prev => {
+            const newStatuses: typeof prev = {}
+            for (const key of Object.keys(prev)) {
+              if (prev[key]?.status !== 'stopped') {
+                newStatuses[key] = { status: 'stopped', loading: false }
+              } else {
+                newStatuses[key] = prev[key]
+              }
+            }
+            return newStatuses
+          })
         }
+      } catch {
+        // Ignore polling errors
       }
     }
 
@@ -257,7 +287,7 @@ export default function DashboardPage() {
       [projectId]: { status: 'stopping', loading: true }
     }))
     try {
-      await playgrounds.stop(projectId)
+      await playgrounds.stop()
       setPlaygroundStatuses(prev => ({
         ...prev,
         [projectId]: { status: 'stopped', loading: false }
@@ -278,7 +308,7 @@ export default function DashboardPage() {
       [projectId]: { status: 'starting', loading: true }
     }))
     try {
-      await playgrounds.stop(projectId)
+      await playgrounds.stop()
       const { playground: pg } = await playgrounds.start(projectId)
       setPlaygroundStatuses(prev => ({
         ...prev,
@@ -363,7 +393,7 @@ export default function DashboardPage() {
     try {
       const status = playgroundStatuses[deleteConfirm.id]
       if (status?.status === 'running') {
-        await playgrounds.stop(deleteConfirm.id)
+        await playgrounds.stop()
       }
       await projects.delete(deleteConfirm.id)
       removeProject(deleteConfirm.id)
@@ -535,14 +565,13 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    for (const project of projectList) {
-      const status = playgroundStatuses[project.id]
-      if (status?.status === 'running') {
-        try {
-          await playgrounds.stop(project.id)
-        } catch {
-          // Ignore errors
-        }
+    // Per-user model: stop the single user playground if running
+    const hasRunning = Object.values(playgroundStatuses).some(s => s.status === 'running')
+    if (hasRunning) {
+      try {
+        await playgrounds.stop()
+      } catch {
+        // Ignore errors
       }
     }
 
@@ -821,6 +850,46 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Settings & Templates Links */}
+                  <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); router.push('/settings') }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
+                      style={{ color: 'var(--app-text-secondary)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span className="text-sm">Settings & API Keys</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); router.push('/templates') }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
+                      style={{ color: 'var(--app-text-secondary)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      <span className="text-sm">Templates</span>
+                    </button>
+                  </div>
+
+                  {/* Admin Links */}
+                  {user?.is_admin && (
+                    <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
+                      <button
+                        onClick={() => { setShowProfileMenu(false); router.push('/admin/invitations') }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
+                        style={{ color: 'var(--app-text-secondary)' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <Terminal className="w-4 h-4" />
+                        <span className="text-sm">Admin Panel</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Sign Out */}
                   <div className="p-2">

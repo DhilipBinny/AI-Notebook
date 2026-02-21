@@ -9,7 +9,7 @@ Authentication: X-Internal-Secret header (validated against playground's secret 
 WebSocket: /internal/ws/notebook for real-time cell updates to frontend
 """
 
-from fastapi import APIRouter, HTTPException, status, Header, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, status, Header, Depends, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,9 +18,12 @@ from sqlalchemy.orm import selectinload
 import logging
 
 from app.notebooks.s3_client import s3_client
-from app.db.session import get_db
+from app.db.session import get_db, AsyncSessionLocal
 from app.playgrounds.models import Playground
 from app.projects.models import Project
+from app.users.models import User
+from app.users.service import UserService
+from app.auth.jwt import verify_token
 from app.internal.notebook_broadcaster import get_notebook_broadcaster, NotebookUpdate
 
 logger = logging.getLogger(__name__)
@@ -947,12 +950,18 @@ async def update_cell_output_by_id(
 # =============================================================================
 
 @router.websocket("/ws/notebook/{project_id}")
-async def websocket_notebook_updates(websocket: WebSocket, project_id: str):
+async def websocket_notebook_updates(
+    websocket: WebSocket,
+    project_id: str,
+    token: Optional[str] = Query(None),
+):
     """
     WebSocket endpoint for real-time notebook updates.
 
+    Authentication: JWT access token required via ?token= query parameter.
+    The user must own the project to subscribe to its updates.
+
     Frontend clients connect and receive updates when LLM tools modify cells.
-    No authentication required (project_id is validated when cell updates happen).
 
     Message format from client:
         {"type": "ping"}  (keep-alive)
@@ -969,6 +978,37 @@ async def websocket_notebook_updates(websocket: WebSocket, project_id: str):
             "execution_count": 1
         }
     """
+    # --- Authenticate the WebSocket connection ---
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    token_data = verify_token(token, expected_type="access")
+    if token_data is None:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
+    # Verify the user owns this project
+    async with AsyncSessionLocal() as db:
+        user_service = UserService(db)
+        user = await user_service.get_by_id(token_data.sub)
+        if user is None:
+            await websocket.close(code=4001, reason="User not found")
+            return
+
+        result = await db.execute(
+            select(Project).where(
+                Project.id == project_id,
+                Project.user_id == user.id,
+                Project.deleted_at.is_(None),
+            )
+        )
+        project = result.scalar_one_or_none()
+        if project is None:
+            await websocket.close(code=4003, reason="Project not found or access denied")
+            return
+
+    # --- Connection authenticated, proceed ---
     await websocket.accept()
 
     broadcaster = get_notebook_broadcaster()

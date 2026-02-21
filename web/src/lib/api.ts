@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMPricing, NotebookTemplate } from '@/types'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -176,8 +176,8 @@ api.interceptors.response.use(
 
 // Auth API
 export const auth = {
-  register: async (email: string, password: string): Promise<AuthTokens> => {
-    const { data } = await api.post('/auth/register', { email, password })
+  register: async (email: string, password: string, invite_code?: string): Promise<AuthTokens> => {
+    const { data } = await api.post('/auth/register', { email, password, invite_code })
     return data
   },
 
@@ -261,30 +261,51 @@ export const workspaces = {
   },
 }
 
-// Playground API
+// Playground API (user-scoped - one container per user)
 export const playgrounds = {
+  // Get current user's playground status
+  getStatus: async (): Promise<Playground | null> => {
+    try {
+      const { data } = await api.get('/playground')
+      return data
+    } catch {
+      return null
+    }
+  },
+
+  // Start playground with a project
+  start: async (projectId: string): Promise<{ playground: Playground; message: string }> => {
+    const { data } = await api.post('/playground/start', { project_id: projectId })
+    return data
+  },
+
+  // Stop playground
+  stop: async (): Promise<{ message: string }> => {
+    const { data } = await api.post('/playground/stop')
+    return data
+  },
+
+  // Switch active project (without restart)
+  switchProject: async (projectId: string): Promise<{ playground: Playground; message: string }> => {
+    const { data } = await api.post('/playground/switch', { project_id: projectId })
+    return data
+  },
+
+  // Get container logs
+  getLogs: async (tail = 100): Promise<{ logs: string }> => {
+    const { data } = await api.get(`/playground/logs?tail=${tail}`)
+    return data
+  },
+
+  // Update activity timestamp
+  updateActivity: async (): Promise<void> => {
+    await api.post('/playground/activity')
+  },
+
+  // Legacy project-scoped endpoints (for backward compatibility)
   get: async (projectId: string): Promise<Playground | null> => {
     const { data } = await api.get(`/projects/${projectId}/playground`)
     return data
-  },
-
-  start: async (projectId: string): Promise<{ playground: Playground; message: string }> => {
-    const { data } = await api.post(`/projects/${projectId}/playground/start`)
-    return data
-  },
-
-  stop: async (projectId: string): Promise<{ message: string }> => {
-    const { data } = await api.post(`/projects/${projectId}/playground/stop`)
-    return data
-  },
-
-  getLogs: async (projectId: string, tail = 100): Promise<{ logs: string }> => {
-    const { data } = await api.get(`/projects/${projectId}/playground/logs?tail=${tail}`)
-    return data
-  },
-
-  updateActivity: async (projectId: string): Promise<void> => {
-    await api.post(`/projects/${projectId}/playground/activity`)
   },
 }
 
@@ -789,6 +810,137 @@ export const files = {
   listSaved: async (projectId: string): Promise<FileListResponse> => {
     const { data } = await api.get(`/projects/${projectId}/files/saved`)
     return data
+  },
+}
+
+// API Keys
+export const apiKeys = {
+  list: async (): Promise<ApiKey[]> => {
+    const { data } = await api.get('/users/me/api-keys')
+    return data
+  },
+
+  create: async (params: { provider: string; api_key: string; model_override?: string }): Promise<ApiKey> => {
+    const { data } = await api.post('/users/me/api-keys', params)
+    return data
+  },
+
+  update: async (keyId: string, params: { api_key?: string; model_override?: string; is_active?: boolean }): Promise<ApiKey> => {
+    const { data } = await api.put(`/users/me/api-keys/${keyId}`, params)
+    return data
+  },
+
+  delete: async (keyId: string): Promise<void> => {
+    await api.delete(`/users/me/api-keys/${keyId}`)
+  },
+
+  validate: async (keyId: string): Promise<{ valid: boolean; message: string }> => {
+    const { data } = await api.post(`/users/me/api-keys/${keyId}/validate`)
+    return data
+  },
+
+  getProviders: async (): Promise<ProviderInfo[]> => {
+    const { data } = await api.get('/users/me/api-keys/providers')
+    return data
+  },
+}
+
+// Credits & Usage
+export const credits = {
+  getBalance: async (): Promise<CreditBalance> => {
+    const { data } = await api.get('/credits/balance')
+    return data
+  },
+
+  getUsageHistory: async (page = 1, pageSize = 50): Promise<{ records: UsageRecord[]; total: number; page: number; page_size: number }> => {
+    const { data } = await api.get('/credits/usage', { params: { page, page_size: pageSize } })
+    return data
+  },
+
+  getPricing: async (): Promise<LLMPricing[]> => {
+    const { data } = await api.get('/credits/pricing')
+    return data
+  },
+}
+
+// Templates
+export const templates = {
+  list: async (category?: string): Promise<NotebookTemplate[]> => {
+    const { data } = await api.get('/templates', { params: category ? { category } : {} })
+    return data
+  },
+
+  get: async (id: string): Promise<NotebookTemplate> => {
+    const { data } = await api.get(`/templates/${id}`)
+    return data
+  },
+
+  fork: async (id: string, name?: string): Promise<{ project_id: string; project_name: string; message: string }> => {
+    const { data } = await api.post(`/templates/${id}/fork`, { name })
+    return data
+  },
+}
+
+// Admin APIs
+export const admin = {
+  invitations: {
+    list: async (activeOnly = false): Promise<Invitation[]> => {
+      const { data } = await api.get('/admin/invitations', { params: { active_only: activeOnly } })
+      return data
+    },
+
+    create: async (params: { email?: string; max_uses?: number; expires_at?: string; note?: string }): Promise<Invitation> => {
+      const { data } = await api.post('/admin/invitations', params)
+      return data
+    },
+
+    batchCreate: async (params: { emails: string[]; note?: string; expires_at?: string }): Promise<Invitation[]> => {
+      const { data } = await api.post('/admin/invitations/batch', params)
+      return data
+    },
+
+    get: async (id: string): Promise<InvitationDetail> => {
+      const { data } = await api.get(`/admin/invitations/${id}`)
+      return data
+    },
+
+    deactivate: async (id: string): Promise<Invitation> => {
+      const { data } = await api.delete(`/admin/invitations/${id}`)
+      return data
+    },
+  },
+
+  credits: {
+    adjust: async (params: { user_id: string; amount_cents: number; reason: string }): Promise<CreditBalance> => {
+      const { data } = await api.post('/admin/credits/adjust', params)
+      return data
+    },
+
+    updatePricing: async (params: { provider: string; model: string; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean }): Promise<LLMPricing> => {
+      const { data } = await api.post('/admin/credits/pricing', params)
+      return data
+    },
+  },
+
+  templates: {
+    create: async (params: { name: string; description?: string; category?: string; difficulty_level?: string; tags?: string[]; is_public?: boolean }): Promise<NotebookTemplate> => {
+      const { data } = await api.post('/admin/templates', params)
+      return data
+    },
+
+    createFromProject: async (projectId: string, params: { name: string; description?: string; category?: string; difficulty_level?: string; tags?: string[]; is_public?: boolean }): Promise<NotebookTemplate> => {
+      const { data } = await api.post(`/admin/templates/from-project/${projectId}`, params)
+      return data
+    },
+
+    update: async (id: string, params: Partial<NotebookTemplate>): Promise<NotebookTemplate> => {
+      const { data } = await api.put(`/admin/templates/${id}`, params)
+      return data
+    },
+
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/admin/templates/${id}`)
+    },
   },
 }
 

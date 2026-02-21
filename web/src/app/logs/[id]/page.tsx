@@ -85,7 +85,7 @@ export default function LogsPage({ params }: { params: Promise<{ id: string }> }
     // Fetch initial logs
     const fetchInitialLogs = async () => {
       try {
-        const { logs: initialLogs } = await playgrounds.getLogs(projectId, 200)
+        const { logs: initialLogs } = await playgrounds.getLogs(200)
         if (initialLogs) {
           terminal.writeln('\x1b[32mLoaded initial logs\x1b[0m')
           terminal.writeln('')

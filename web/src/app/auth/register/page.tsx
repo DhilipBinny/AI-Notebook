@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
@@ -28,15 +28,23 @@ const GoogleIcon = () => (
   </svg>
 )
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const setUser = useAuthStore((state) => state.setUser)
+
+  // Pre-fill invite code from URL query param
+  useEffect(() => {
+    const invite = searchParams.get('invite')
+    if (invite) setInviteCode(invite)
+  }, [searchParams])
 
   // Redirect to dashboard if already logged in
   useEffect(() => {
@@ -68,7 +76,7 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      const tokens = await auth.register(email, password)
+      const tokens = await auth.register(email, password, inviteCode || undefined)
       localStorage.setItem('access_token', tokens.access_token)
       localStorage.setItem('refresh_token', tokens.refresh_token)
       // Fetch user info after successful registration
@@ -150,6 +158,29 @@ export default function RegisterPage() {
             )}
 
             <div className="space-y-4">
+              <div>
+                <label
+                  htmlFor="invite-code"
+                  className="block text-sm font-medium mb-2"
+                  style={{ color: 'var(--app-text-secondary)' }}
+                >
+                  Invitation Code
+                </label>
+                <input
+                  id="invite-code"
+                  name="inviteCode"
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                  style={{
+                    backgroundColor: 'var(--app-bg-input)',
+                    border: '1px solid var(--app-border-default)',
+                    color: 'var(--app-text-primary)',
+                  }}
+                  placeholder="Enter your invitation code"
+                />
+              </div>
               <div>
                 <label
                   htmlFor="email"
@@ -307,5 +338,13 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterPageContent />
+    </Suspense>
   )
 }

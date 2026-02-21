@@ -8,10 +8,15 @@
 --   mysql -u root -p ainotebook < scripts/init-db.sql
 --
 -- Or it will run automatically when MySQL container starts
+--
+-- Last updated: 2026-02-21 (includes business logic tables)
 -- =====================================================
 
--- Use the database
 USE ainotebook;
+
+-- Disable FK checks during creation (handles table ordering)
+SET FOREIGN_KEY_CHECKS = 0;
+
 
 -- =====================================================
 -- TABLE: users
@@ -20,7 +25,6 @@ USE ainotebook;
 -- Supports both local (email/password) and OAuth login
 -- =====================================================
 CREATE TABLE IF NOT EXISTS users (
-    -- Primary key (UUID v4)
     id CHAR(36) NOT NULL,
 
     -- Basic info
@@ -36,16 +40,16 @@ CREATE TABLE IF NOT EXISTS users (
     oauth_id VARCHAR(255) NULL,
 
     -- Account settings
-    max_projects INT NOT NULL DEFAULT 5,  -- Maximum notebooks per user
+    max_projects INT NOT NULL DEFAULT 5,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
 
     -- Timestamps
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     last_login_at TIMESTAMP NULL,
 
-    -- Constraints
     PRIMARY KEY (id),
     UNIQUE KEY uk_users_email (email),
     UNIQUE KEY uk_users_oauth (oauth_provider, oauth_id),
@@ -58,34 +62,29 @@ CREATE TABLE IF NOT EXISTS users (
 -- TABLE: workspaces
 -- =====================================================
 -- Organizes projects into groups/folders
--- Each user can have multiple workspaces
 -- =====================================================
 CREATE TABLE IF NOT EXISTS workspaces (
-    -- Primary key (UUID v4)
     id CHAR(36) NOT NULL,
 
-    -- Owner reference
     user_id CHAR(36) NOT NULL,
 
-    -- Workspace info
     name VARCHAR(255) NOT NULL,
     description TEXT NULL,
 
     -- Visual customization
-    color VARCHAR(7) NOT NULL DEFAULT '#3B82F6',  -- Hex color (default: blue)
-    icon VARCHAR(50) NULL DEFAULT 'folder',        -- Icon name
+    color VARCHAR(7) NOT NULL DEFAULT '#3B82F6',
+    icon VARCHAR(50) NULL DEFAULT 'folder',
 
     -- State
-    is_default BOOLEAN NOT NULL DEFAULT FALSE,    -- One default per user
-    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,    -- Soft delete flag
-    sort_order VARCHAR(50) NOT NULL DEFAULT '0',  -- Display order
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order VARCHAR(50) NOT NULL DEFAULT '0',
 
     -- Timestamps
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL,                    -- Soft delete timestamp
+    deleted_at TIMESTAMP NULL,
 
-    -- Constraints
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_workspaces_user (user_id),
@@ -97,29 +96,22 @@ CREATE TABLE IF NOT EXISTS workspaces (
 -- TABLE: projects
 -- =====================================================
 -- Stores notebook projects
--- Each project has one .ipynb file stored in MinIO
--- Projects can optionally belong to a workspace
+-- Each project has one .ipynb file stored in MinIO/S3
 -- =====================================================
 CREATE TABLE IF NOT EXISTS projects (
-    -- Primary key (UUID v4)
     id CHAR(36) NOT NULL,
 
-    -- Owner reference
     user_id CHAR(36) NOT NULL,
-
-    -- Workspace reference (optional - for grouping)
     workspace_id CHAR(36) NULL,
 
-    -- Project info
     name VARCHAR(255) NOT NULL,
     description TEXT NULL,
 
-    -- Storage location in MinIO
-    -- Format: {mm-yyyy}/{project_id}/notebook.ipynb
+    -- Storage location in MinIO: {mm-yyyy}/{project_id}/notebook.ipynb
     storage_path VARCHAR(500) NOT NULL,
-    storage_month VARCHAR(7) NOT NULL,  -- mm-yyyy format, for folder organization
+    storage_month VARCHAR(7) NOT NULL,
 
-    -- Settings
+    -- LLM settings
     llm_provider ENUM('ollama', 'openai', 'anthropic', 'gemini') DEFAULT 'gemini',
     llm_model VARCHAR(100) NULL,
 
@@ -130,9 +122,8 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     last_opened_at TIMESTAMP NULL,
-    deleted_at TIMESTAMP NULL,  -- Soft delete timestamp
+    deleted_at TIMESTAMP NULL,
 
-    -- Constraints
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
@@ -148,26 +139,29 @@ CREATE TABLE IF NOT EXISTS projects (
 -- TABLE: playgrounds
 -- =====================================================
 -- Tracks active container instances
--- One playground per project at a time
+-- One playground per USER (user-scoped container model)
+-- project_id = currently active project in the container
 -- =====================================================
 CREATE TABLE IF NOT EXISTS playgrounds (
-    -- Primary key (UUID v4)
     id CHAR(36) NOT NULL,
 
-    -- Project reference (unique - only one active playground per project)
-    project_id CHAR(36) NOT NULL,
+    -- User reference (unique - one container per user)
+    user_id CHAR(36) NOT NULL,
+
+    -- Active project (nullable - container can exist without a project)
+    project_id CHAR(36) NULL,
 
     -- Container info
-    container_id VARCHAR(255) NOT NULL,      -- Docker container ID
-    container_name VARCHAR(255) NOT NULL,    -- For routing: playground-{short_id}
-    internal_url VARCHAR(500) NOT NULL,      -- http://playground-xxx:8888
-    internal_secret VARCHAR(255) NOT NULL,   -- Auth token for internal requests
+    container_id VARCHAR(255) NOT NULL,
+    container_name VARCHAR(255) NOT NULL,     -- playground-{user_id[:8]}
+    internal_url VARCHAR(500) NOT NULL,
+    internal_secret VARCHAR(255) NOT NULL,
 
     -- State
     status ENUM('starting', 'running', 'stopping', 'stopped', 'error') NOT NULL DEFAULT 'starting',
     error_message TEXT NULL,
 
-    -- Resource tracking
+    -- Resource limits
     memory_limit_mb INT NOT NULL DEFAULT 2048,
     cpu_limit DECIMAL(3,2) NOT NULL DEFAULT 1.00,
 
@@ -176,11 +170,12 @@ CREATE TABLE IF NOT EXISTS playgrounds (
     last_activity_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     stopped_at TIMESTAMP NULL,
 
-    -- Constraints
     PRIMARY KEY (id),
-    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_playgrounds_project (project_id),  -- Only one active per project
+    UNIQUE KEY uk_playgrounds_user (user_id),
     UNIQUE KEY uk_playgrounds_container (container_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+    INDEX idx_playgrounds_project (project_id),
     INDEX idx_playgrounds_status (status),
     INDEX idx_playgrounds_activity (last_activity_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -190,21 +185,17 @@ CREATE TABLE IF NOT EXISTS playgrounds (
 -- TABLE: sessions
 -- =====================================================
 -- Stores refresh tokens for JWT authentication
--- Allows multiple sessions per user (multiple devices)
 -- =====================================================
 CREATE TABLE IF NOT EXISTS sessions (
-    -- Primary key (UUID v4)
     id CHAR(36) NOT NULL,
 
-    -- User reference
     user_id CHAR(36) NOT NULL,
 
-    -- Token info (store hash, not the actual token)
     refresh_token_hash VARCHAR(255) NOT NULL,
 
     -- Device/client info
     user_agent VARCHAR(500) NULL,
-    ip_address VARCHAR(45) NULL,  -- IPv6 max length
+    ip_address VARCHAR(45) NULL,
 
     -- Validity
     expires_at TIMESTAMP NOT NULL,
@@ -214,7 +205,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_used_at TIMESTAMP NULL,
 
-    -- Constraints
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_sessions_user (user_id),
@@ -224,51 +214,251 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 
 -- =====================================================
--- TABLE: activity_logs (Audit Trail)
+-- TABLE: activity_logs
 -- =====================================================
--- Tracks user activity for security auditing and analytics
--- Logs authentication events, resource operations, and system events
+-- Tracks user activity for security auditing
 -- =====================================================
 CREATE TABLE IF NOT EXISTS activity_logs (
-    -- Primary key (auto-increment for performance on high-volume table)
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 
-    -- User reference (NULL for system/anonymous events)
     user_id CHAR(36) NULL,
 
-    -- Activity info
-    action VARCHAR(100) NOT NULL,      -- e.g., 'auth.login', 'project.create'
-    resource_type VARCHAR(50) NULL,    -- e.g., 'user', 'project', 'playground'
-    resource_id CHAR(36) NULL,         -- ID of affected resource
+    action VARCHAR(100) NOT NULL,
+    resource_type VARCHAR(50) NULL,
+    resource_id CHAR(36) NULL,
 
-    -- Additional context
-    metadata JSON NULL,                -- Action-specific data (flexible schema)
-    ip_address VARCHAR(45) NULL,       -- IPv4 or IPv6
-    user_agent VARCHAR(500) NULL,      -- Browser/client info
+    metadata JSON NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(500) NULL,
 
-    -- Result status
     status ENUM('success', 'failed', 'denied') NOT NULL DEFAULT 'success',
 
-    -- Timestamp
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- Constraints
     PRIMARY KEY (id),
     INDEX idx_activity_user (user_id),
     INDEX idx_activity_action (action),
     INDEX idx_activity_resource (resource_type, resource_id),
     INDEX idx_activity_created (created_at),
     INDEX idx_activity_status (status),
-    -- Composite index for common audit queries
     INDEX idx_activity_user_action (user_id, action, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: invitations
+-- =====================================================
+-- Invite codes for controlled user onboarding
+-- =====================================================
+CREATE TABLE IF NOT EXISTS invitations (
+    id CHAR(36) NOT NULL,
+
+    code VARCHAR(64) NOT NULL,
+    email VARCHAR(255) NULL,
+
+    max_uses INT NOT NULL DEFAULT 1,
+    used_count INT NOT NULL DEFAULT 0,
+
+    created_by CHAR(36) NOT NULL,
+
+    expires_at TIMESTAMP NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    note VARCHAR(500) NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_invitations_code (code),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_invitations_email (email),
+    INDEX idx_invitations_active (is_active),
+    INDEX idx_invitations_created_by (created_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: invitation_uses
+-- =====================================================
+-- Tracks which users redeemed which invitations
+-- =====================================================
+CREATE TABLE IF NOT EXISTS invitation_uses (
+    id CHAR(36) NOT NULL,
+
+    invitation_id CHAR(36) NOT NULL,
+    user_id CHAR(36) NOT NULL,
+
+    used_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_invitation_uses_invitation (invitation_id),
+    INDEX idx_invitation_uses_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: user_api_keys
+-- =====================================================
+-- User-owned LLM API keys (Fernet encrypted)
+-- One key per provider per user
+-- =====================================================
+CREATE TABLE IF NOT EXISTS user_api_keys (
+    id CHAR(36) NOT NULL,
+
+    user_id CHAR(36) NOT NULL,
+    provider ENUM('openai', 'anthropic', 'gemini', 'ollama') NOT NULL,
+
+    api_key_encrypted TEXT NOT NULL,
+    api_key_hint VARCHAR(20) NOT NULL,
+
+    model_override VARCHAR(100) NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_validated BOOLEAN NOT NULL DEFAULT FALSE,
+    last_validated_at TIMESTAMP NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_user_api_keys_provider (user_id, provider),
+    INDEX idx_user_api_keys_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: user_credits
+-- =====================================================
+-- Credit balance per user (1:1 with users)
+-- balance_cents: 1000 = $10.00
+-- =====================================================
+CREATE TABLE IF NOT EXISTS user_credits (
+    user_id CHAR(36) NOT NULL,
+
+    balance_cents INT NOT NULL DEFAULT 1000,
+    total_deposited_cents INT NOT NULL DEFAULT 1000,
+    total_consumed_cents INT NOT NULL DEFAULT 0,
+
+    last_charged_at TIMESTAMP NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: llm_pricing
+-- =====================================================
+-- Per-model pricing with configurable margin
+-- =====================================================
+CREATE TABLE IF NOT EXISTS llm_pricing (
+    id INT NOT NULL AUTO_INCREMENT,
+
+    provider VARCHAR(50) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+
+    input_cost_per_1m_cents INT NOT NULL,
+    output_cost_per_1m_cents INT NOT NULL,
+
+    margin_multiplier DECIMAL(3,2) NOT NULL DEFAULT 1.30,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_llm_pricing_model (provider, model),
+    INDEX idx_llm_pricing_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: usage_records
+-- =====================================================
+-- Per-request LLM usage tracking
+-- =====================================================
+CREATE TABLE IF NOT EXISTS usage_records (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+    user_id CHAR(36) NOT NULL,
+    project_id CHAR(36) NULL,
+
+    provider VARCHAR(50) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    request_type ENUM('chat', 'ai_cell', 'summarize') NOT NULL DEFAULT 'chat',
+
+    input_tokens INT NOT NULL DEFAULT 0,
+    output_tokens INT NOT NULL DEFAULT 0,
+    cached_tokens INT NOT NULL DEFAULT 0,
+
+    cost_cents INT NOT NULL DEFAULT 0,
+    raw_cost_cents INT NOT NULL DEFAULT 0,
+
+    is_own_key BOOLEAN NOT NULL DEFAULT FALSE,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_usage_user (user_id),
+    INDEX idx_usage_project (project_id),
+    INDEX idx_usage_created (created_at),
+    INDEX idx_usage_provider (provider, model),
+    INDEX idx_usage_user_created (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: notebook_templates
+-- =====================================================
+-- Pre-built notebook templates for courses/workshops
+-- =====================================================
+CREATE TABLE IF NOT EXISTS notebook_templates (
+    id CHAR(36) NOT NULL,
+
+    name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    category VARCHAR(100) NULL,
+
+    storage_path VARCHAR(500) NOT NULL,
+
+    thumbnail_url VARCHAR(500) NULL,
+    difficulty_level ENUM('beginner', 'intermediate', 'advanced') NOT NULL DEFAULT 'beginner',
+    estimated_minutes INT NULL,
+    tags JSON NULL,
+
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INT NOT NULL DEFAULT 0,
+
+    created_by CHAR(36) NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_templates_public (is_public),
+    INDEX idx_templates_category (category),
+    INDEX idx_templates_sort (sort_order),
+    INDEX idx_templates_created_by (created_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Re-enable FK checks
+SET FOREIGN_KEY_CHECKS = 1;
 
 
 -- =====================================================
 -- STORED PROCEDURES
 -- =====================================================
 
--- Procedure to clean up expired sessions
 DELIMITER //
 CREATE PROCEDURE IF NOT EXISTS cleanup_expired_sessions()
 BEGIN
@@ -278,7 +468,6 @@ BEGIN
 END //
 DELIMITER ;
 
--- Procedure to clean up stale playgrounds (not updated in 4+ hours)
 DELIMITER //
 CREATE PROCEDURE IF NOT EXISTS cleanup_stale_playgrounds()
 BEGIN
@@ -292,32 +481,35 @@ DELIMITER ;
 
 
 -- =====================================================
--- SCHEDULED EVENTS (optional - requires event_scheduler ON)
+-- SEED DATA: LLM Pricing
 -- =====================================================
--- Enable with: SET GLOBAL event_scheduler = ON;
-
--- Clean expired sessions every hour
--- CREATE EVENT IF NOT EXISTS evt_cleanup_sessions
--- ON SCHEDULE EVERY 1 HOUR
--- DO CALL cleanup_expired_sessions();
-
--- Clean stale playgrounds every 15 minutes
--- CREATE EVENT IF NOT EXISTS evt_cleanup_playgrounds
--- ON SCHEDULE EVERY 15 MINUTE
--- DO CALL cleanup_stale_playgrounds();
-
-
--- =====================================================
--- INITIAL DATA (Optional - for development)
+-- Default pricing for all supported models
+-- margin_multiplier = 1.30 (30% markup on platform keys)
+-- Ollama = free (local inference)
 -- =====================================================
 
--- Create a test user (password: testpassword123)
--- Password hash is bcrypt of 'testpassword123'
--- INSERT INTO users (id, email, name, password_hash, is_verified)
--- VALUES (
---     UUID(),
---     'test@example.com',
---     'Test User',
---     '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.RVOm.1VbW/1234',  -- Replace with real hash
---     TRUE
--- );
+INSERT INTO llm_pricing (provider, model, input_cost_per_1m_cents, output_cost_per_1m_cents, margin_multiplier) VALUES
+-- Gemini
+('gemini', 'gemini-2.0-flash',       10,   40, 1.30),
+('gemini', 'gemini-2.0-flash-lite',    5,   20, 1.30),
+('gemini', 'gemini-2.5-pro',         125,  500, 1.30),
+('gemini', 'gemini-2.5-flash',        15,   60, 1.30),
+-- OpenAI
+('openai', 'gpt-4o',                250, 1000, 1.30),
+('openai', 'gpt-4o-mini',            15,   60, 1.30),
+('openai', 'gpt-4.1',               200,  800, 1.30),
+('openai', 'gpt-4.1-mini',           40,  160, 1.30),
+('openai', 'gpt-4.1-nano',           10,   40, 1.30),
+('openai', 'o3-mini',               110,  440, 1.30),
+-- Anthropic
+('anthropic', 'claude-sonnet-4-20250514',  300, 1500, 1.30),
+('anthropic', 'claude-haiku-4-5-20251001',  80,  400, 1.30),
+('anthropic', 'claude-3-5-sonnet-20241022', 300, 1500, 1.30),
+-- Ollama (free - local inference)
+('ollama', 'llama3',     0, 0, 1.00),
+('ollama', 'mistral',    0, 0, 1.00),
+('ollama', 'codellama',  0, 0, 1.00),
+('ollama', 'phi3',       0, 0, 1.00)
+ON DUPLICATE KEY UPDATE
+    input_cost_per_1m_cents = VALUES(input_cost_per_1m_cents),
+    output_cost_per_1m_cents = VALUES(output_cost_per_1m_cents);

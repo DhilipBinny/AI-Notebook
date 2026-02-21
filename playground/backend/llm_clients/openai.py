@@ -441,10 +441,23 @@ class OpenAIClient(BaseLLMClient):
         # is_final when there are no tool calls
         is_final = len(tool_calls_list) == 0
 
+        # Extract usage stats
+        usage = None
+        if hasattr(response, 'usage') and response.usage:
+            usage_obj = response.usage
+            usage = {
+                "input_tokens": getattr(usage_obj, 'prompt_tokens', 0),
+                "output_tokens": getattr(usage_obj, 'completion_tokens', 0),
+                "cached_tokens": 0,
+            }
+            if hasattr(usage_obj, 'prompt_tokens_details') and usage_obj.prompt_tokens_details:
+                usage["cached_tokens"] = getattr(usage_obj.prompt_tokens_details, 'cached_tokens', 0)
+
         return LLMResponse(
             text=text,
             tool_calls=tool_calls_list,
-            is_final=is_final
+            is_final=is_final,
+            usage=usage
         )
 
     def _add_tool_results_to_messages(self, messages: List[Dict[str, Any]], response: 'LLMResponse', tool_results: List[ToolResult]) -> List[Dict[str, Any]]:

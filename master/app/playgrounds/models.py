@@ -1,8 +1,9 @@
 """
 Playground database model - tracks active container instances.
+One container per user (not per project).
 """
 
-from sqlalchemy import Column, String, Text, DateTime, Enum as SQLEnum, ForeignKey, Integer, Float
+from sqlalchemy import Column, String, Text, DateTime, Enum as SQLEnum, ForeignKey, Integer, Numeric
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import enum
@@ -21,19 +22,27 @@ class PlaygroundStatus(str, enum.Enum):
 
 
 class Playground(Base):
-    """Active playground container model."""
+    """Active playground container model. One per user."""
 
     __tablename__ = "playgrounds"
 
     # Primary key
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
 
-    # Project reference (one playground per project)
-    project_id = Column(
+    # User reference (one playground per user)
+    user_id = Column(
         String(36),
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
+        index=True
+    )
+
+    # Active project reference (nullable - tracks which project is loaded)
+    project_id = Column(
+        String(36),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
         index=True
     )
 
@@ -53,7 +62,7 @@ class Playground(Base):
 
     # Resource limits
     memory_limit_mb = Column(Integer, default=2048, nullable=False)
-    cpu_limit = Column(Float, default=1.0, nullable=False)
+    cpu_limit = Column(Numeric(3, 2), default=1.0, nullable=False)
 
     # Timestamps
     started_at = Column(DateTime, server_default=func.now(), nullable=False)
@@ -61,6 +70,7 @@ class Playground(Base):
     stopped_at = Column(DateTime, nullable=True)
 
     # Relationships
+    user = relationship("User", back_populates="playground")
     project = relationship("Project", back_populates="playground")
 
     def __repr__(self) -> str:

@@ -100,10 +100,22 @@ def pip_install(packages: str, upgrade: bool = False) -> dict:
     # Parse packages (handle space-separated list)
     package_list = packages.strip().split()
 
+    # Validate package names to prevent injection via quotes/special chars
+    import re
+    pkg_pattern = re.compile(r'^[a-zA-Z0-9_][a-zA-Z0-9_.+\-\[\]>=<!~]*$')
+    for pkg in package_list:
+        if not pkg_pattern.match(pkg):
+            return {
+                "success": False,
+                "packages": package_list,
+                "error": f"Invalid package name: {pkg}"
+            }
+
     # Build pip install command using subprocess with sys.executable
     # This ensures we install to the same Python environment as the kernel
-    upgrade_flag = ", '--upgrade'" if upgrade else ""
-    packages_str = "', '".join(package_list)
+    # Pass packages as individual list elements (not string interpolation)
+    upgrade_flag = "'--upgrade', " if upgrade else ""
+    packages_args = ", ".join(repr(p) for p in package_list)
 
     install_code = f'''
 import subprocess
@@ -120,7 +132,7 @@ if user_site and user_site not in sys.path:
 
 # Run pip install using the same Python interpreter as the kernel
 result = subprocess.run(
-    [sys.executable, "-m", "pip", "install"{upgrade_flag}, '{packages_str}'],
+    [sys.executable, "-m", "pip", "install", {upgrade_flag}{packages_args}],
     capture_output=True,
     text=True
 )
@@ -141,7 +153,7 @@ importlib.invalidate_caches()
 importlib.reload(site)
 
 # If matplotlib was installed, configure it for inline display
-if 'matplotlib' in '{packages_str}'.lower():
+if any('matplotlib' in p.lower() for p in [{packages_args}]):
     try:
         import matplotlib
         matplotlib.use('agg')
@@ -212,14 +224,26 @@ def pip_uninstall(packages: str) -> dict:
         }
 
     package_list = packages.strip().split()
-    packages_str = "', '".join(package_list)
+
+    # Validate package names
+    import re
+    pkg_pattern = re.compile(r'^[a-zA-Z0-9_][a-zA-Z0-9_.+\-\[\]>=<!~]*$')
+    for pkg in package_list:
+        if not pkg_pattern.match(pkg):
+            return {
+                "success": False,
+                "packages": package_list,
+                "error": f"Invalid package name: {pkg}"
+            }
+
+    packages_args = ", ".join(repr(p) for p in package_list)
 
     uninstall_code = f'''
 import subprocess
 import sys
 
 result = subprocess.run(
-    [sys.executable, "-m", "pip", "uninstall", "-y", '{packages_str}'],
+    [sys.executable, "-m", "pip", "uninstall", "-y", {packages_args}],
     capture_output=True,
     text=True
 )
@@ -346,12 +370,21 @@ def pip_show(package: str) -> dict:
         }
 
     pkg = package.strip()
+
+    # Validate package name
+    import re
+    if not re.match(r'^[a-zA-Z0-9_][a-zA-Z0-9_.+\-\[\]>=<!~]*$', pkg):
+        return {
+            "success": False,
+            "error": f"Invalid package name: {pkg}"
+        }
+
     show_code = f'''
 import subprocess
 import sys
 
 result = subprocess.run(
-    [sys.executable, "-m", "pip", "show", "{pkg}"],
+    [sys.executable, "-m", "pip", "show", {repr(pkg)}],
     capture_output=True,
     text=True
 )

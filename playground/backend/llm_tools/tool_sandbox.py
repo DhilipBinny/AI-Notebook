@@ -252,7 +252,19 @@ def sandbox_pip_install(packages: str) -> dict:
 
     # Build pip install command
     package_list = packages.strip().split()
-    packages_str = "', '".join(package_list)
+
+    # Validate package names to prevent injection
+    import re
+    pkg_pattern = re.compile(r'^[a-zA-Z0-9_][a-zA-Z0-9_.+\-\[\]>=<!~]*$')
+    for pkg in package_list:
+        if not pkg_pattern.match(pkg):
+            return {
+                "success": False,
+                "output": "",
+                "error": f"Invalid package name: {pkg}"
+            }
+
+    packages_args = ", ".join(repr(p) for p in package_list)
 
     install_code = f'''
 import subprocess
@@ -262,7 +274,7 @@ import importlib
 
 # Run pip install
 result = subprocess.run(
-    [sys.executable, "-m", "pip", "install", '{packages_str}'],
+    [sys.executable, "-m", "pip", "install", {packages_args}],
     capture_output=True,
     text=True
 )
