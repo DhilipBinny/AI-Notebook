@@ -7,13 +7,13 @@ import asyncio
 import contextvars
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 import backend.config as cfg
 from backend.llm_clients import get_llm_client
 from backend.llm_clients.base import CancelledException
-from backend.middleware.security import verify_internal_secret
+from backend.middleware.security import verify_internal_secret, extract_key_overrides
 from backend.models import (
     AICellRequest,
     AICellCancelRequest,
@@ -34,6 +34,7 @@ _active_ai_cell_clients: Dict[str, Any] = {}
 @router.post("/run")
 async def run_ai_cell(
     request: AICellRequest,
+    raw_request: Request,
     authorized: bool = Depends(verify_internal_secret),
 ):
     """
@@ -66,10 +67,19 @@ async def run_ai_cell(
         """Callback that puts progress events into the queue."""
         progress_queue.put({"event": event_type, "data": data})
 
+    # Capture key overrides from headers
+    _ai_raw_request = raw_request
+
     async def event_generator():
         """Generate SSE events - unified for both streaming and non-streaming modes."""
         provider = request.llm_provider or cfg.LLM_PROVIDER
-        client = get_llm_client(provider=provider)
+        key_override, model_override, base_url_override = extract_key_overrides(_ai_raw_request, provider)
+        client = get_llm_client(
+            provider=provider,
+            api_key_override=key_override,
+            model_override=model_override,
+            base_url_override=base_url_override,
+        )
         _active_ai_cell_clients[session_id] = client
 
         streaming_enabled = cfg.AI_CELL_STREAMING_ENABLED

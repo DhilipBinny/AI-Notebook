@@ -408,7 +408,7 @@ async def summarize_notebook(
 
     Args:
         project_id: Project ID
-        llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+        llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "openai_compatible")
 
     Returns:
         Dict with success status and summary text

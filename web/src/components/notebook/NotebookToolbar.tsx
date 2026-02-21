@@ -57,6 +57,7 @@ interface NotebookToolbarProps {
   // AI Settings
   llmProvider: string
   onProviderChange: (provider: string) => void
+  availableProviders?: { provider: string; display_name: string }[]
   contextFormat: 'xml' | 'json' | 'plain'
   onContextFormatChange: (format: 'xml' | 'json' | 'plain') => void
 }
@@ -89,6 +90,7 @@ export default function NotebookToolbar({
   onOpenTerminal,
   llmProvider,
   onProviderChange,
+  availableProviders,
   contextFormat,
   onContextFormatChange,
 }: NotebookToolbarProps) {
@@ -722,10 +724,18 @@ export default function NotebookToolbar({
                       color: 'var(--nb-text-primary)',
                     }}
                   >
-                    <option value="ollama">Ollama (Local)</option>
-                    <option value="gemini">Google Gemini</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic Claude</option>
+                    {availableProviders && availableProviders.length > 0 ? (
+                      availableProviders.map(p => (
+                        <option key={p.provider} value={p.provider}>{p.display_name}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic Claude</option>
+                        <option value="openai_compatible">OpenAI Compatible</option>
+                      </>
+                    )}
                   </select>
                 </div>
 

@@ -14,12 +14,12 @@ import asyncio
 import contextvars
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 import backend.config as cfg
 from backend.llm_clients import get_llm_client
-from backend.middleware.security import verify_internal_secret
+from backend.middleware.security import verify_internal_secret, extract_key_overrides
 from backend.models import ChatRequest, ExecuteToolsRequest
 from backend.context_manager import ContextManager, ContextFormat
 from backend.session_manager import (
@@ -389,6 +389,7 @@ _active_chat_clients: Dict[str, Any] = {}
 @router.post("/stream")
 async def chat_with_llm_stream(
     request: ChatRequest,
+    raw_request: Request,
     authorized: bool = Depends(verify_internal_secret),
 ):
     """
@@ -427,6 +428,9 @@ async def chat_with_llm_stream(
         """Callback that puts progress events into the queue."""
         progress_queue.put({"event": event_type, "data": data})
 
+    # Capture key overrides from headers before entering generator
+    _chat_raw_request = raw_request
+
     async def event_generator():
         """Generate SSE events for chat streaming."""
         provider = request.llm_provider or cfg.LLM_PROVIDER
@@ -443,9 +447,18 @@ async def chat_with_llm_stream(
             set_current_session(session_id)
             log(f"Session ID set: {session_id} (kernel will be created lazily if needed)")
 
+            # Extract per-request key overrides from headers
+            key_override, model_override, base_url_override = extract_key_overrides(_chat_raw_request, provider)
+
             # Initialize LLM client
             try:
-                client = get_llm_client(provider=provider, auto_function_calling=auto_func)
+                client = get_llm_client(
+                    provider=provider,
+                    auto_function_calling=auto_func,
+                    api_key_override=key_override,
+                    model_override=model_override,
+                    base_url_override=base_url_override,
+                )
             except Exception as e:
                 yield format_sse_event("error", {"error": str(e)})
                 return
@@ -715,6 +728,7 @@ async def chat_with_llm_stream(
 @router.post("/execute-tools/stream")
 async def execute_tools_stream(
     request: ExecuteToolsRequest,
+    raw_request: Request,
     authorized: bool = Depends(verify_internal_secret),
 ):
     """

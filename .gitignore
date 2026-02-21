@@ -94,7 +94,7 @@ infrastructure/data/
 infrastructure/logs/
 
 # Logs
-logs/
+/logs/
 *.log
 
 # Temporary files
@@ -128,6 +128,11 @@ credentials.json
 # Local development
 .local/
 local_settings.py
+
+# Local deployment scripts & backups
+scripts/deploy-prod.sh
+scripts/backups/
+logo-icons/
 
 # Test files
 *.test.js.snap

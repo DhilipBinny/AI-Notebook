@@ -17,29 +17,27 @@ load_dotenv(Path(__file__).parent / ".env")
 MASTER_API_URL = os.environ.get("MASTER_API_URL", "http://master-api:8000/api")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "dev-internal-secret")
 
-# === Ollama Configuration (default - no API key needed) ===
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://192.168.0.136:11434/v1")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-coder:30b")
+# === LLM Provider Configuration ===
+# SOURCE OF TRUTH: platform_api_keys table in the database (managed via Admin UI).
+# Master-api injects API keys, model names, and base URLs as request headers.
+# The env vars below are ONLY emergency fallbacks if headers are missing.
 
-# === Gemini Configuration ===
+# OpenAI-Compatible (Ollama, OpenRouter, vLLM, etc.)
+OPENAI_COMPATIBLE_BASE_URL = os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1")
+OPENAI_COMPATIBLE_API_KEY = os.environ.get("OPENAI_COMPATIBLE_API_KEY", "")
+OPENAI_COMPATIBLE_MODEL = os.environ.get("OPENAI_COMPATIBLE_MODEL", "qwen3-coder:30b")
+
+# Gemini
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
-# === OpenAI Configuration ===
+# OpenAI
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
-# === Anthropic Configuration ===
+# Anthropic
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
-
-# === OpenRouter Configuration (OpenAI-compatible API) ===
-# Set USE_OPENROUTER=true to route OpenAI requests through OpenRouter
-USE_OPENROUTER = os.environ.get("USE_OPENROUTER", "false").lower() == "true"
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-OPENROUTER_OPENAI_URL = os.environ.get("OPENROUTER_OPENAI_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_OPENAI_MODEL = os.environ.get("OPENROUTER_OPENAI_MODEL", "openai/gpt-4o")
-OPENROUTER_MAX_TOKENS = int(os.environ.get("OPENROUTER_MAX_TOKENS", "4000"))
 
 # === Function Calling Behavior ===
 # Tool execution mode:
@@ -80,9 +78,8 @@ AI_CELL_STREAMING_ENABLED = os.environ.get("AI_CELL_STREAMING_ENABLED", "true").
 # Auto-detect default based on availability
 # User can switch via UI dropdown at runtime
 def _get_default_provider():
-    """Auto-detect default provider - Ollama as container default"""
-    # Note: Container defaults to Ollama, but UI sends actual selection on each call
-    return "ollama"
+    """Auto-detect default provider - OpenAI-compatible as container default"""
+    return "openai_compatible"
 
 # Read from environment or use default
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", _get_default_provider())
@@ -99,19 +96,18 @@ def get_provider_info():
         "auto_function_calling": AUTO_FUNCTION_CALLING,
         "tool_execution_mode": TOOL_EXECUTION_MODE,
         "context_format": CONTEXT_FORMAT,
-        "ollama": {
-            "configured": True,  # Always available (no key needed)
-            "model": OLLAMA_MODEL,
-            "url": OLLAMA_URL
+        "openai_compatible": {
+            "configured": True,  # Always available (base_url can default to localhost)
+            "model": OPENAI_COMPATIBLE_MODEL,
+            "url": OPENAI_COMPATIBLE_BASE_URL
         },
         "gemini": {
             "configured": bool(GEMINI_API_KEY),
             "model": GEMINI_MODEL
         },
         "openai": {
-            "configured": bool(OPENAI_API_KEY) or (USE_OPENROUTER and bool(OPENROUTER_API_KEY)),
-            "model": OPENROUTER_OPENAI_MODEL if USE_OPENROUTER else OPENAI_MODEL,
-            "via_openrouter": USE_OPENROUTER
+            "configured": bool(OPENAI_API_KEY),
+            "model": OPENAI_MODEL,
         },
         "anthropic": {
             "configured": bool(ANTHROPIC_API_KEY),

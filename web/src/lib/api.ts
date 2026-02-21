@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMPricing, NotebookTemplate } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMPricing, NotebookTemplate, PlatformKey } from '@/types'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -816,16 +816,16 @@ export const files = {
 // API Keys
 export const apiKeys = {
   list: async (): Promise<ApiKey[]> => {
-    const { data } = await api.get('/users/me/api-keys')
+    const { data } = await api.get('/users/me/api-keys/')
     return data
   },
 
-  create: async (params: { provider: string; api_key: string; model_override?: string }): Promise<ApiKey> => {
-    const { data } = await api.post('/users/me/api-keys', params)
+  create: async (params: { provider: string; api_key: string; model_override?: string; base_url?: string }): Promise<ApiKey> => {
+    const { data } = await api.post('/users/me/api-keys/', params)
     return data
   },
 
-  update: async (keyId: string, params: { api_key?: string; model_override?: string; is_active?: boolean }): Promise<ApiKey> => {
+  update: async (keyId: string, params: { api_key?: string; model_override?: string; base_url?: string; is_active?: boolean }): Promise<ApiKey> => {
     const { data } = await api.put(`/users/me/api-keys/${keyId}`, params)
     return data
   },
@@ -940,6 +940,47 @@ export const admin = {
 
     delete: async (id: string): Promise<void> => {
       await api.delete(`/admin/templates/${id}`)
+    },
+  },
+
+  platformKeys: {
+    list: async (provider?: string): Promise<PlatformKey[]> => {
+      const { data } = await api.get('/admin/platform-keys/', { params: provider ? { provider } : {} })
+      return data
+    },
+
+    create: async (params: { provider: string; label: string; api_key: string; model_name?: string; base_url?: string }): Promise<PlatformKey> => {
+      const { data } = await api.post('/admin/platform-keys/', params)
+      return data
+    },
+
+    update: async (id: string, params: { label?: string; api_key?: string; model_name?: string; base_url?: string }): Promise<PlatformKey> => {
+      const { data } = await api.put(`/admin/platform-keys/${id}`, params)
+      return data
+    },
+
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/admin/platform-keys/${id}`)
+    },
+
+    activate: async (id: string): Promise<PlatformKey> => {
+      const { data } = await api.post(`/admin/platform-keys/${id}/activate`)
+      return data
+    },
+
+    deactivate: async (id: string): Promise<PlatformKey> => {
+      const { data } = await api.post(`/admin/platform-keys/${id}/deactivate`)
+      return data
+    },
+
+    setDefault: async (id: string): Promise<PlatformKey> => {
+      const { data } = await api.post(`/admin/platform-keys/${id}/set-default`)
+      return data
+    },
+
+    validate: async (id: string): Promise<{ valid: boolean; error?: string }> => {
+      const { data } = await api.post(`/admin/platform-keys/${id}/validate`)
+      return data
     },
   },
 }

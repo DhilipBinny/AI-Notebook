@@ -82,6 +82,7 @@ export interface ApiKey {
   provider: string
   api_key_hint: string
   model_override?: string
+  base_url?: string
   is_active: boolean
   is_validated: boolean
   last_validated_at?: string
@@ -93,6 +94,8 @@ export interface ProviderInfo {
   provider: string
   display_name: string
   has_key: boolean
+  is_default: boolean
+  active_model?: string
   models: string[]
 }
 
@@ -139,6 +142,21 @@ export interface NotebookTemplate {
   is_public: boolean
   created_by?: string
   sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PlatformKey {
+  id: string
+  provider: string
+  label: string
+  api_key_hint: string
+  model_name?: string
+  base_url?: string
+  is_active: boolean
+  is_default: boolean
+  priority: number
+  created_by?: string
   created_at: string
   updated_at: string
 }

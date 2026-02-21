@@ -4,7 +4,7 @@ Tool Call Validator - Uses AI to decide if a tool call needs user approval
 This module provides an AI-based validator that analyzes tool calls and determines
 whether they are safe to execute automatically or require user confirmation.
 
-Supports multiple LLM providers: Gemini, OpenAI, and Ollama (uses user-selected provider).
+Supports multiple LLM providers: Gemini, OpenAI, Anthropic, and OpenAI-compatible (uses user-selected provider).
 """
 
 import json
@@ -54,7 +54,7 @@ Examples:
 class ToolCallValidator:
     """Validates tool calls using AI to determine if they need user approval.
 
-    Supports multiple providers: gemini, openai, ollama (based on cfg.LLM_PROVIDER)
+    Supports multiple providers: gemini, openai, anthropic, openai_compatible (based on cfg.LLM_PROVIDER)
     """
 
     def __init__(self, provider: Optional[str] = None):
@@ -62,7 +62,7 @@ class ToolCallValidator:
         Initialize the validator with the specified or current LLM provider.
 
         Args:
-            provider: LLM provider to use ('gemini', 'openai', 'ollama').
+            provider: LLM provider to use ('gemini', 'openai', 'anthropic', 'openai_compatible').
         """
         self.provider = provider or cfg.LLM_PROVIDER
         self.model = None
@@ -76,8 +76,8 @@ class ToolCallValidator:
             self._init_gemini()
         elif self.provider == "openai":
             self._init_openai()
-        elif self.provider == "ollama":
-            self._init_ollama()
+        elif self.provider == "openai_compatible":
+            self._init_openai_compatible()
         else:
             log(f"Unknown provider: {self.provider}, defaulting to manual approval")
             self.model = None
@@ -116,17 +116,18 @@ class ToolCallValidator:
             log(f"Failed to initialize OpenAI validator: {e}")
             self.model = None
 
-    def _init_ollama(self):
-        """Initialize Ollama provider"""
+    def _init_openai_compatible(self):
+        """Initialize OpenAI-compatible provider"""
         try:
             from openai import OpenAI
+            api_key = cfg.OPENAI_COMPATIBLE_API_KEY or "ollama"
             self.model = OpenAI(
-                base_url=cfg.OLLAMA_URL,
-                api_key="ollama"  # Ollama doesn't need a real key
+                base_url=cfg.OPENAI_COMPATIBLE_BASE_URL,
+                api_key=api_key,
             )
-            log(f"ToolCallValidator initialized with Ollama ({cfg.OLLAMA_MODEL})")
+            log(f"ToolCallValidator initialized with OpenAI Compatible ({cfg.OPENAI_COMPATIBLE_MODEL})")
         except Exception as e:
-            log(f"Failed to initialize Ollama validator: {e}")
+            log(f"Failed to initialize OpenAI Compatible validator: {e}")
             self.model = None
 
     def _call_gemini(self, tool_info: str) -> str:
@@ -146,10 +147,10 @@ class ToolCallValidator:
         )
         return response.choices[0].message.content.strip()
 
-    def _call_ollama(self, tool_info: str) -> str:
-        """Call Ollama API for validation"""
+    def _call_openai_compatible(self, tool_info: str) -> str:
+        """Call OpenAI-compatible API for validation"""
         response = self.model.chat.completions.create(
-            model=cfg.OLLAMA_MODEL,
+            model=cfg.OPENAI_COMPATIBLE_MODEL,
             messages=[
                 {"role": "system", "content": VALIDATOR_PROMPT},
                 {"role": "user", "content": tool_info}
@@ -164,8 +165,8 @@ class ToolCallValidator:
             return self._call_gemini(tool_info)
         elif self.provider == "openai":
             return self._call_openai(tool_info)
-        elif self.provider == "ollama":
-            return self._call_ollama(tool_info)
+        elif self.provider == "openai_compatible":
+            return self._call_openai_compatible(tool_info)
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 

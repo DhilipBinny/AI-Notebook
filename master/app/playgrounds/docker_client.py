@@ -52,6 +52,9 @@ class DockerClient:
         project_id: str,
         storage_path: str,
         internal_secret: str,
+        platform_keys: dict[str, str] | None = None,
+        platform_models: dict[str, str] | None = None,
+        platform_base_urls: dict[str, str] | None = None,
     ) -> tuple[str, str]:
         """
         Create and start a new playground container.
@@ -80,39 +83,36 @@ class DockerClient:
                 # Master API URL for LLM tools to fetch notebook data
                 "MASTER_API_URL": settings.master_api_url,
             }
-            # Add LLM API keys if configured (passed as env vars, not via .env file)
-            if settings.gemini_api_key:
-                env["GEMINI_API_KEY"] = settings.gemini_api_key
-            if settings.openai_api_key:
-                env["OPENAI_API_KEY"] = settings.openai_api_key
-            if settings.anthropic_api_key:
-                env["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+            # Add LLM API keys: prefer platform DB keys, fall back to env vars
+            _pk = platform_keys or {}
+            gemini_key = _pk.get("gemini") or settings.gemini_api_key
+            openai_key = _pk.get("openai") or settings.openai_api_key
+            anthropic_key = _pk.get("anthropic") or settings.anthropic_api_key
+            if gemini_key:
+                env["GEMINI_API_KEY"] = gemini_key
+            if openai_key:
+                env["OPENAI_API_KEY"] = openai_key
+            if anthropic_key:
+                env["ANTHROPIC_API_KEY"] = anthropic_key
 
-            # OpenRouter configuration for OpenAI
-            if settings.use_openrouter:
-                env["USE_OPENROUTER"] = "true"
-            if settings.openrouter_api_key:
-                env["OPENROUTER_API_KEY"] = settings.openrouter_api_key
-            if settings.openrouter_openai_url:
-                env["OPENROUTER_OPENAI_URL"] = settings.openrouter_openai_url
-            if settings.openrouter_openai_model:
-                env["OPENROUTER_OPENAI_MODEL"] = settings.openrouter_openai_model
-            if settings.openrouter_max_tokens:
-                env["OPENROUTER_MAX_TOKENS"] = str(settings.openrouter_max_tokens)
+            # Add LLM model configurations: prefer platform DB models, fall back to env
+            _pm = platform_models or {}
+            if _pm.get("gemini") or settings.gemini_model:
+                env["GEMINI_MODEL"] = _pm.get("gemini") or settings.gemini_model
+            if _pm.get("openai") or settings.openai_model:
+                env["OPENAI_MODEL"] = _pm.get("openai") or settings.openai_model
+            if _pm.get("anthropic") or settings.anthropic_model:
+                env["ANTHROPIC_MODEL"] = _pm.get("anthropic") or settings.anthropic_model
 
-            # Add LLM model configurations
-            if settings.gemini_model:
-                env["GEMINI_MODEL"] = settings.gemini_model
-            if settings.openai_model:
-                env["OPENAI_MODEL"] = settings.openai_model
-            if settings.anthropic_model:
-                env["ANTHROPIC_MODEL"] = settings.anthropic_model
-
-            # Add Ollama configuration
-            if settings.ollama_url:
-                env["OLLAMA_URL"] = settings.ollama_url
-            if settings.ollama_model:
-                env["OLLAMA_MODEL"] = settings.ollama_model
+            # Add OpenAI-compatible provider configuration from platform DB
+            _pb = platform_base_urls or {}
+            oc_key = _pk.get("openai_compatible")
+            if oc_key is not None:
+                env["OPENAI_COMPATIBLE_API_KEY"] = oc_key
+            if _pb.get("openai_compatible"):
+                env["OPENAI_COMPATIBLE_BASE_URL"] = _pb["openai_compatible"]
+            if _pm.get("openai_compatible"):
+                env["OPENAI_COMPATIBLE_MODEL"] = _pm["openai_compatible"]
 
             # Add optional LLM settings if configured in master env
             # If not set, playground container uses its own defaults

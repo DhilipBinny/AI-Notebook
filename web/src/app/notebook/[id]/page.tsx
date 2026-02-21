@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { auth, projects, playgrounds, chat, notebooks, files } from '@/lib/api'
+import { auth, projects, playgrounds, chat, notebooks, files, apiKeys } from '@/lib/api'
 import { useAuthStore, useProjectsStore, useNotebookStore } from '@/lib/store'
 import Cell from '@/components/notebook/Cell'
 import AICell from '@/components/notebook/AICell'
@@ -188,6 +188,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [chatLoading, setChatLoading] = useState(false)
   const [pendingTools, setPendingTools] = useState<PendingToolCall[]>([])
   const [llmProvider, setLlmProvider] = useState('gemini')
+  const [availableProviders, setAvailableProviders] = useState<{ provider: string; display_name: string }[]>([])
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
   const [showChat, setShowChat] = useState(true)
@@ -423,6 +424,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         } catch {
           // No chat history yet
           console.log('No chat history found')
+        }
+
+        // Load available providers and set default
+        try {
+          const providers = await apiKeys.getProviders()
+          const available = providers.filter(p => p.has_key)
+          if (available.length > 0) {
+            setAvailableProviders(available.map(p => ({ provider: p.provider, display_name: p.display_name })))
+            // Use the provider marked as default, otherwise fall back to first available
+            const defaultProvider = available.find(p => p.is_default)
+            setLlmProvider(defaultProvider ? defaultProvider.provider : available[0].provider)
+          }
+        } catch {
+          // Fallback to defaults
         }
 
         // Show playground not running popup after everything is loaded
@@ -2241,6 +2256,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onOpenTerminal={() => window.open(`/terminal/${projectId}`, '_blank')}
         llmProvider={llmProvider}
         onProviderChange={setLlmProvider}
+        availableProviders={availableProviders}
         contextFormat={contextFormat}
         onContextFormatChange={setContextFormat}
       />

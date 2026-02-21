@@ -14,7 +14,7 @@ from app.db.base import Base
 
 class LLMProvider(str, enum.Enum):
     """Supported LLM providers."""
-    OLLAMA = "ollama"
+    OPENAI_COMPATIBLE = "openai_compatible"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
@@ -45,7 +45,7 @@ class Project(Base):
     # Kept for backward compatibility with existing database
     llm_provider = Column(
         SQLEnum(LLMProvider, values_callable=lambda obj: [e.value for e in obj]),
-        default=LLMProvider.OLLAMA,
+        default=LLMProvider.GEMINI,
         nullable=False
     )
     llm_model = Column(String(100), nullable=True)

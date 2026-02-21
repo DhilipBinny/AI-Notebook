@@ -9,12 +9,19 @@ from datetime import datetime, timezone
 import logging
 
 from .models import UserApiKey, LLMProviderKey
-from .encryption import encrypt_key, decrypt_key, mask_key
+from .encryption import encrypt_key, decrypt_key, mask_key, test_provider_key
 from .schemas import ApiKeyCreate, ApiKeyUpdate
 
 logger = logging.getLogger(__name__)
 
 # Available models per provider
+PROVIDER_DISPLAY_NAMES = {
+    "gemini": "Google Gemini",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic Claude",
+    "openai_compatible": "OpenAI Compatible",
+}
+
 PROVIDER_MODELS = {
     "gemini": [
         {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash"},
@@ -35,11 +42,8 @@ PROVIDER_MODELS = {
         {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5"},
         {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet"},
     ],
-    "ollama": [
-        {"id": "llama3", "name": "Llama 3"},
-        {"id": "mistral", "name": "Mistral"},
-        {"id": "codellama", "name": "Code Llama"},
-        {"id": "phi3", "name": "Phi-3"},
+    "openai_compatible": [
+        {"id": "custom", "name": "Custom Model"},
     ],
 }
 
@@ -56,24 +60,31 @@ class ApiKeyService:
 
         if existing:
             # Update existing key
-            existing.api_key_encrypted = encrypt_key(data.api_key)
-            existing.api_key_hint = mask_key(data.api_key)
+            existing.api_key_encrypted = encrypt_key(data.api_key) if data.api_key else encrypt_key("")
+            existing.api_key_hint = mask_key(data.api_key) if data.api_key else "(none)"
             existing.model_override = data.model_override
+            if hasattr(data, 'base_url'):
+                existing.base_url = data.base_url
             existing.is_validated = False
             existing.is_active = True
             await self.db.flush()
+            await self.db.refresh(existing)
             return existing
 
         # Create new
+        encrypted = encrypt_key(data.api_key) if data.api_key else encrypt_key("")
+        hint = mask_key(data.api_key) if data.api_key else "(none)"
         api_key = UserApiKey(
             user_id=user_id,
             provider=LLMProviderKey(data.provider),
-            api_key_encrypted=encrypt_key(data.api_key),
-            api_key_hint=mask_key(data.api_key),
+            api_key_encrypted=encrypted,
+            api_key_hint=hint,
             model_override=data.model_override,
+            base_url=getattr(data, 'base_url', None),
         )
         self.db.add(api_key)
         await self.db.flush()
+        await self.db.refresh(api_key)
         return api_key
 
     async def update(self, key_id: str, user_id: str, data: ApiKeyUpdate) -> Optional[UserApiKey]:
@@ -94,6 +105,7 @@ class ApiKeyService:
             api_key.is_active = data.is_active
 
         await self.db.flush()
+        await self.db.refresh(api_key)
         return api_key
 
     async def delete(self, key_id: str, user_id: str) -> bool:
@@ -158,31 +170,30 @@ class ApiKeyService:
 
     async def get_available_providers(self, user_id: str) -> List[dict]:
         """Get available providers with model lists for a user."""
-        from app.core.config import settings
+        from app.platform_keys.service import PlatformKeyService
 
         user_keys = await self.get_for_user(user_id)
         user_key_providers = {k.provider.value for k in user_keys if k.is_active}
 
-        # Platform keys available
-        platform_keys = set()
-        if settings.gemini_api_key:
-            platform_keys.add("gemini")
-        if settings.openai_api_key:
-            platform_keys.add("openai")
-        if settings.anthropic_api_key:
-            platform_keys.add("anthropic")
-        if settings.ollama_url:
-            platform_keys.add("ollama")
+        # Platform keys available (from DB)
+        pk_service = PlatformKeyService(self.db)
+        active_platform_keys = await pk_service.get_all_active_keys()
+        platform_key_providers = set(active_platform_keys.keys())
+        platform_models = await pk_service.get_active_models()
+        default_provider = await pk_service.get_default_provider()
 
         providers = []
         for provider, models in PROVIDER_MODELS.items():
             has_own = provider in user_key_providers
-            has_platform = provider in platform_keys
+            has_platform = provider in platform_key_providers
             if has_own or has_platform:
                 providers.append({
                     "provider": provider,
+                    "display_name": PROVIDER_DISPLAY_NAMES.get(provider, provider),
                     "has_key": True,
                     "is_own_key": has_own,
+                    "is_default": provider == default_provider,
+                    "active_model": platform_models.get(provider),
                     "models": models,
                 })
 
@@ -210,43 +221,4 @@ class ApiKeyService:
 
     async def _test_key(self, provider: str, api_key: str) -> bool:
         """Test if an API key is valid with a lightweight request."""
-        import httpx
-
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                if provider == "openai":
-                    resp = await client.get(
-                        "https://api.openai.com/v1/models",
-                        headers={"Authorization": f"Bearer {api_key}"},
-                    )
-                    return resp.status_code == 200
-
-                elif provider == "anthropic":
-                    resp = await client.post(
-                        "https://api.anthropic.com/v1/messages",
-                        headers={
-                            "x-api-key": api_key,
-                            "anthropic-version": "2023-06-01",
-                            "content-type": "application/json",
-                        },
-                        json={
-                            "model": "claude-3-5-sonnet-20241022",
-                            "max_tokens": 1,
-                            "messages": [{"role": "user", "content": "hi"}],
-                        },
-                    )
-                    # 200 = valid, 400 = valid key but bad request still means key works
-                    return resp.status_code in (200, 400)
-
-                elif provider == "gemini":
-                    resp = await client.get(
-                        f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
-                    )
-                    return resp.status_code == 200
-
-                elif provider == "ollama":
-                    return True  # Ollama doesn't need key validation
-
-        except Exception as e:
-            logger.warning(f"Key validation failed for {provider}: {e}")
-            return False
+        return await test_provider_key(provider, api_key)

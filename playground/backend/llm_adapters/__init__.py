@@ -2,7 +2,7 @@
 LLM Adapters - Provider-agnostic message and tool format translation
 
 This module provides a unified interface for handling different LLM provider formats.
-Each provider (Anthropic, Gemini, OpenAI, Ollama) has its own adapter that translates
+Each provider (Anthropic, Gemini, OpenAI, OpenAI-compatible) has its own adapter that translates
 between the canonical internal format and the provider-specific format.
 
 Usage:

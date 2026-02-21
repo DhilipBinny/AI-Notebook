@@ -21,6 +21,7 @@ from app.playgrounds.service import PlaygroundService
 from app.notebooks.s3_client import s3_client as notebook_s3_client
 from app.api_keys.service import ApiKeyService
 from app.credits.service import CreditService
+from app.platform_keys.service import PlatformKeyService
 from .service import ChatService
 from .schemas import (
     ChatMessageCreate,
@@ -32,6 +33,71 @@ from .schemas import (
 )
 
 router = APIRouter(prefix="/projects/{project_id}/chat", tags=["Chat"])
+
+
+async def _build_proxy_headers(
+    db: AsyncSession,
+    user_id: str,
+    playground,
+    llm_provider: str,
+) -> tuple[dict, bool]:
+    """
+    Build proxy headers with API key injection for playground requests.
+
+    Resolution order: user key > platform key > container env fallback.
+
+    Returns:
+        (headers_dict, is_own_key) tuple
+    """
+    headers = {"X-Internal-Secret": playground.internal_secret}
+
+    # User keys
+    api_key_service = ApiKeyService(db)
+    user_keys = await api_key_service.get_all_decrypted_keys(user_id)
+    user_key_headers = {
+        "openai": "X-User-OpenAI-Key",
+        "anthropic": "X-User-Anthropic-Key",
+        "gemini": "X-User-Gemini-Key",
+        "openai_compatible": "X-User-OpenaiCompatible-Key",
+    }
+    for provider, key in user_keys.items():
+        header = user_key_headers.get(provider)
+        if header:
+            headers[header] = key
+
+    # User base_url for openai_compatible
+    user_all_keys = await api_key_service.get_for_user(user_id)
+    for uk in user_all_keys:
+        if uk.provider.value == "openai_compatible" and uk.is_active and uk.base_url:
+            headers["X-User-OpenaiCompatible-BaseUrl"] = uk.base_url
+            break
+
+    # Platform keys
+    pk_service = PlatformKeyService(db)
+    platform_keys = await pk_service.get_all_active_keys()
+    platform_models = await pk_service.get_active_models()
+    platform_base_urls = await pk_service.get_active_base_urls()
+    platform_key_headers = {
+        "openai": ("X-Platform-OpenAI-Key", "X-Platform-OpenAI-Model"),
+        "anthropic": ("X-Platform-Anthropic-Key", "X-Platform-Anthropic-Model"),
+        "gemini": ("X-Platform-Gemini-Key", "X-Platform-Gemini-Model"),
+        "openai_compatible": ("X-Platform-OpenaiCompatible-Key", "X-Platform-OpenaiCompatible-Model"),
+    }
+    for provider, key in platform_keys.items():
+        hdr = platform_key_headers.get(provider)
+        if hdr:
+            headers[hdr[0]] = key
+            if provider in platform_models:
+                headers[hdr[1]] = platform_models[provider]
+
+    # Platform base_url for openai_compatible
+    if "openai_compatible" in platform_base_urls:
+        headers["X-Platform-OpenaiCompatible-BaseUrl"] = platform_base_urls["openai_compatible"]
+
+    is_own_key = llm_provider in user_keys
+    headers["X-User-Is-Own-Key"] = "true" if is_own_key else "false"
+
+    return headers, is_own_key
 
 
 class ChatHistoryResponse(BaseModel):
@@ -396,22 +462,8 @@ async def send_message_stream(
     # Update playground activity
     await playground_service.update_activity(playground)
 
-    # Fetch user's API keys for injection
-    api_key_service = ApiKeyService(db)
-    user_keys = await api_key_service.get_all_decrypted_keys(current_user.id)
-    proxy_headers = {"X-Internal-Secret": playground.internal_secret}
-    key_header_map = {
-        "openai": "X-User-OpenAI-Key",
-        "anthropic": "X-User-Anthropic-Key",
-        "gemini": "X-User-Gemini-Key",
-    }
-    for provider, key in user_keys.items():
-        header = key_header_map.get(provider)
-        if header:
-            proxy_headers[header] = key
-    # Tell playground whether this is the user's own key for the requested provider
-    is_own_key = llm_provider in user_keys
-    proxy_headers["X-User-Is-Own-Key"] = "true" if is_own_key else "false"
+    # Build proxy headers with API key injection
+    proxy_headers, is_own_key = await _build_proxy_headers(db, current_user.id, playground, llm_provider)
 
     # Pre-flight credit check (skip if using own key)
     if not is_own_key:
@@ -557,16 +609,8 @@ async def execute_tools_stream(
     # Update playground activity
     await playground_service.update_activity(playground)
 
-    # Inject user API keys
-    api_key_service = ApiKeyService(db)
-    user_keys = await api_key_service.get_all_decrypted_keys(current_user.id)
-    et_proxy_headers = {"X-Internal-Secret": playground.internal_secret}
-    for provider, key in user_keys.items():
-        header = {"openai": "X-User-OpenAI-Key", "anthropic": "X-User-Anthropic-Key", "gemini": "X-User-Gemini-Key"}.get(provider)
-        if header:
-            et_proxy_headers[header] = key
-    is_own_key_et = llm_provider in user_keys
-    et_proxy_headers["X-User-Is-Own-Key"] = "true" if is_own_key_et else "false"
+    # Build proxy headers with API key injection
+    et_proxy_headers, is_own_key_et = await _build_proxy_headers(db, current_user.id, playground, llm_provider)
 
     # Capture variables for post-flight usage recording
     et_user_id = current_user.id
@@ -787,16 +831,8 @@ async def run_ai_cell(
         if not images_data:
             images_data = None
 
-    # Inject user API keys
-    api_key_service = ApiKeyService(db)
-    user_keys = await api_key_service.get_all_decrypted_keys(current_user.id)
-    ai_proxy_headers = {"X-Internal-Secret": playground.internal_secret}
-    for provider, key in user_keys.items():
-        header = {"openai": "X-User-OpenAI-Key", "anthropic": "X-User-Anthropic-Key", "gemini": "X-User-Gemini-Key"}.get(provider)
-        if header:
-            ai_proxy_headers[header] = key
-    is_own_key_ai = llm_provider in user_keys
-    ai_proxy_headers["X-User-Is-Own-Key"] = "true" if is_own_key_ai else "false"
+    # Build proxy headers with API key injection
+    ai_proxy_headers, is_own_key_ai = await _build_proxy_headers(db, current_user.id, playground, llm_provider)
 
     # Pre-flight credit check (skip if using own key)
     if not is_own_key_ai:

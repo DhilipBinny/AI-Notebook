@@ -16,7 +16,7 @@ class LLMProviderKey(str, enum.Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
-    OLLAMA = "ollama"
+    OPENAI_COMPATIBLE = "openai_compatible"
 
 
 class UserApiKey(Base):
@@ -36,6 +36,7 @@ class UserApiKey(Base):
     api_key_encrypted = Column(Text, nullable=False)
     api_key_hint = Column(String(20), nullable=False)
     model_override = Column(String(100), nullable=True)
+    base_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_validated = Column(Boolean, default=False, nullable=False)
     last_validated_at = Column(DateTime, nullable=True)

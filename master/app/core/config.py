@@ -53,22 +53,10 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
 
-    # OpenRouter (explicit override for OpenAI-compatible API)
-    # Set USE_OPENROUTER=true to route OpenAI requests through OpenRouter
-    use_openrouter: bool = Field(default=False, alias="USE_OPENROUTER")
-    openrouter_api_key: Optional[str] = Field(default=None, alias="OPENROUTER_API_KEY")
-    openrouter_openai_url: Optional[str] = Field(default=None, alias="OPENROUTER_OPENAI_URL")
-    openrouter_openai_model: Optional[str] = Field(default=None, alias="OPENROUTER_OPENAI_MODEL")
-    openrouter_max_tokens: Optional[int] = Field(default=4000, alias="OPENROUTER_MAX_TOKENS")
-
     # LLM Models (passed to playground containers if set)
     gemini_model: Optional[str] = Field(default=None, alias="GEMINI_MODEL")
     openai_model: Optional[str] = Field(default=None, alias="OPENAI_MODEL")
     anthropic_model: Optional[str] = Field(default=None, alias="ANTHROPIC_MODEL")
-
-    # Ollama Configuration (passed to playground containers if set)
-    ollama_url: Optional[str] = Field(default=None, alias="OLLAMA_URL")
-    ollama_model: Optional[str] = Field(default=None, alias="OLLAMA_MODEL")
 
     # Optional LLM settings for playground containers
     # If set in env, passed to playground; otherwise playground uses its own defaults

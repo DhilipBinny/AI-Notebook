@@ -4,7 +4,8 @@ Security Middleware - Authentication and authorization
 
 import os
 import logging
-from fastapi import HTTPException, Header
+from typing import Optional, Tuple
+from fastapi import HTTPException, Header, Request
 
 logger = logging.getLogger(__name__)
 
@@ -42,3 +43,49 @@ async def verify_internal_secret(x_internal_secret: str = Header(None)):
         raise HTTPException(status_code=403, detail="Invalid internal secret")
 
     return True
+
+
+def extract_key_overrides(request: Request, provider: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Extract API key, model, and base_url overrides from request headers.
+
+    Resolution order: user key > platform key > None (falls back to env).
+
+    Args:
+        request: FastAPI Request object
+        provider: LLM provider name (gemini, openai, anthropic, openai_compatible)
+
+    Returns:
+        Tuple of (api_key_override, model_override, base_url_override) - any may be None
+    """
+    provider_upper = provider.capitalize()
+    if provider == "openai":
+        provider_upper = "OpenAI"
+    elif provider == "anthropic":
+        provider_upper = "Anthropic"
+    elif provider == "gemini":
+        provider_upper = "Gemini"
+    elif provider == "openai_compatible":
+        provider_upper = "OpenaiCompatible"
+
+    # User key takes priority over platform key
+    user_key = request.headers.get(f"x-user-{provider_upper.lower()}-key") or \
+               request.headers.get(f"X-User-{provider_upper}-Key")
+    platform_key = request.headers.get(f"x-platform-{provider_upper.lower()}-key") or \
+                   request.headers.get(f"X-Platform-{provider_upper}-Key")
+    platform_model = request.headers.get(f"x-platform-{provider_upper.lower()}-model") or \
+                     request.headers.get(f"X-Platform-{provider_upper}-Model")
+
+    api_key = user_key or platform_key or None
+    model = platform_model if not user_key else None  # Only use platform model if not using user's own key
+
+    # Extract base_url override (for openai_compatible provider)
+    base_url = None
+    if provider == "openai_compatible":
+        user_base_url = request.headers.get("x-user-openaicompatible-baseurl") or \
+                        request.headers.get("X-User-OpenaiCompatible-BaseUrl")
+        platform_base_url = request.headers.get("x-platform-openaicompatible-baseurl") or \
+                            request.headers.get("X-Platform-OpenaiCompatible-BaseUrl")
+        base_url = user_base_url or platform_base_url or None
+
+    return api_key, model, base_url

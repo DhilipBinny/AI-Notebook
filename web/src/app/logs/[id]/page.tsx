@@ -1,18 +1,17 @@
 'use client'
 
 import { useEffect, useRef, useState, use } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { playgrounds } from '@/lib/api'
 
 export default function LogsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: projectId } = use(params)
   const terminalRef = useRef<HTMLDivElement>(null)
-  const terminalInstance = useRef<Terminal | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const terminalInstance = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fitAddonRef = useRef<any>(null)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [projectName, setProjectName] = useState<string>('')
@@ -26,126 +25,130 @@ export default function LogsPage({ params }: { params: Promise<{ id: string }> }
   useEffect(() => {
     if (!terminalRef.current) return
 
-    // Get token from localStorage
     const token = localStorage.getItem('access_token')
     if (!token) {
       setError('Not authenticated. Please log in first.')
       return
     }
 
-    // Initialize terminal
-    const terminal = new Terminal({
-      cursorBlink: false,
-      disableStdin: true, // Read-only logs
-      fontSize: 13,
-      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace',
-      scrollback: 10000,
-      theme: {
-        background: '#0d1117',
-        foreground: '#c9d1d9',
-        cursor: '#c9d1d9',
-        cursorAccent: '#0d1117',
-        selectionBackground: '#3b5070',
-        black: '#484f58',
-        red: '#ff7b72',
-        green: '#7ee787',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#76e3ea',
-        white: '#b1bac4',
-        brightBlack: '#6e7681',
-        brightRed: '#ffa198',
-        brightGreen: '#a5d6a7',
-        brightYellow: '#e3b341',
-        brightBlue: '#79c0ff',
-        brightMagenta: '#d2a8ff',
-        brightCyan: '#a5f3fc',
-        brightWhite: '#f0f6fc',
-      },
-    })
+    let disposed = false
+    let ws: WebSocket | null = null
+    let handleResize: (() => void) | null = null
 
-    const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
+    // Dynamic import of xterm (uses browser globals, can't be imported at top level)
+    const initTerminal = async () => {
+      const [xtermModule, fitModule, webLinksModule] = await Promise.all([
+        import('@xterm/xterm'),
+        import('@xterm/addon-fit'),
+        import('@xterm/addon-web-links'),
+      ])
 
-    terminal.loadAddon(fitAddon)
-    terminal.loadAddon(webLinksAddon)
-    terminal.open(terminalRef.current)
-    fitAddon.fit()
+      if (disposed || !terminalRef.current) return
 
-    terminalInstance.current = terminal
-    fitAddonRef.current = fitAddon
+      const { Terminal } = xtermModule
+      const { FitAddon } = fitModule
+      const { WebLinksAddon } = webLinksModule
 
-    terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
-    terminal.writeln('\x1b[1;36m  AI Notebook - Playground Logs\x1b[0m')
-    terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
-    terminal.writeln('')
-    terminal.writeln('\x1b[33mFetching logs...\x1b[0m')
+      const terminal = new Terminal({
+        cursorBlink: false,
+        disableStdin: true,
+        fontSize: 13,
+        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace',
+        scrollback: 10000,
+        theme: {
+          background: '#0d1117',
+          foreground: '#c9d1d9',
+          cursor: '#c9d1d9',
+          cursorAccent: '#0d1117',
+          selectionBackground: '#3b5070',
+          black: '#484f58',
+          red: '#ff7b72',
+          green: '#7ee787',
+          yellow: '#d29922',
+          blue: '#58a6ff',
+          magenta: '#bc8cff',
+          cyan: '#76e3ea',
+          white: '#b1bac4',
+          brightBlack: '#6e7681',
+          brightRed: '#ffa198',
+          brightGreen: '#a5d6a7',
+          brightYellow: '#e3b341',
+          brightBlue: '#79c0ff',
+          brightMagenta: '#d2a8ff',
+          brightCyan: '#a5f3fc',
+          brightWhite: '#f0f6fc',
+        },
+      })
 
-    // Fetch initial logs
-    const fetchInitialLogs = async () => {
+      const fitAddon = new FitAddon()
+      const webLinksAddon = new WebLinksAddon()
+
+      terminal.loadAddon(fitAddon)
+      terminal.loadAddon(webLinksAddon)
+      terminal.open(terminalRef.current)
+      fitAddon.fit()
+
+      terminalInstance.current = terminal
+      fitAddonRef.current = fitAddon
+
+      terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
+      terminal.writeln('\x1b[1;36m  AI Notebook - Playground Logs\x1b[0m')
+      terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
+      terminal.writeln('')
+      terminal.writeln('\x1b[33mFetching logs...\x1b[0m')
+
+      // Fetch initial logs
       try {
         const { logs: initialLogs } = await playgrounds.getLogs(200)
-        if (initialLogs) {
+        if (initialLogs && !disposed) {
           terminal.writeln('\x1b[32mLoaded initial logs\x1b[0m')
           terminal.writeln('')
-          // Write each line
           initialLogs.split('\n').forEach((line: string) => {
             terminal.writeln(line)
           })
         }
       } catch (err) {
         console.error('Failed to fetch initial logs:', err)
-        terminal.writeln('\x1b[31mFailed to fetch initial logs\x1b[0m')
+        if (!disposed) terminal.writeln('\x1b[31mFailed to fetch initial logs\x1b[0m')
       }
-    }
 
-    fetchInitialLogs()
+      // Connect WebSocket for streaming logs
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${window.location.host}/api/projects/${projectId}/playground/logs/stream?token=${encodeURIComponent(token)}`
 
-    // Connect WebSocket for streaming logs
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/projects/${projectId}/playground/logs/stream?token=${encodeURIComponent(token)}`
+      ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      setConnected(true)
-    }
-
-    ws.onmessage = (event) => {
-      const data = event.data
-      if (data) {
-        terminal.writeln(data)
+      ws.onopen = () => setConnected(true)
+      ws.onmessage = (event) => {
+        if (event.data) terminal.writeln(event.data)
       }
-    }
-
-    ws.onerror = () => {
-      setError('WebSocket connection error')
-    }
-
-    ws.onclose = (event) => {
-      setConnected(false)
-      if (event.code === 4004) {
-        terminal.writeln('')
-        terminal.writeln('\x1b[31mPlayground not running.\x1b[0m')
-      } else {
-        terminal.writeln('')
-        terminal.writeln('\x1b[33mLog stream disconnected.\x1b[0m')
+      ws.onerror = () => setError('WebSocket connection error')
+      ws.onclose = (event) => {
+        setConnected(false)
+        if (event.code === 4004) {
+          terminal.writeln('')
+          terminal.writeln('\x1b[31mPlayground not running.\x1b[0m')
+        } else {
+          terminal.writeln('')
+          terminal.writeln('\x1b[33mLog stream disconnected.\x1b[0m')
+        }
       }
+
+      handleResize = () => fitAddon.fit()
+      window.addEventListener('resize', handleResize)
     }
 
-    // Handle resize
-    const handleResize = () => {
-      fitAddon.fit()
-    }
-
-    window.addEventListener('resize', handleResize)
+    initTerminal()
 
     return () => {
-      window.removeEventListener('resize', handleResize)
-      ws.close()
-      terminal.dispose()
+      disposed = true
+      if (handleResize) window.removeEventListener('resize', handleResize)
+      if (ws) ws.close()
+      if (terminalInstance.current) {
+        terminalInstance.current.dispose()
+        terminalInstance.current = null
+      }
     }
   }, [projectId])
 
@@ -277,7 +280,7 @@ export default function LogsPage({ params }: { params: Promise<{ id: string }> }
       </div>
 
       {/* Terminal */}
-      <div className="flex-1 p-2">
+      <div className="flex-1 p-4">
         <div
           ref={terminalRef}
           className="h-full w-full"

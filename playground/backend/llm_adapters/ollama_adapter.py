@@ -11,7 +11,7 @@ from backend.llm_adapters.base import register_adapter
 from backend.llm_adapters.openai_adapter import OpenAIAdapter
 
 
-@register_adapter("ollama")
+@register_adapter("openai_compatible")
 class OllamaAdapter(OpenAIAdapter):
     """
     Adapter for Ollama and OpenRouter models.
@@ -22,7 +22,7 @@ class OllamaAdapter(OpenAIAdapter):
 
     @property
     def provider_name(self) -> str:
-        return "Ollama"
+        return "OpenAI Compatible"
 
     def get_web_search_tool(self) -> None:
         """

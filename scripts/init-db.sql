@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS projects (
     storage_month VARCHAR(7) NOT NULL,
 
     -- LLM settings
-    llm_provider ENUM('ollama', 'openai', 'anthropic', 'gemini') DEFAULT 'gemini',
+    llm_provider ENUM('openai_compatible', 'openai', 'anthropic', 'gemini') DEFAULT 'gemini',
     llm_model VARCHAR(100) NULL,
 
     -- State
@@ -308,12 +308,13 @@ CREATE TABLE IF NOT EXISTS user_api_keys (
     id CHAR(36) NOT NULL,
 
     user_id CHAR(36) NOT NULL,
-    provider ENUM('openai', 'anthropic', 'gemini', 'ollama') NOT NULL,
+    provider ENUM('openai', 'anthropic', 'gemini', 'openai_compatible') NOT NULL,
 
     api_key_encrypted TEXT NOT NULL,
     api_key_hint VARCHAR(20) NOT NULL,
 
     model_override VARCHAR(100) NULL,
+    base_url VARCHAR(500) NULL,
 
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_validated BOOLEAN NOT NULL DEFAULT FALSE,
@@ -451,6 +452,35 @@ CREATE TABLE IF NOT EXISTS notebook_templates (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
+-- =====================================================
+-- 14. PLATFORM API KEYS (encrypted LLM provider keys)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS platform_api_keys (
+    id CHAR(36) NOT NULL,
+
+    provider ENUM('openai','anthropic','gemini','openai_compatible') NOT NULL,
+    label VARCHAR(100) NOT NULL,
+
+    api_key_encrypted TEXT NOT NULL,
+    api_key_hint VARCHAR(20) NOT NULL,
+    model_name VARCHAR(100) NULL,
+    base_url VARCHAR(500) NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    priority INT NOT NULL DEFAULT 0,
+
+    created_by CHAR(36) NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_platform_keys_provider_active (provider, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 -- Re-enable FK checks
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -505,11 +535,8 @@ INSERT INTO llm_pricing (provider, model, input_cost_per_1m_cents, output_cost_p
 ('anthropic', 'claude-sonnet-4-20250514',  300, 1500, 1.30),
 ('anthropic', 'claude-haiku-4-5-20251001',  80,  400, 1.30),
 ('anthropic', 'claude-3-5-sonnet-20241022', 300, 1500, 1.30),
--- Ollama (free - local inference)
-('ollama', 'llama3',     0, 0, 1.00),
-('ollama', 'mistral',    0, 0, 1.00),
-('ollama', 'codellama',  0, 0, 1.00),
-('ollama', 'phi3',       0, 0, 1.00)
+-- OpenAI Compatible (free - local inference / custom endpoints)
+('openai_compatible', 'custom',  0, 0, 1.00)
 ON DUPLICATE KEY UPDATE
     input_cost_per_1m_cents = VALUES(input_cost_per_1m_cents),
     output_cost_per_1m_cents = VALUES(output_cost_per_1m_cents);

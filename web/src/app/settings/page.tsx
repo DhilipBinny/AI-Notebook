@@ -10,7 +10,7 @@ const PROVIDERS = [
   { value: 'openai', label: 'OpenAI', icon: '>' },
   { value: 'anthropic', label: 'Anthropic', icon: 'A' },
   { value: 'gemini', label: 'Gemini', icon: 'G' },
-  { value: 'ollama', label: 'Ollama', icon: 'O' },
+  { value: 'openai_compatible', label: 'OpenAI Compatible', icon: 'O' },
 ]
 
 export default function SettingsPage() {
@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [addProvider, setAddProvider] = useState('openai')
   const [addKeyValue, setAddKeyValue] = useState('')
+  const [addBaseUrl, setAddBaseUrl] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validatingId, setValidatingId] = useState<string | null>(null)
   const [validationResult, setValidationResult] = useState<{ id: string; valid: boolean; message: string } | null>(null)
@@ -85,14 +86,19 @@ export default function SettingsPage() {
 
   const handleAddKey = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!addKeyValue.trim()) return
+    if (!addKeyValue.trim() && addProvider !== 'openai_compatible') return
 
     try {
       setIsSubmitting(true)
-      await apiKeys.create({ provider: addProvider, api_key: addKeyValue })
+      await apiKeys.create({
+        provider: addProvider,
+        api_key: addKeyValue,
+        base_url: addBaseUrl || undefined,
+      })
       setShowAddForm(false)
       setAddProvider('openai')
       setAddKeyValue('')
+      setAddBaseUrl('')
       fetchKeys()
     } catch {
       setError('Failed to add API key')
@@ -208,18 +214,34 @@ export default function SettingsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>API Key</label>
+                    <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>
+                      API Key{addProvider === 'openai_compatible' ? ' (optional)' : ''}
+                    </label>
                     <input
                       type="password"
                       value={addKeyValue}
                       onChange={(e) => setAddKeyValue(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
                       style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
-                      placeholder="sk-..."
-                      required
+                      placeholder={addProvider === 'openai_compatible' ? 'Optional for local servers' : 'sk-...'}
+                      required={addProvider !== 'openai_compatible'}
                     />
                   </div>
                 </div>
+                {addProvider === 'openai_compatible' && (
+                  <div>
+                    <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Base URL</label>
+                    <input
+                      type="text"
+                      value={addBaseUrl}
+                      onChange={(e) => setAddBaseUrl(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                      style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+                      placeholder="e.g., http://localhost:11434/v1 or https://openrouter.ai/api/v1"
+                      required
+                    />
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <button
                     type="submit"
@@ -231,7 +253,7 @@ export default function SettingsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setShowAddForm(false); setAddKeyValue('') }}
+                    onClick={() => { setShowAddForm(false); setAddKeyValue(''); setAddBaseUrl('') }}
                     className="px-4 py-2 rounded-lg text-sm"
                     style={{ color: 'var(--app-text-muted)' }}
                   >

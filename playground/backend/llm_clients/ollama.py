@@ -59,14 +59,14 @@ class OllamaClient(OpenAIClient):
         BaseLLMClient.__init__(self)
 
         # Store Ollama-specific config
-        self.base_url = base_url or cfg.OLLAMA_URL
+        self.base_url = base_url or cfg.OPENAI_COMPATIBLE_BASE_URL
         self.max_tokens = max_tokens or 4096
         self.enable_web_search = False  # No web search for local models
 
         # Initialize OpenAI client with custom endpoint
         actual_api_key = api_key or "ollama"
         self.client = OpenAI(base_url=self.base_url, api_key=actual_api_key)
-        self.model_name = model_name or cfg.OLLAMA_MODEL
+        self.model_name = model_name or cfg.OPENAI_COMPATIBLE_MODEL
 
         # Use Ollama adapter
         self.adapter = OllamaAdapter()

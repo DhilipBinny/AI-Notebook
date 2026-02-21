@@ -1,19 +1,16 @@
 'use client'
 
 import { useEffect, useRef, useState, use } from 'react'
-import { useRouter } from 'next/navigation'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 
 export default function TerminalPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: projectId } = use(params)
-  const router = useRouter()
   const terminalRef = useRef<HTMLDivElement>(null)
-  const terminalInstance = useRef<Terminal | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const terminalInstance = useRef<any>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fitAddonRef = useRef<any>(null)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isInIframe, setIsInIframe] = useState(false)
@@ -26,123 +23,141 @@ export default function TerminalPage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     if (!terminalRef.current) return
 
-    // Get token from localStorage
     const token = localStorage.getItem('access_token')
     if (!token) {
       setError('Not authenticated. Please log in first.')
       return
     }
 
-    // Initialize terminal
-    const terminal = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace',
-      theme: {
-        background: '#1e1e2e',
-        foreground: '#cdd6f4',
-        cursor: '#f5e0dc',
-        cursorAccent: '#1e1e2e',
-        selectionBackground: '#585b70',
-        black: '#45475a',
-        red: '#f38ba8',
-        green: '#a6e3a1',
-        yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#f5c2e7',
-        cyan: '#94e2d5',
-        white: '#bac2de',
-        brightBlack: '#585b70',
-        brightRed: '#f38ba8',
-        brightGreen: '#a6e3a1',
-        brightYellow: '#f9e2af',
-        brightBlue: '#89b4fa',
-        brightMagenta: '#f5c2e7',
-        brightCyan: '#94e2d5',
-        brightWhite: '#a6adc8',
-      },
-    })
+    let disposed = false
+    let ws: WebSocket | null = null
+    let handleResize: (() => void) | null = null
 
-    const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
+    // Dynamic import of xterm (uses browser globals, can't be imported at top level)
+    const initTerminal = async () => {
+      const [xtermModule, fitModule, webLinksModule] = await Promise.all([
+        import('@xterm/xterm'),
+        import('@xterm/addon-fit'),
+        import('@xterm/addon-web-links'),
+      ])
 
-    terminal.loadAddon(fitAddon)
-    terminal.loadAddon(webLinksAddon)
-    terminal.open(terminalRef.current)
-    fitAddon.fit()
+      if (disposed || !terminalRef.current) return
 
-    terminalInstance.current = terminal
-    fitAddonRef.current = fitAddon
+      const { Terminal } = xtermModule
+      const { FitAddon } = fitModule
+      const { WebLinksAddon } = webLinksModule
 
-    terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
-    terminal.writeln('\x1b[1;36m  AI Notebook - Container Terminal\x1b[0m')
-    terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
-    terminal.writeln('')
-    terminal.writeln('\x1b[33mConnecting to container...\x1b[0m')
+      const terminal = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, monospace',
+        theme: {
+          background: '#1e1e2e',
+          foreground: '#cdd6f4',
+          cursor: '#f5e0dc',
+          cursorAccent: '#1e1e2e',
+          selectionBackground: '#585b70',
+          black: '#45475a',
+          red: '#f38ba8',
+          green: '#a6e3a1',
+          yellow: '#f9e2af',
+          blue: '#89b4fa',
+          magenta: '#f5c2e7',
+          cyan: '#94e2d5',
+          white: '#bac2de',
+          brightBlack: '#585b70',
+          brightRed: '#f38ba8',
+          brightGreen: '#a6e3a1',
+          brightYellow: '#f9e2af',
+          brightBlue: '#89b4fa',
+          brightMagenta: '#f5c2e7',
+          brightCyan: '#94e2d5',
+          brightWhite: '#a6adc8',
+        },
+      })
 
-    // Connect WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/projects/${projectId}/playground/terminal?token=${encodeURIComponent(token)}`
+      const fitAddon = new FitAddon()
+      const webLinksAddon = new WebLinksAddon()
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      setConnected(true)
-      terminal.writeln('\x1b[32mConnected!\x1b[0m')
-      terminal.writeln('')
-
-      // Send initial resize
-      const { cols, rows } = terminal
-      ws.send(JSON.stringify({ type: 'resize', cols, rows }))
-    }
-
-    ws.onmessage = (event) => {
-      terminal.write(event.data)
-    }
-
-    ws.onerror = () => {
-      setError('WebSocket connection error')
-      terminal.writeln('\x1b[31mConnection error\x1b[0m')
-    }
-
-    ws.onclose = (event) => {
-      setConnected(false)
-      if (event.code === 4004) {
-        terminal.writeln('\x1b[31mPlayground not running. Start the playground first.\x1b[0m')
-        terminal.writeln('\x1b[33mClosing in 3 seconds...\x1b[0m')
-        setTimeout(() => window.close(), 3000)
-      } else {
-        terminal.writeln('\x1b[33mDisconnected. Closing...\x1b[0m')
-        setTimeout(() => window.close(), 1000)
-      }
-    }
-
-    // Handle terminal input
-    terminal.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'input', data }))
-      }
-    })
-
-    // Handle resize
-    const handleResize = () => {
+      terminal.loadAddon(fitAddon)
+      terminal.loadAddon(webLinksAddon)
+      terminal.open(terminalRef.current)
       fitAddon.fit()
-      if (ws.readyState === WebSocket.OPEN) {
+
+      terminalInstance.current = terminal
+      fitAddonRef.current = fitAddon
+
+      terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
+      terminal.writeln('\x1b[1;36m  AI Notebook - Container Terminal\x1b[0m')
+      terminal.writeln('\x1b[1;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m')
+      terminal.writeln('')
+      terminal.writeln('\x1b[33mConnecting to container...\x1b[0m')
+
+      // Connect WebSocket
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${window.location.host}/api/projects/${projectId}/playground/terminal?token=${encodeURIComponent(token)}`
+
+      ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        setConnected(true)
+        terminal.writeln('\x1b[32mConnected!\x1b[0m')
+        terminal.writeln('')
         const { cols, rows } = terminal
-        ws.send(JSON.stringify({ type: 'resize', cols, rows }))
+        ws!.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
+
+      ws.onmessage = (event) => {
+        terminal.write(event.data)
+      }
+
+      ws.onerror = () => {
+        setError('WebSocket connection error')
+        terminal.writeln('\x1b[31mConnection error\x1b[0m')
+      }
+
+      ws.onclose = (event) => {
+        setConnected(false)
+        if (event.code === 4004) {
+          terminal.writeln('\x1b[31mPlayground not running. Start the playground first.\x1b[0m')
+          terminal.writeln('\x1b[33mClosing in 3 seconds...\x1b[0m')
+          setTimeout(() => window.close(), 3000)
+        } else {
+          terminal.writeln('\x1b[33mDisconnected. Closing...\x1b[0m')
+          setTimeout(() => window.close(), 1000)
+        }
+      }
+
+      // Handle terminal input
+      terminal.onData((data: string) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'input', data }))
+        }
+      })
+
+      handleResize = () => {
+        fitAddon.fit()
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const { cols, rows } = terminal
+          ws.send(JSON.stringify({ type: 'resize', cols, rows }))
+        }
+      }
+      window.addEventListener('resize', handleResize)
+
+      terminal.focus()
     }
 
-    window.addEventListener('resize', handleResize)
-
-    // Focus terminal
-    terminal.focus()
+    initTerminal()
 
     return () => {
-      window.removeEventListener('resize', handleResize)
-      ws.close()
-      terminal.dispose()
+      disposed = true
+      if (handleResize) window.removeEventListener('resize', handleResize)
+      if (ws) ws.close()
+      if (terminalInstance.current) {
+        terminalInstance.current.dispose()
+        terminalInstance.current = null
+      }
     }
   }, [projectId])
 

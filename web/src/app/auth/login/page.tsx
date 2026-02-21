@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 
@@ -62,11 +63,17 @@ function LoginForm() {
     }
   }, [searchParams])
 
-  // Redirect to dashboard if already logged in
+  // Redirect to dashboard if already logged in (validate token first)
   useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (token) {
-      router.push('/dashboard')
+      auth.getMe().then(() => {
+        router.push('/dashboard')
+      }).catch(() => {
+        // Token is invalid, clear it and stay on login
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+      })
     }
   }, [router])
 
@@ -116,17 +123,15 @@ function LoginForm() {
       <div className="relative z-10 max-w-md w-full">
         {/* Logo and Title */}
         <div className="text-center mb-8">
-          <div
-            className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center shadow-lg"
-            style={{
-              background: 'var(--app-gradient-primary)',
-              boxShadow: '0 10px 40px rgba(59, 130, 246, 0.3)'
-            }}
-          >
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
+          <Image
+            src="/a7ac5906-c5c1-4819-b60b-6141da54bf2f.png"
+            alt="AI Notebook"
+            width={72}
+            height={72}
+            className="mx-auto mb-4"
+            style={{ objectFit: 'contain' }}
+            priority
+          />
           <h2
             className="text-xl font-bold"
             style={{ color: 'var(--app-text-primary)' }}

@@ -129,7 +129,7 @@ class ChatService:
             message: User message
             context: Selected cells as context
             tool_mode: "auto", "manual", or "ai_decide"
-            llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+            llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "openai_compatible")
             context_format: Context format for LLM ("xml" or "plain")
             chat_id: Chat ID (default: "default")
 
@@ -279,7 +279,7 @@ class ChatService:
             playground: Running playground
             approved_tools: Tools approved by user
             tool_mode: "auto", "manual", or "ai_decide"
-            llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "ollama")
+            llm_provider: LLM provider to use ("gemini", "openai", "anthropic", "openai_compatible")
             context_format: Context format for LLM ("xml" or "plain")
             chat_id: Chat ID (default: "default")
 

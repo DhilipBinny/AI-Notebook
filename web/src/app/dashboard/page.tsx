@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { auth, projects, playgrounds, notebooks, workspaces } from '@/lib/api'
 import { getRelativeTime, sortByDateDesc } from '@/lib/dateUtils'
 import { useAuthStore, useProjectsStore } from '@/lib/store'
@@ -18,7 +19,6 @@ import {
   Folder,
   FolderPlus,
   LogOut,
-  Monitor,
   Activity,
   MoreVertical,
   Check,
@@ -190,6 +190,8 @@ export default function DashboardPage() {
         }
         projectsData.forEach((p: Project) => fetchPlaygroundStatus(p.id))
       } catch {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
         router.push('/auth/login')
       } finally {
         setIsLoading(false)
@@ -781,15 +783,14 @@ export default function DashboardPage() {
         <div className="px-6 py-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
-                style={{
-                  background: 'var(--app-gradient-primary)',
-                  boxShadow: '0 10px 40px rgba(59, 130, 246, 0.3)'
-                }}
-              >
-                <Monitor className="w-6 h-6 text-white" />
-              </div>
+              <Image
+                src="/a7ac5906-c5c1-4819-b60b-6141da54bf2f.png"
+                alt="AI Notebook"
+                width={40}
+                height={40}
+                className="rounded-xl"
+                style={{ objectFit: 'contain' }}
+              />
               <div>
                 <h1 className="text-base font-bold" style={{ color: 'var(--app-text-primary)' }}>AI Notebook</h1>
                 <p className="text-xs" style={{ color: 'var(--app-accent-primary)' }}>Intelligent Computing Environment</p>
@@ -879,6 +880,16 @@ export default function DashboardPage() {
                   {user?.is_admin && (
                     <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
                       <button
+                        onClick={() => { setShowProfileMenu(false); router.push('/admin/platform-keys') }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
+                        style={{ color: 'var(--app-text-secondary)' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span className="text-sm">Platform API Keys</span>
+                      </button>
+                      <button
                         onClick={() => { setShowProfileMenu(false); router.push('/admin/invitations') }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
                         style={{ color: 'var(--app-text-secondary)' }}
@@ -886,7 +897,7 @@ export default function DashboardPage() {
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <Terminal className="w-4 h-4" />
-                        <span className="text-sm">Admin Panel</span>
+                        <span className="text-sm">Invitations</span>
                       </button>
                     </div>
                   )}
