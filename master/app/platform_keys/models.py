@@ -4,6 +4,8 @@ Stores encrypted LLM provider keys at the platform level (admin-managed).
 Multiple keys per provider allowed; one active per provider at a time.
 """
 
+import enum
+
 from sqlalchemy import Column, String, Boolean, Integer, Text, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -11,6 +13,11 @@ from uuid import uuid4
 
 from app.db.base import Base
 from app.api_keys.models import LLMProviderKey
+
+
+class AuthType(str, enum.Enum):
+    API_KEY = "api_key"
+    OAUTH_TOKEN = "oauth_token"
 
 
 class PlatformApiKey(Base):
@@ -26,6 +33,12 @@ class PlatformApiKey(Base):
     label = Column(String(100), nullable=False)
     api_key_encrypted = Column(Text, nullable=False)
     api_key_hint = Column(String(20), nullable=False)
+    auth_type = Column(
+        SQLEnum(AuthType, values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+        default=AuthType.API_KEY,
+        server_default="api_key",
+    )
     model_name = Column(String(100), nullable=True)
     base_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=False, nullable=False)

@@ -22,6 +22,7 @@ def get_llm_client(
     api_key_override: Optional[str] = None,
     model_override: Optional[str] = None,
     base_url_override: Optional[str] = None,
+    auth_type: Optional[str] = None,
 ) -> BaseLLMClient:
     """
     Factory function to create an LLM client.
@@ -35,6 +36,7 @@ def get_llm_client(
         api_key_override: Optional API key to use instead of env var (from per-request headers).
         model_override: Optional model name to use instead of config default.
         base_url_override: Optional base URL for openai_compatible provider.
+        auth_type: Optional auth type for Anthropic ("api_key" or "oauth_token").
 
     Returns:
         An LLM client instance (BaseLLMClient subclass)
@@ -100,7 +102,8 @@ def get_llm_client(
             api_key=api_key,
             model_name=model_override or cfg.ANTHROPIC_MODEL,
             auto_function_calling=auto_function_calling,
-            enable_web_search=cfg.ENABLE_WEB_SEARCH
+            enable_web_search=cfg.ENABLE_WEB_SEARCH,
+            auth_type=auth_type or "api_key",
         )
 
     else:

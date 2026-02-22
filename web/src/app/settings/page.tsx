@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { apiKeys, credits } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import AppHeader from '@/components/AppHeader'
 import type { ApiKey, CreditBalance, UsageRecord } from '@/types'
 
 const PROVIDERS = [
@@ -33,7 +33,6 @@ export default function SettingsPage() {
   const [validatingId, setValidatingId] = useState<string | null>(null)
   const [validationResult, setValidationResult] = useState<{ id: string; valid: boolean; message: string } | null>(null)
 
-  const router = useRouter()
   const user = useAuthStore((state) => state.user)
 
   useEffect(() => {
@@ -148,29 +147,9 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--app-bg-primary)' }}>
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--app-text-primary)' }}>
-              Settings
-            </h1>
-            <p className="mt-1 text-sm" style={{ color: 'var(--app-text-muted)' }}>
-              Manage your API keys and view usage
-            </p>
-          </div>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="px-4 py-2 rounded-lg text-sm transition-colors"
-            style={{
-              backgroundColor: 'var(--app-bg-tertiary)',
-              color: 'var(--app-text-secondary)',
-              border: '1px solid var(--app-border-default)',
-            }}
-          >
-            Back to Dashboard
-          </button>
-        </div>
+      <AppHeader title="Settings" subtitle="API keys & usage" />
+
+      <div className="px-6 py-6">
 
         {error && (
           <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>

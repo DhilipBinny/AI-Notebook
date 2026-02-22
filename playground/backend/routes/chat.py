@@ -448,7 +448,7 @@ async def chat_with_llm_stream(
             log(f"Session ID set: {session_id} (kernel will be created lazily if needed)")
 
             # Extract per-request key overrides from headers
-            key_override, model_override, base_url_override = extract_key_overrides(_chat_raw_request, provider)
+            key_override, model_override, base_url_override, auth_type = extract_key_overrides(_chat_raw_request, provider)
 
             # Initialize LLM client
             try:
@@ -458,6 +458,7 @@ async def chat_with_llm_stream(
                     api_key_override=key_override,
                     model_override=model_override,
                     base_url_override=base_url_override,
+                    auth_type=auth_type,
                 )
             except Exception as e:
                 yield format_sse_event("error", {"error": str(e)})

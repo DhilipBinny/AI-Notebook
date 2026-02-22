@@ -42,34 +42,11 @@ class UsageHistoryResponse(BaseModel):
     page_size: int
 
 
-class LLMPricingResponse(BaseModel):
-    """LLM pricing response."""
-    id: int
-    provider: str
-    model: str
-    input_cost_per_1m_cents: int
-    output_cost_per_1m_cents: int
-    margin_multiplier: float
-    is_active: bool
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class AdminCreditAdjust(BaseModel):
     """Admin credit adjustment request."""
     user_id: str
     amount_cents: int = Field(..., description="Positive to add, negative to deduct")
     reason: str = Field(..., max_length=500)
-
-
-class AdminPricingUpdate(BaseModel):
-    """Admin pricing update request."""
-    provider: str
-    model: str
-    input_cost_per_1m_cents: Optional[int] = None
-    output_cost_per_1m_cents: Optional[int] = None
-    margin_multiplier: Optional[float] = None
-    is_active: Optional[bool] = None
 
 
 class UsageReport(BaseModel):

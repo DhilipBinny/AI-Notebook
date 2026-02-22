@@ -852,7 +852,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* Settings & Templates Links */}
+                  {/* Settings Link */}
                   <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
                     <button
                       onClick={() => { setShowProfileMenu(false); router.push('/settings') }}
@@ -864,40 +864,20 @@ export default function DashboardPage() {
                       <Settings className="w-4 h-4" />
                       <span className="text-sm">Settings & API Keys</span>
                     </button>
-                    <button
-                      onClick={() => { setShowProfileMenu(false); router.push('/templates') }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
-                      style={{ color: 'var(--app-text-secondary)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      <BookOpen className="w-4 h-4" />
-                      <span className="text-sm">Templates</span>
-                    </button>
                   </div>
 
-                  {/* Admin Links */}
+                  {/* Admin Link */}
                   {user?.is_admin && (
                     <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
                       <button
-                        onClick={() => { setShowProfileMenu(false); router.push('/admin/platform-keys') }}
+                        onClick={() => { setShowProfileMenu(false); router.push('/admin') }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
                         style={{ color: 'var(--app-text-secondary)' }}
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <Settings className="w-4 h-4" />
-                        <span className="text-sm">Platform API Keys</span>
-                      </button>
-                      <button
-                        onClick={() => { setShowProfileMenu(false); router.push('/admin/invitations') }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
-                        style={{ color: 'var(--app-text-secondary)' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      >
-                        <Terminal className="w-4 h-4" />
-                        <span className="text-sm">Invitations</span>
+                        <span className="text-sm">Admin Dashboard</span>
                       </button>
                     </div>
                   )}

@@ -120,14 +120,40 @@ export interface UsageRecord {
   created_at: string
 }
 
-export interface LLMPricing {
+export interface LLMModel {
   id: number
   provider: string
-  model: string
+  model_id: string
+  display_name: string
+  context_window?: number
+  max_output_tokens?: number
+  supports_vision: boolean
+  supports_function_calling: boolean
   input_cost_per_1m_cents: number
   output_cost_per_1m_cents: number
   margin_multiplier: number
   is_active: boolean
+  is_custom: boolean
+  sort_order: number
+}
+
+// Backward compat alias
+export type LLMPricing = LLMModel & { model: string }
+
+export interface LLMModelBrief {
+  id: number
+  model_id: string
+  display_name: string
+  context_window?: number
+  max_output_tokens?: number
+  supports_vision: boolean
+  supports_function_calling: boolean
+}
+
+export interface LLMModelGrouped {
+  provider: string
+  provider_display_name: string
+  models: LLMModelBrief[]
 }
 
 export interface NotebookTemplate {
@@ -146,11 +172,42 @@ export interface NotebookTemplate {
   updated_at: string
 }
 
+export interface AdminUser {
+  id: string
+  email: string
+  name?: string
+  avatar_url?: string
+  oauth_provider: string
+  is_active: boolean
+  is_verified: boolean
+  is_admin: boolean
+  max_projects: number
+  created_at: string
+  last_login_at?: string
+  credit_balance_cents?: number
+  project_count?: number
+}
+
+export interface AdminUserDetail extends AdminUser {
+  active_sessions_count: number
+  api_keys_count: number
+  total_consumed_cents: number
+  total_deposited_cents: number
+}
+
+export interface AdminUserListResponse {
+  users: AdminUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface PlatformKey {
   id: string
   provider: string
   label: string
   api_key_hint: string
+  auth_type: 'api_key' | 'oauth_token'
   model_name?: string
   base_url?: string
   is_active: boolean

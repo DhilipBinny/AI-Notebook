@@ -10,10 +10,11 @@ from typing import Optional, Dict, List
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.platform_keys.models import PlatformApiKey
+from app.platform_keys.models import PlatformApiKey, AuthType
 from app.platform_keys.schemas import PlatformKeyCreate, PlatformKeyUpdate
 from app.api_keys.models import LLMProviderKey
 from app.api_keys.encryption import encrypt_key, decrypt_key, mask_key, test_provider_key
+from app.llm_models.service import LLMModelService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 _cache: Dict[str, str] = {}  # {provider: decrypted_key}
 _cache_models: Dict[str, str] = {}  # {provider: model_name}
 _cache_base_urls: Dict[str, str] = {}  # {provider: base_url}
+_cache_auth_types: Dict[str, str] = {}  # {provider: auth_type}
 _cache_default: Optional[str] = None  # default provider
 _cache_ts: float = 0
 _CACHE_TTL = 300  # 5 minutes
@@ -28,12 +30,16 @@ _CACHE_TTL = 300  # 5 minutes
 
 def _invalidate_cache():
     """Clear the in-memory key cache."""
-    global _cache, _cache_models, _cache_base_urls, _cache_default, _cache_ts
+    global _cache, _cache_models, _cache_base_urls, _cache_auth_types, _cache_default, _cache_ts
     _cache = {}
     _cache_models = {}
     _cache_base_urls = {}
+    _cache_auth_types = {}
     _cache_default = None
     _cache_ts = 0
+
+# Standard providers that require model validation against registry
+_STANDARD_PROVIDERS = {"openai", "anthropic", "gemini"}
 
 
 class PlatformKeyService:
@@ -53,6 +59,7 @@ class PlatformKeyService:
             label=data.label,
             api_key_encrypted=encrypted,
             api_key_hint=hint,
+            auth_type=AuthType(data.auth_type),
             model_name=data.model_name,
             base_url=data.base_url,
             created_by=admin_id,
@@ -61,6 +68,29 @@ class PlatformKeyService:
         await self.db.flush()
         await self.db.refresh(key)
         _invalidate_cache()
+
+        # Auto-register model in registry if model is specified
+        model_created = False
+        if data.model_name:
+            model_service = LLMModelService(self.db)
+
+            if data.provider in _STANDARD_PROVIDERS:
+                # Standard providers: validate model exists in registry
+                existing = await model_service.get_model(data.provider, data.model_name)
+                if not existing:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Model '{data.model_name}' is not in the model registry for provider '{data.provider}'. "
+                               f"Add it via the Model Registry first.",
+                    )
+            else:
+                # openai_compatible: auto-create if not exists
+                _, model_created = await model_service.ensure_model_exists(
+                    data.provider, data.model_name
+                )
+
+        key._model_created = model_created  # transient flag for response
         return key
 
     async def update(self, key_id: str, data: PlatformKeyUpdate) -> Optional[PlatformApiKey]:
@@ -74,6 +104,8 @@ class PlatformKeyService:
         if data.api_key is not None:
             key.api_key_encrypted = encrypt_key(data.api_key) if data.api_key else encrypt_key("")
             key.api_key_hint = mask_key(data.api_key) if data.api_key else "(none)"
+        if data.auth_type is not None:
+            key.auth_type = AuthType(data.auth_type)
         if data.model_name is not None:
             key.model_name = data.model_name
         if data.base_url is not None:
@@ -82,6 +114,28 @@ class PlatformKeyService:
         await self.db.flush()
         await self.db.refresh(key)
         _invalidate_cache()
+
+        # Auto-register model in registry if model changed
+        model_created = False
+        if data.model_name:
+            provider = key.provider.value
+            model_service = LLMModelService(self.db)
+
+            if provider in _STANDARD_PROVIDERS:
+                existing = await model_service.get_model(provider, data.model_name)
+                if not existing:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Model '{data.model_name}' is not in the model registry for provider '{provider}'. "
+                               f"Add it via the Model Registry first.",
+                    )
+            else:
+                _, model_created = await model_service.ensure_model_exists(
+                    provider, data.model_name
+                )
+
+        key._model_created = model_created  # transient flag for response
         return key
 
     async def delete(self, key_id: str) -> bool:
@@ -179,6 +233,7 @@ class PlatformKeyService:
         new_cache = {}
         new_models = {}
         new_base_urls = {}
+        new_auth_types = {}
         new_default = None
         for k in keys:
             try:
@@ -187,15 +242,17 @@ class PlatformKeyService:
                     new_models[k.provider.value] = k.model_name
                 if k.base_url:
                     new_base_urls[k.provider.value] = k.base_url
+                new_auth_types[k.provider.value] = k.auth_type.value if k.auth_type else "api_key"
                 if k.is_default:
                     new_default = k.provider.value
             except Exception as e:
                 logger.error(f"Failed to decrypt platform key {k.id}: {e}")
 
-        global _cache_models, _cache_base_urls, _cache_default
+        global _cache_models, _cache_base_urls, _cache_auth_types, _cache_default
         _cache = new_cache
         _cache_models = new_models
         _cache_base_urls = new_base_urls
+        _cache_auth_types = new_auth_types
         _cache_default = new_default
         _cache_ts = time.time()
         return dict(_cache)
@@ -209,6 +266,11 @@ class PlatformKeyService:
         """Get base URLs for active keys. Returns {provider: base_url}. Cached."""
         await self.get_all_active_keys()  # ensures cache is fresh
         return dict(_cache_base_urls)
+
+    async def get_active_auth_types(self) -> Dict[str, str]:
+        """Get auth types for active keys. Returns {provider: auth_type}. Cached."""
+        await self.get_all_active_keys()  # ensures cache is fresh
+        return dict(_cache_auth_types)
 
     async def get_default_provider(self) -> Optional[str]:
         """Get the default provider name. Cached."""
@@ -228,7 +290,8 @@ class PlatformKeyService:
         except Exception:
             return {"valid": False, "error": "Failed to decrypt key"}
 
-        valid = await self._test_key(key.provider.value, decrypted)
+        auth_type = key.auth_type.value if key.auth_type else "api_key"
+        valid = await self._test_key(key.provider.value, decrypted, auth_type)
         return {"valid": valid, "error": None if valid else "Key validation failed"}
 
     # ── Private helpers ───────────────────────────────────────────────
@@ -239,6 +302,6 @@ class PlatformKeyService:
         )
         return result.scalar_one_or_none()
 
-    async def _test_key(self, provider: str, api_key: str) -> bool:
+    async def _test_key(self, provider: str, api_key: str, auth_type: str = "api_key") -> bool:
         """Test if an API key is valid with a lightweight request."""
-        return await test_provider_key(provider, api_key)
+        return await test_provider_key(provider, api_key, auth_type=auth_type)

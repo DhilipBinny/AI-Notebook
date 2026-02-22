@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { templates } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import AppHeader from '@/components/AppHeader'
 import type { NotebookTemplate } from '@/types'
 
 const DIFFICULTY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -14,7 +15,7 @@ const DIFFICULTY_COLORS: Record<string, { bg: string; text: string; border: stri
 
 export default function TemplatesPage() {
   const router = useRouter()
-  const { user, isAuthenticated } = useAuthStore()
+  const { user } = useAuthStore()
   const [templateList, setTemplateList] = useState<NotebookTemplate[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -65,25 +66,10 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-white">
-              Template Gallery
-            </h1>
-            <p className="mt-1 text-sm text-gray-400">
-              Browse templates and create notebooks from pre-built starting points
-            </p>
-          </div>
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="px-4 py-2 rounded-lg text-sm transition-colors bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700"
-          >
-            Back to Dashboard
-          </button>
-        </div>
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--app-bg-primary)' }}>
+      <AppHeader title="Templates" subtitle="Browse & use notebook templates" />
+
+      <div className="px-6 py-6">
 
         {/* Category Filter */}
         {categories.length > 0 && (

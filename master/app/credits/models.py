@@ -2,7 +2,7 @@
 Credit and usage tracking database models.
 """
 
-from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Enum as SQLEnum, DECIMAL, BigInteger
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, ForeignKey, Enum as SQLEnum, BigInteger
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import enum
@@ -34,25 +34,6 @@ class RequestType(str, enum.Enum):
     CHAT = "chat"
     AI_CELL = "ai_cell"
     SUMMARIZE = "summarize"
-
-
-class LLMPricing(Base):
-    """Per-model pricing with configurable margin."""
-
-    __tablename__ = "llm_pricing"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    provider = Column(String(50), nullable=False)
-    model = Column(String(100), nullable=False)
-    input_cost_per_1m_cents = Column(Integer, nullable=False)
-    output_cost_per_1m_cents = Column(Integer, nullable=False)
-    margin_multiplier = Column(DECIMAL(3, 2), default=1.30, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
-
-    def __repr__(self) -> str:
-        return f"<LLMPricing {self.provider}/{self.model}>"
 
 
 class UsageRecord(Base):

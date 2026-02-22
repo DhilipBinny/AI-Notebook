@@ -77,6 +77,7 @@ async def _build_proxy_headers(
     platform_keys = await pk_service.get_all_active_keys()
     platform_models = await pk_service.get_active_models()
     platform_base_urls = await pk_service.get_active_base_urls()
+    platform_auth_types = await pk_service.get_active_auth_types()
     platform_key_headers = {
         "openai": ("X-Platform-OpenAI-Key", "X-Platform-OpenAI-Model"),
         "anthropic": ("X-Platform-Anthropic-Key", "X-Platform-Anthropic-Model"),
@@ -89,6 +90,10 @@ async def _build_proxy_headers(
             headers[hdr[0]] = key
             if provider in platform_models:
                 headers[hdr[1]] = platform_models[provider]
+
+    # Platform auth_type for anthropic (OAuth token support)
+    if "anthropic" in platform_auth_types:
+        headers["X-Platform-Anthropic-AuthType"] = platform_auth_types["anthropic"]
 
     # Platform base_url for openai_compatible
     if "openai_compatible" in platform_base_urls:

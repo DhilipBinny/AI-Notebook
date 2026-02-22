@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sql_func
 from typing import Optional, Tuple
 from datetime import datetime, timezone
-from decimal import Decimal
 import logging
 
-from .models import UserCredit, LLMPricing, UsageRecord, RequestType
+from .models import UserCredit, UsageRecord, RequestType
+from app.llm_models.models import LLMModel
 
 logger = logging.getLogger(__name__)
 
@@ -184,48 +184,13 @@ class CreditService:
 
         return records, total
 
-    async def get_all_pricing(self) -> list:
-        """Get all active pricing entries."""
+    async def _get_pricing(self, provider: str, model: str) -> Optional[LLMModel]:
+        """Get pricing for a specific provider/model from the llm_models registry."""
         result = await self.db.execute(
-            select(LLMPricing)
-            .where(LLMPricing.is_active == True)
-            .order_by(LLMPricing.provider, LLMPricing.model)
-        )
-        return list(result.scalars().all())
-
-    async def update_pricing(
-        self,
-        provider: str,
-        model: str,
-        input_cost: Optional[int] = None,
-        output_cost: Optional[int] = None,
-        margin: Optional[float] = None,
-        is_active: Optional[bool] = None,
-    ) -> Optional[LLMPricing]:
-        """Update pricing for a provider/model."""
-        pricing = await self._get_pricing(provider, model)
-        if not pricing:
-            return None
-
-        if input_cost is not None:
-            pricing.input_cost_per_1m_cents = input_cost
-        if output_cost is not None:
-            pricing.output_cost_per_1m_cents = output_cost
-        if margin is not None:
-            pricing.margin_multiplier = Decimal(str(margin))
-        if is_active is not None:
-            pricing.is_active = is_active
-
-        await self.db.flush()
-        return pricing
-
-    async def _get_pricing(self, provider: str, model: str) -> Optional[LLMPricing]:
-        """Get pricing for a specific provider/model."""
-        result = await self.db.execute(
-            select(LLMPricing).where(
-                LLMPricing.provider == provider,
-                LLMPricing.model == model,
-                LLMPricing.is_active == True,
+            select(LLMModel).where(
+                LLMModel.provider == provider,
+                LLMModel.model_id == model,
+                LLMModel.is_active == True,
             )
         )
         return result.scalar_one_or_none()

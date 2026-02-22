@@ -47,24 +47,18 @@ def mask_key(api_key: str) -> str:
     return f"{api_key[:3]}...{api_key[-4:]}"
 
 
-async def test_provider_key(provider: str, api_key: str) -> bool:
+async def test_provider_key(provider: str, api_key: str, auth_type: str = "api_key") -> bool:
     """Test if an API key is valid with a lightweight request.
 
     Shared by both user API key and platform API key validation.
 
-    TODO (beta): This validation needs improvement:
-    - openai_compatible: Currently skips validation entirely. Should accept base_url
-      param and ping {base_url}/models to verify connectivity.
-    - anthropic: Uses hardcoded model "claude-3-5-sonnet-20241022". Should use a
-      models list endpoint or the configured model from platform_api_keys.
-    - All providers: Only returns bool. Should return error details (status code,
-      error message) so the UI can show *why* validation failed.
-    - Should accept base_url parameter for openai_compatible provider testing.
+    Args:
+        provider: LLM provider name
+        api_key: The API key or OAuth token to test
+        auth_type: "api_key" or "oauth_token" (OAuth tokens use Bearer auth + beta header)
     """
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            # TODO: Should use /v1/models only (lightweight). Currently works but
-            # returns full model list which is wasteful.
             if provider == "openai":
                 resp = await client.get(
                     "https://api.openai.com/v1/models",
@@ -72,23 +66,40 @@ async def test_provider_key(provider: str, api_key: str) -> bool:
                 )
                 return resp.status_code == 200
 
-            # TODO: Uses hardcoded model. Should use models list endpoint instead,
-            # or accept configured model. Also 400 = valid key but bad request body,
-            # which is a fragile check.
             elif provider == "anthropic":
-                resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json",
-                    },
-                    json={
-                        "model": "claude-3-5-sonnet-20241022",
-                        "max_tokens": 1,
-                        "messages": [{"role": "user", "content": "hi"}],
-                    },
-                )
+                if auth_type == "oauth_token":
+                    # OAuth tokens require Bearer auth + beta header
+                    resp = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "anthropic-version": "2023-06-01",
+                            "anthropic-beta": "oauth-2025-04-20",
+                            "content-type": "application/json",
+                            "user-agent": "claude-cli/0.1 (external, cli)",
+                            "x-app": "cli",
+                        },
+                        json={
+                            "model": "claude-haiku-4-5-20251001",
+                            "max_tokens": 1,
+                            "messages": [{"role": "user", "content": "hi"}],
+                        },
+                    )
+                else:
+                    # Standard API key auth
+                    resp = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={
+                            "x-api-key": api_key,
+                            "anthropic-version": "2023-06-01",
+                            "content-type": "application/json",
+                        },
+                        json={
+                            "model": "claude-haiku-4-5-20251001",
+                            "max_tokens": 1,
+                            "messages": [{"role": "user", "content": "hi"}],
+                        },
+                    )
                 return resp.status_code in (200, 400)
 
             elif provider == "gemini":
@@ -97,8 +108,6 @@ async def test_provider_key(provider: str, api_key: str) -> bool:
                 )
                 return resp.status_code == 200
 
-            # TODO: Should accept base_url and ping {base_url}/models to verify
-            # the endpoint is reachable and responding.
             elif provider == "openai_compatible":
                 return True
 

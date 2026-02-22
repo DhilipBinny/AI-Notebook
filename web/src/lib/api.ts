@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMPricing, NotebookTemplate, PlatformKey } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMModel, LLMModelBrief, LLMModelGrouped, NotebookTemplate, PlatformKey, AdminUser, AdminUserDetail, AdminUserListResponse } from '@/types'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -857,8 +857,21 @@ export const credits = {
     return data
   },
 
-  getPricing: async (): Promise<LLMPricing[]> => {
+  getPricing: async (): Promise<LLMModel[]> => {
     const { data } = await api.get('/credits/pricing')
+    return data
+  },
+}
+
+// LLM Models (registry)
+export const models = {
+  list: async (): Promise<LLMModelGrouped[]> => {
+    const { data } = await api.get('/models')
+    return data
+  },
+
+  listByProvider: async (provider: string): Promise<LLMModelBrief[]> => {
+    const { data } = await api.get(`/models/${provider}`)
     return data
   },
 }
@@ -883,6 +896,38 @@ export const templates = {
 
 // Admin APIs
 export const admin = {
+  users: {
+    list: async (params?: { page?: number; page_size?: number; search?: string; status?: string; role?: string; created_from?: string; created_to?: string; sort_by?: string; sort_order?: string }): Promise<AdminUserListResponse> => {
+      const { data } = await api.get('/admin/users/', { params })
+      return data
+    },
+
+    get: async (userId: string): Promise<AdminUserDetail> => {
+      const { data } = await api.get(`/admin/users/${userId}`)
+      return data
+    },
+
+    toggleActive: async (userId: string, isActive: boolean): Promise<{ id: string; email: string; is_active: boolean }> => {
+      const { data } = await api.patch(`/admin/users/${userId}/active`, { is_active: isActive })
+      return data
+    },
+
+    toggleAdmin: async (userId: string, isAdmin: boolean): Promise<{ id: string; email: string; is_admin: boolean }> => {
+      const { data } = await api.patch(`/admin/users/${userId}/admin`, { is_admin: isAdmin })
+      return data
+    },
+
+    resetPassword: async (userId: string, newPassword: string): Promise<{ id: string; email: string; message: string }> => {
+      const { data } = await api.post(`/admin/users/${userId}/reset-password`, { new_password: newPassword })
+      return data
+    },
+
+    updateMaxProjects: async (userId: string, maxProjects: number): Promise<{ id: string; email: string; max_projects: number }> => {
+      const { data } = await api.patch(`/admin/users/${userId}/max-projects`, { max_projects: maxProjects })
+      return data
+    },
+  },
+
   invitations: {
     list: async (activeOnly = false): Promise<Invitation[]> => {
       const { data } = await api.get('/admin/invitations', { params: { active_only: activeOnly } })
@@ -915,9 +960,30 @@ export const admin = {
       const { data } = await api.post('/admin/credits/adjust', params)
       return data
     },
+  },
 
-    updatePricing: async (params: { provider: string; model: string; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean }): Promise<LLMPricing> => {
-      const { data } = await api.post('/admin/credits/pricing', params)
+  models: {
+    list: async (): Promise<LLMModel[]> => {
+      const { data } = await api.get('/admin/models')
+      return data
+    },
+
+    create: async (params: { provider: string; model_id: string; display_name: string; context_window?: number; max_output_tokens?: number; supports_vision?: boolean; supports_function_calling?: boolean; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_custom?: boolean; sort_order?: number }): Promise<LLMModel> => {
+      const { data } = await api.post('/admin/models', params)
+      return data
+    },
+
+    update: async (id: number, params: { display_name?: string; context_window?: number; max_output_tokens?: number; supports_vision?: boolean; supports_function_calling?: boolean; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean; sort_order?: number }): Promise<LLMModel> => {
+      const { data } = await api.put(`/admin/models/${id}`, params)
+      return data
+    },
+
+    delete: async (id: number): Promise<void> => {
+      await api.delete(`/admin/models/${id}`)
+    },
+
+    getWarnings: async (): Promise<{ warnings: { provider: string; model_id: string; display_name: string }[] }> => {
+      const { data } = await api.get('/admin/models/warnings')
       return data
     },
   },
@@ -949,12 +1015,12 @@ export const admin = {
       return data
     },
 
-    create: async (params: { provider: string; label: string; api_key: string; model_name?: string; base_url?: string }): Promise<PlatformKey> => {
+    create: async (params: { provider: string; label: string; api_key: string; auth_type?: string; model_name?: string; base_url?: string }): Promise<PlatformKey> => {
       const { data } = await api.post('/admin/platform-keys/', params)
       return data
     },
 
-    update: async (id: string, params: { label?: string; api_key?: string; model_name?: string; base_url?: string }): Promise<PlatformKey> => {
+    update: async (id: string, params: { label?: string; api_key?: string; auth_type?: string; model_name?: string; base_url?: string }): Promise<PlatformKey> => {
       const { data } = await api.put(`/admin/platform-keys/${id}`, params)
       return data
     },

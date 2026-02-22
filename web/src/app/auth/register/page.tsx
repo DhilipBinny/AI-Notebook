@@ -65,17 +65,27 @@ function RegisterPageContent() {
     document.documentElement.setAttribute('data-theme', 'dark')
   }, [])
 
+  const passwordPolicy = {
+    minLength: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?/~`]/.test(password),
+  }
+  const allPoliciesMet = Object.values(passwordPolicy).every(Boolean)
+  const passwordsMatch = password === confirmPassword && confirmPassword.length > 0
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
+    if (!allPoliciesMet) {
+      setError('Password does not meet all requirements')
       return
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
+    if (!passwordsMatch) {
+      setError('Passwords do not match')
       return
     }
 
@@ -230,8 +240,29 @@ function RegisterPageContent() {
                     border: '1px solid var(--app-border-default)',
                     color: 'var(--app-text-primary)',
                   }}
-                  placeholder="Min 8 characters"
+                  placeholder="Create a strong password"
                 />
+                {/* Password Policy Checklist */}
+                {password.length > 0 && (
+                  <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-tertiary)', border: '1px solid var(--app-border-default)' }}>
+                    <div className="grid grid-cols-2 gap-1">
+                      {[
+                        { met: passwordPolicy.minLength, label: 'Min 8 characters' },
+                        { met: passwordPolicy.uppercase, label: 'Uppercase letter' },
+                        { met: passwordPolicy.lowercase, label: 'Lowercase letter' },
+                        { met: passwordPolicy.number, label: 'Number' },
+                        { met: passwordPolicy.special, label: 'Special character' },
+                      ].map((rule) => (
+                        <div key={rule.label} className="flex items-center gap-1.5">
+                          <span className="text-xs">{rule.met ? '\u2705' : '\u274C'}</span>
+                          <span className="text-xs" style={{ color: rule.met ? '#10b981' : 'var(--app-text-muted)' }}>
+                            {rule.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label
@@ -256,12 +287,15 @@ function RegisterPageContent() {
                   }}
                   placeholder="Confirm your password"
                 />
+                {confirmPassword && !passwordsMatch && (
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--app-accent-error)' }}>Passwords do not match</p>
+                )}
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !allPoliciesMet || !passwordsMatch}
               className="w-full py-3 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:opacity-90"
               style={{
                 background: 'var(--app-gradient-primary)',

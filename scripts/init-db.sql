@@ -354,29 +354,41 @@ CREATE TABLE IF NOT EXISTS user_credits (
 
 
 -- =====================================================
--- TABLE: llm_pricing
+-- TABLE: llm_models
 -- =====================================================
--- Per-model pricing with configurable margin
+-- Unified model registry: identity, capabilities, and pricing
 -- =====================================================
-CREATE TABLE IF NOT EXISTS llm_pricing (
+CREATE TABLE IF NOT EXISTS llm_models (
     id INT NOT NULL AUTO_INCREMENT,
 
     provider VARCHAR(50) NOT NULL,
-    model VARCHAR(100) NOT NULL,
+    model_id VARCHAR(100) NOT NULL,
+    display_name VARCHAR(150) NOT NULL,
 
-    input_cost_per_1m_cents INT NOT NULL,
-    output_cost_per_1m_cents INT NOT NULL,
+    -- Capabilities
+    context_window INT NULL,
+    max_output_tokens INT NULL,
+    supports_vision TINYINT(1) NOT NULL DEFAULT 0,
+    supports_function_calling TINYINT(1) NOT NULL DEFAULT 0,
+    supports_streaming TINYINT(1) NOT NULL DEFAULT 1,
 
+    -- Pricing (cents per 1M tokens)
+    input_cost_per_1m_cents INT NOT NULL DEFAULT 0,
+    output_cost_per_1m_cents INT NOT NULL DEFAULT 0,
     margin_multiplier DECIMAL(3,2) NOT NULL DEFAULT 1.30,
 
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Status
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    is_custom TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order INT NOT NULL DEFAULT 0,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
-    UNIQUE KEY uk_llm_pricing_model (provider, model),
-    INDEX idx_llm_pricing_active (is_active)
+    UNIQUE KEY uk_llm_models_provider_model (provider, model_id),
+    INDEX idx_llm_models_active (is_active),
+    INDEX idx_llm_models_provider (provider)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -463,6 +475,7 @@ CREATE TABLE IF NOT EXISTS platform_api_keys (
 
     api_key_encrypted TEXT NOT NULL,
     api_key_hint VARCHAR(20) NOT NULL,
+    auth_type ENUM('api_key','oauth_token') NOT NULL DEFAULT 'api_key',
     model_name VARCHAR(100) NULL,
     base_url VARCHAR(500) NULL,
 
@@ -513,30 +526,34 @@ DELIMITER ;
 -- =====================================================
 -- SEED DATA: LLM Pricing
 -- =====================================================
--- Default pricing for all supported models
+-- Default model registry with capabilities and pricing
 -- margin_multiplier = 1.30 (30% markup on platform keys)
--- Ollama = free (local inference)
 -- =====================================================
 
-INSERT INTO llm_pricing (provider, model, input_cost_per_1m_cents, output_cost_per_1m_cents, margin_multiplier) VALUES
+INSERT INTO llm_models (provider, model_id, display_name, context_window, max_output_tokens, supports_vision, supports_function_calling, input_cost_per_1m_cents, output_cost_per_1m_cents, margin_multiplier, sort_order) VALUES
 -- Gemini
-('gemini', 'gemini-2.0-flash',       10,   40, 1.30),
-('gemini', 'gemini-2.0-flash-lite',    5,   20, 1.30),
-('gemini', 'gemini-2.5-pro',         125,  500, 1.30),
-('gemini', 'gemini-2.5-flash',        15,   60, 1.30),
+('gemini', 'gemini-2.0-flash',      'Gemini 2.0 Flash',      1048576,  8192, TRUE,  TRUE,   10,   40, 1.30, 1),
+('gemini', 'gemini-2.0-flash-lite', 'Gemini 2.0 Flash Lite', 1048576,  8192, TRUE,  TRUE,    5,   20, 1.30, 2),
+('gemini', 'gemini-2.5-pro',        'Gemini 2.5 Pro',        1048576, 65536, TRUE,  TRUE,  125,  500, 1.30, 3),
+('gemini', 'gemini-2.5-flash',      'Gemini 2.5 Flash',      1048576, 65536, TRUE,  TRUE,   15,   60, 1.30, 4),
 -- OpenAI
-('openai', 'gpt-4o',                250, 1000, 1.30),
-('openai', 'gpt-4o-mini',            15,   60, 1.30),
-('openai', 'gpt-4.1',               200,  800, 1.30),
-('openai', 'gpt-4.1-mini',           40,  160, 1.30),
-('openai', 'gpt-4.1-nano',           10,   40, 1.30),
-('openai', 'o3-mini',               110,  440, 1.30),
+('openai', 'gpt-4o',       'GPT-4o',       128000,  16384, TRUE,  TRUE,  250, 1000, 1.30, 1),
+('openai', 'gpt-4o-mini',  'GPT-4o Mini',  128000,  16384, TRUE,  TRUE,   15,   60, 1.30, 2),
+('openai', 'gpt-4.1',      'GPT-4.1',     1047576,  32768, TRUE,  TRUE,  200,  800, 1.30, 3),
+('openai', 'gpt-4.1-mini', 'GPT-4.1 Mini',1047576,  32768, TRUE,  TRUE,   40,  160, 1.30, 4),
+('openai', 'gpt-4.1-nano', 'GPT-4.1 Nano',1047576,  32768, FALSE, TRUE,   10,   40, 1.30, 5),
+('openai', 'o3-mini',      'o3-mini',      200000, 100000, FALSE, TRUE,  110,  440, 1.30, 6),
 -- Anthropic
-('anthropic', 'claude-sonnet-4-20250514',  300, 1500, 1.30),
-('anthropic', 'claude-haiku-4-5-20251001',  80,  400, 1.30),
-('anthropic', 'claude-3-5-sonnet-20241022', 300, 1500, 1.30),
+('anthropic', 'claude-sonnet-4-20250514',  'Claude Sonnet 4',   200000, 16000, TRUE, TRUE, 300, 1500, 1.30, 1),
+('anthropic', 'claude-haiku-4-5-20251001', 'Claude Haiku 4.5',  200000,  8192, TRUE, TRUE,  80,  400, 1.30, 2),
+('anthropic', 'claude-3-5-sonnet-20241022','Claude 3.5 Sonnet',  200000,  8192, TRUE, TRUE, 300, 1500, 1.30, 3),
 -- OpenAI Compatible (free - local inference / custom endpoints)
-('openai_compatible', 'custom',  0, 0, 1.00)
+('openai_compatible', 'custom', 'Custom Model', NULL, NULL, FALSE, FALSE, 0, 0, 1.00, 99)
 ON DUPLICATE KEY UPDATE
+    display_name = VALUES(display_name),
+    context_window = VALUES(context_window),
+    max_output_tokens = VALUES(max_output_tokens),
+    supports_vision = VALUES(supports_vision),
+    supports_function_calling = VALUES(supports_function_calling),
     input_cost_per_1m_cents = VALUES(input_cost_per_1m_cents),
     output_cost_per_1m_cents = VALUES(output_cost_per_1m_cents);

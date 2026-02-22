@@ -25,7 +25,9 @@ async def create_platform_key(
     """Create a new platform API key for a provider."""
     service = PlatformKeyService(db)
     key = await service.create(data, current_user.id)
-    return key
+    resp = PlatformKeyResponse.model_validate(key)
+    resp.model_created = getattr(key, '_model_created', False)
+    return resp
 
 
 @router.get("/", response_model=List[PlatformKeyResponse])
@@ -52,7 +54,9 @@ async def update_platform_key(
     key = await service.update(key_id, data)
     if not key:
         raise HTTPException(status_code=404, detail="Platform key not found")
-    return key
+    resp = PlatformKeyResponse.model_validate(key)
+    resp.model_created = getattr(key, '_model_created', False)
+    return resp
 
 
 @router.delete("/{key_id}")

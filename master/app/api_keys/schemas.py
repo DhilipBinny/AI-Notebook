@@ -43,6 +43,11 @@ class ProviderModel(BaseModel):
     """Available model for a provider."""
     id: str
     name: str
+    display_name: Optional[str] = None
+    context_window: Optional[int] = None
+    max_output_tokens: Optional[int] = None
+    supports_vision: Optional[bool] = None
+    supports_function_calling: Optional[bool] = None
 
 
 class ProviderInfo(BaseModel):

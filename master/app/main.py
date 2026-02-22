@@ -22,7 +22,8 @@ from app.playgrounds.models import Playground
 from app.auth.models import Session
 from app.invitations.models import Invitation, InvitationUse
 from app.api_keys.models import UserApiKey
-from app.credits.models import UserCredit, LLMPricing, UsageRecord
+from app.credits.models import UserCredit, UsageRecord
+from app.llm_models.models import LLMModel
 from app.templates.models import NotebookTemplate
 from app.platform_keys.models import PlatformApiKey
 # Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
@@ -43,6 +44,8 @@ from app.api_keys.routes import router as api_keys_router
 from app.credits.routes import router as credits_router
 from app.templates.routes import router as templates_router
 from app.platform_keys.routes import router as platform_keys_router
+from app.llm_models.routes import router as llm_models_router
+from app.users.admin_routes import router as admin_users_router
 
 # Import playground service for cleanup
 from app.playgrounds.service import PlaygroundService
@@ -162,6 +165,8 @@ app.include_router(api_keys_router, prefix="/api")  # User API key management
 app.include_router(credits_router, prefix="/api")  # Credits and usage tracking
 app.include_router(templates_router, prefix="/api")  # Notebook templates
 app.include_router(platform_keys_router, prefix="/api")  # Platform API key management
+app.include_router(llm_models_router, prefix="/api")  # LLM model registry
+app.include_router(admin_users_router, prefix="/api")  # Admin user management
 
 
 @app.get("/health")

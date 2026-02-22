@@ -45,9 +45,9 @@ async def verify_internal_secret(x_internal_secret: str = Header(None)):
     return True
 
 
-def extract_key_overrides(request: Request, provider: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def extract_key_overrides(request: Request, provider: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
-    Extract API key, model, and base_url overrides from request headers.
+    Extract API key, model, base_url, and auth_type overrides from request headers.
 
     Resolution order: user key > platform key > None (falls back to env).
 
@@ -56,7 +56,7 @@ def extract_key_overrides(request: Request, provider: str) -> Tuple[Optional[str
         provider: LLM provider name (gemini, openai, anthropic, openai_compatible)
 
     Returns:
-        Tuple of (api_key_override, model_override, base_url_override) - any may be None
+        Tuple of (api_key_override, model_override, base_url_override, auth_type) - any may be None
     """
     provider_upper = provider.capitalize()
     if provider == "openai":
@@ -88,4 +88,11 @@ def extract_key_overrides(request: Request, provider: str) -> Tuple[Optional[str
                             request.headers.get("X-Platform-OpenaiCompatible-BaseUrl")
         base_url = user_base_url or platform_base_url or None
 
-    return api_key, model, base_url
+    # Extract auth_type for anthropic (OAuth token support)
+    # Only applies when using platform key (user keys are always api_key type)
+    auth_type = None
+    if provider == "anthropic" and not user_key and platform_key:
+        auth_type = request.headers.get("x-platform-anthropic-authtype") or \
+                    request.headers.get("X-Platform-Anthropic-AuthType")
+
+    return api_key, model, base_url, auth_type

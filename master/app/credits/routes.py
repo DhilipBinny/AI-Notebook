@@ -13,9 +13,7 @@ from .schemas import (
     CreditBalanceResponse,
     UsageHistoryResponse,
     UsageRecordResponse,
-    LLMPricingResponse,
     AdminCreditAdjust,
-    AdminPricingUpdate,
     UsageReport,
 )
 
@@ -85,26 +83,32 @@ async def get_usage_history(
     )
 
 
-@router.get("/credits/pricing", response_model=list[LLMPricingResponse])
+@router.get("/credits/pricing")
 async def get_pricing(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all active LLM pricing."""
-    service = CreditService(db)
-    pricing_list = await service.get_all_pricing()
-
+    """Get all active LLM pricing (backward-compatible, delegates to llm_models)."""
+    from app.llm_models.service import LLMModelService
+    service = LLMModelService(db)
+    models = await service.get_all_active()
     return [
-        LLMPricingResponse(
-            id=p.id,
-            provider=p.provider,
-            model=p.model,
-            input_cost_per_1m_cents=p.input_cost_per_1m_cents,
-            output_cost_per_1m_cents=p.output_cost_per_1m_cents,
-            margin_multiplier=float(p.margin_multiplier),
-            is_active=p.is_active,
-        )
-        for p in pricing_list
+        {
+            "id": m.id,
+            "provider": m.provider,
+            "model": m.model_id,
+            "display_name": m.display_name,
+            "input_cost_per_1m_cents": m.input_cost_per_1m_cents,
+            "output_cost_per_1m_cents": m.output_cost_per_1m_cents,
+            "margin_multiplier": float(m.margin_multiplier),
+            "is_active": m.is_active,
+            "context_window": m.context_window,
+            "max_output_tokens": m.max_output_tokens,
+            "supports_vision": m.supports_vision,
+            "supports_function_calling": m.supports_function_calling,
+            "is_custom": m.is_custom,
+        }
+        for m in models
     ]
 
 
@@ -139,42 +143,6 @@ async def admin_adjust_credits(
         total_deposited_cents=credit.total_deposited_cents,
         total_consumed_cents=credit.total_consumed_cents,
         last_charged_at=credit.last_charged_at,
-    )
-
-
-@router.post("/admin/credits/pricing", response_model=LLMPricingResponse)
-async def admin_update_pricing(
-    request: AdminPricingUpdate,
-    current_user: User = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Admin: update LLM pricing."""
-    service = CreditService(db)
-    pricing = await service.update_pricing(
-        provider=request.provider,
-        model=request.model,
-        input_cost=request.input_cost_per_1m_cents,
-        output_cost=request.output_cost_per_1m_cents,
-        margin=request.margin_multiplier,
-        is_active=request.is_active,
-    )
-
-    if not pricing:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pricing entry not found",
-        )
-
-    await db.commit()
-
-    return LLMPricingResponse(
-        id=pricing.id,
-        provider=pricing.provider,
-        model=pricing.model,
-        input_cost_per_1m_cents=pricing.input_cost_per_1m_cents,
-        output_cost_per_1m_cents=pricing.output_cost_per_1m_cents,
-        margin_multiplier=float(pricing.margin_multiplier),
-        is_active=pricing.is_active,
     )
 
 

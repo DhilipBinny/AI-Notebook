@@ -73,12 +73,13 @@ async def run_ai_cell(
     async def event_generator():
         """Generate SSE events - unified for both streaming and non-streaming modes."""
         provider = request.llm_provider or cfg.LLM_PROVIDER
-        key_override, model_override, base_url_override = extract_key_overrides(_ai_raw_request, provider)
+        key_override, model_override, base_url_override, auth_type = extract_key_overrides(_ai_raw_request, provider)
         client = get_llm_client(
             provider=provider,
             api_key_override=key_override,
             model_override=model_override,
             base_url_override=base_url_override,
+            auth_type=auth_type,
         )
         _active_ai_cell_clients[session_id] = client
 

@@ -44,19 +44,36 @@ class AnthropicClient(BaseLLMClient):
     # SECTION 2: INITIALIZATION & CONFIGURATION
     # =========================================================================
 
-    def __init__(self, api_key: str, model_name: str = None, auto_function_calling: Optional[bool] = None, enable_web_search: bool = True):
+    def __init__(self, api_key: str, model_name: str = None, auto_function_calling: Optional[bool] = None, enable_web_search: bool = True, auth_type: str = "api_key"):
         """
         Initialize Anthropic client.
 
         Args:
-            api_key: Anthropic API key
+            api_key: Anthropic API key or OAuth token
             model_name: Model to use (default: claude-3-haiku-20240307)
             auto_function_calling: Override config setting. If None, uses cfg.AUTO_FUNCTION_CALLING
             enable_web_search: Enable web search tool for real-time web info (default: True)
+            auth_type: "api_key" for standard API key, "oauth_token" for OAuth Bearer token
         """
         super().__init__()  # Initialize base class (cancellation support)
 
-        self.client = Anthropic(api_key=api_key)
+        if auth_type == "oauth_token":
+            # IMPORTANT: api_key must be "" (empty string), NOT None.
+            # None causes the SDK to fall back to ANTHROPIC_API_KEY env var,
+            # which contains the OAuth token (injected by master as platform key).
+            # That sends the token as both X-Api-Key (invalid) and Authorization: Bearer,
+            # resulting in 401 "invalid x-api-key".
+            self.client = Anthropic(
+                api_key="",
+                auth_token=api_key,
+                default_headers={
+                    "anthropic-beta": "oauth-2025-04-20",
+                    "user-agent": "claude-cli/0.1 (external, cli)",
+                    "x-app": "cli",
+                },
+            )
+        else:
+            self.client = Anthropic(api_key=api_key)
         self.model_name = model_name or cfg.ANTHROPIC_MODEL
         self.enable_web_search = enable_web_search
 
