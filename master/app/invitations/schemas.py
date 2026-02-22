@@ -10,9 +10,9 @@ from datetime import datetime
 class InvitationCreate(BaseModel):
     """Schema for creating an invitation."""
     email: Optional[str] = Field(None, max_length=255)
-    max_uses: int = Field(default=1, ge=1, le=1000)
     expires_at: Optional[datetime] = None
     note: Optional[str] = Field(None, max_length=500)
+    base_url: Optional[str] = Field(None, max_length=500)
 
 
 class InvitationBatchCreate(BaseModel):
@@ -20,15 +20,15 @@ class InvitationBatchCreate(BaseModel):
     emails: List[str] = Field(..., min_length=1, max_length=100)
     note: Optional[str] = Field(None, max_length=500)
     expires_at: Optional[datetime] = None
+    base_url: Optional[str] = Field(None, max_length=500)
 
 
 class InvitationResponse(BaseModel):
-    """Schema for invitation response."""
+    """Schema for invitation in list views. No raw token — only hash prefix."""
     id: str
-    code: str
+    code_prefix: str
     email: Optional[str]
-    max_uses: int
-    used_count: int
+    is_used: bool
     created_by: str
     expires_at: Optional[datetime]
     is_active: bool

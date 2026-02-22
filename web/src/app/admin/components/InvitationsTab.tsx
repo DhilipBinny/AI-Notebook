@@ -9,13 +9,12 @@ export default function InvitationsTab() {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showBatch, setShowBatch] = useState(false)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Create form
   const [newEmail, setNewEmail] = useState('')
-  const [newMaxUses, setNewMaxUses] = useState(1)
   const [newNote, setNewNote] = useState('')
 
   // Batch form
@@ -42,21 +41,27 @@ export default function InvitationsTab() {
     }
   }, [user, fetchInvitations])
 
+  const showSuccess = (msg: string) => {
+    setSuccess(msg)
+    setTimeout(() => setSuccess(''), 3000)
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
       await admin.invitations.create({
         email: newEmail || undefined,
-        max_uses: newMaxUses,
         note: newNote || undefined,
+        base_url: window.location.origin,
       })
       setShowCreate(false)
       setNewEmail('')
-      setNewMaxUses(1)
       setNewNote('')
+      showSuccess('Invitation sent')
       fetchInvitations()
-    } catch {
-      setError('Failed to create invitation')
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } }
+      setError(e.response?.data?.detail || 'Failed to create invitation')
     }
   }
 
@@ -69,13 +74,26 @@ export default function InvitationsTab() {
       await admin.invitations.batchCreate({
         emails,
         note: batchNote || undefined,
+        base_url: window.location.origin,
       })
       setShowBatch(false)
       setBatchEmails('')
       setBatchNote('')
+      showSuccess(`${emails.length} invitations sent`)
+      fetchInvitations()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } } }
+      setError(e.response?.data?.detail || 'Failed to create invitations')
+    }
+  }
+
+  const handleReinvite = async (id: string) => {
+    try {
+      await admin.invitations.reinvite(id, window.location.origin)
+      showSuccess('New invitation sent')
       fetchInvitations()
     } catch {
-      setError('Failed to create invitations')
+      setError('Failed to re-invite')
     }
   }
 
@@ -88,11 +106,14 @@ export default function InvitationsTab() {
     }
   }
 
-  const copyInviteLink = (code: string, id: string) => {
-    const url = `${window.location.origin}/auth/register?invite=${code}`
-    navigator.clipboard.writeText(url)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
+  const handleDelete = async (id: string) => {
+    if (!confirm('Permanently delete this invitation? This cannot be undone.')) return
+    try {
+      await admin.invitations.delete(id)
+      fetchInvitations()
+    } catch {
+      setError('Failed to delete invitation')
+    }
   }
 
   return (
@@ -112,14 +133,14 @@ export default function InvitationsTab() {
               border: '1px solid var(--app-border-default)',
             }}
           >
-            Batch Create
+            Batch Invite
           </button>
           <button
             onClick={() => { setShowCreate(true); setShowBatch(false) }}
             className="px-4 py-2 rounded-lg text-sm text-white transition-colors"
             style={{ background: 'var(--app-gradient-primary)' }}
           >
-            Create Invitation
+            Invite User
           </button>
         </div>
       </div>
@@ -131,35 +152,28 @@ export default function InvitationsTab() {
         </div>
       )}
 
+      {success && (
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+          {success}
+        </div>
+      )}
+
       {/* Create Form */}
       {showCreate && (
         <div className="mb-6 p-6 rounded-xl" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
-          <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--app-text-primary)' }}>Create Invitation</h3>
+          <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--app-text-primary)' }}>Invite User</h3>
           <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Email (optional - lock to email)</label>
-                <input
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
-                  style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
-                  placeholder="user@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Max uses</label>
-                <input
-                  type="number"
-                  value={newMaxUses}
-                  onChange={(e) => setNewMaxUses(parseInt(e.target.value) || 1)}
-                  min={1}
-                  max={1000}
-                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
-                  style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
-                />
-              </div>
+            <div>
+              <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Email</label>
+              <input
+                type="email"
+                required
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+                placeholder="user@example.com"
+              />
             </div>
             <div>
               <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Note (optional)</label>
@@ -173,7 +187,7 @@ export default function InvitationsTab() {
               />
             </div>
             <div className="flex gap-3">
-              <button type="submit" className="px-4 py-2 rounded-lg text-sm text-white" style={{ background: 'var(--app-gradient-primary)' }}>Create</button>
+              <button type="submit" className="px-4 py-2 rounded-lg text-sm text-white" style={{ background: 'var(--app-gradient-primary)' }}>Send Invite</button>
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--app-text-muted)' }}>Cancel</button>
             </div>
           </form>
@@ -183,7 +197,7 @@ export default function InvitationsTab() {
       {/* Batch Create Form */}
       {showBatch && (
         <div className="mb-6 p-6 rounded-xl" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
-          <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--app-text-primary)' }}>Batch Create Invitations</h3>
+          <h3 className="text-lg font-medium mb-4" style={{ color: 'var(--app-text-primary)' }}>Batch Invite</h3>
           <form onSubmit={handleBatchCreate} className="space-y-4">
             <div>
               <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Emails (one per line, or comma-separated)</label>
@@ -208,7 +222,7 @@ export default function InvitationsTab() {
               />
             </div>
             <div className="flex gap-3">
-              <button type="submit" className="px-4 py-2 rounded-lg text-sm text-white" style={{ background: 'var(--app-gradient-primary)' }}>Create All</button>
+              <button type="submit" className="px-4 py-2 rounded-lg text-sm text-white" style={{ background: 'var(--app-gradient-primary)' }}>Send All</button>
               <button type="button" onClick={() => setShowBatch(false)} className="px-4 py-2 rounded-lg text-sm" style={{ color: 'var(--app-text-muted)' }}>Cancel</button>
             </div>
           </form>
@@ -225,11 +239,10 @@ export default function InvitationsTab() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--app-border-default)' }}>
-                <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Code</th>
                 <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Email</th>
-                <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Usage</th>
                 <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Status</th>
                 <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Note</th>
+                <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Expires</th>
                 <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Created</th>
                 <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Actions</th>
               </tr>
@@ -237,20 +250,14 @@ export default function InvitationsTab() {
             <tbody>
               {invitations.map((inv) => {
                 const isExpired = inv.expires_at && new Date(inv.expires_at) < new Date()
-                const isFull = inv.used_count >= inv.max_uses
-                const statusLabel = !inv.is_active ? 'Deactivated' : isExpired ? 'Expired' : isFull ? 'Fully Used' : 'Active'
-                const statusColor = !inv.is_active || isExpired ? 'var(--app-text-muted)' : isFull ? '#f59e0b' : '#10b981'
+                const statusLabel = !inv.is_active ? 'Deactivated' : isExpired ? 'Expired' : inv.is_used ? 'Registered' : 'Pending'
+                const statusColor = !inv.is_active ? 'var(--app-text-muted)' : isExpired ? 'var(--app-accent-error)' : inv.is_used ? '#10b981' : '#f59e0b'
+                const canReinvite = inv.email && !inv.is_used && (!inv.is_active || isExpired)
 
                 return (
                   <tr key={inv.id} style={{ borderBottom: '1px solid var(--app-border-default)' }}>
-                    <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--app-text-primary)' }}>
-                      {inv.code.slice(0, 12)}...
-                    </td>
-                    <td className="px-4 py-3" style={{ color: 'var(--app-text-secondary)' }}>
+                    <td className="px-4 py-3" style={{ color: 'var(--app-text-primary)' }}>
                       {inv.email || '-'}
-                    </td>
-                    <td className="px-4 py-3" style={{ color: 'var(--app-text-secondary)' }}>
-                      {inv.used_count}/{inv.max_uses}
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ color: statusColor }}>
@@ -260,31 +267,39 @@ export default function InvitationsTab() {
                     <td className="px-4 py-3 text-xs" style={{ color: 'var(--app-text-muted)' }}>
                       {inv.note || '-'}
                     </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: isExpired ? 'var(--app-accent-error)' : 'var(--app-text-muted)' }}>
+                      {inv.expires_at ? new Date(inv.expires_at).toLocaleString() : '-'}
+                    </td>
                     <td className="px-4 py-3 text-xs" style={{ color: 'var(--app-text-muted)' }}>
                       {new Date(inv.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => copyInviteLink(inv.code, inv.id)}
-                          className="px-2 py-1 rounded text-xs transition-colors"
-                          style={{
-                            backgroundColor: 'var(--app-bg-tertiary)',
-                            color: copiedId === inv.id ? '#10b981' : 'var(--app-text-secondary)',
-                            border: '1px solid var(--app-border-default)',
-                          }}
-                        >
-                          {copiedId === inv.id ? 'Copied!' : 'Copy Link'}
-                        </button>
-                        {inv.is_active && !isFull && (
+                        {canReinvite && (
+                          <button
+                            onClick={() => handleReinvite(inv.id)}
+                            className="px-2 py-1 rounded text-xs transition-colors"
+                            style={{ color: 'var(--app-accent-primary)' }}
+                          >
+                            Re-Invite
+                          </button>
+                        )}
+                        {inv.is_active && !inv.is_used && !isExpired && (
                           <button
                             onClick={() => handleDeactivate(inv.id)}
                             className="px-2 py-1 rounded text-xs transition-colors"
-                            style={{ color: 'var(--app-accent-error)' }}
+                            style={{ color: '#f59e0b' }}
                           >
                             Deactivate
                           </button>
                         )}
+                        <button
+                          onClick={() => handleDelete(inv.id)}
+                          className="px-2 py-1 rounded text-xs transition-colors"
+                          style={{ color: 'var(--app-accent-error)' }}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>

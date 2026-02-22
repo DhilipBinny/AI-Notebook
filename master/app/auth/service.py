@@ -49,13 +49,13 @@ class AuthService:
         Raises:
             ValueError: If email already exists or invite code is invalid
         """
-        # Validate invite code if required
+        # Validate invite code
         invitation = None
-        if settings.require_invite_code:
-            if not invite_code:
-                raise ValueError("Invitation code is required")
-            invitation_service = InvitationService(self.db)
+        invitation_service = InvitationService(self.db)
+        if invite_code:
             invitation = await invitation_service.validate_code(invite_code, email=email)
+        elif settings.require_invite_code:
+            raise ValueError("Invitation code is required")
 
         user_data = UserCreate(email=email, password=password, name=name)
         user = await self.user_service.create(user_data)

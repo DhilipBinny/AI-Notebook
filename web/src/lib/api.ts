@@ -930,16 +930,16 @@ export const admin = {
 
   invitations: {
     list: async (activeOnly = false): Promise<Invitation[]> => {
-      const { data } = await api.get('/admin/invitations', { params: { active_only: activeOnly } })
+      const { data } = await api.get('/admin/invitations/', { params: { active_only: activeOnly } })
       return data
     },
 
-    create: async (params: { email?: string; max_uses?: number; expires_at?: string; note?: string }): Promise<Invitation> => {
-      const { data } = await api.post('/admin/invitations', params)
+    create: async (params: { email?: string; expires_at?: string; note?: string; base_url?: string }): Promise<Invitation> => {
+      const { data } = await api.post('/admin/invitations/', params)
       return data
     },
 
-    batchCreate: async (params: { emails: string[]; note?: string; expires_at?: string }): Promise<Invitation[]> => {
+    batchCreate: async (params: { emails: string[]; note?: string; expires_at?: string; base_url?: string }): Promise<Invitation[]> => {
       const { data } = await api.post('/admin/invitations/batch', params)
       return data
     },
@@ -950,7 +950,16 @@ export const admin = {
     },
 
     deactivate: async (id: string): Promise<Invitation> => {
-      const { data } = await api.delete(`/admin/invitations/${id}`)
+      const { data } = await api.patch(`/admin/invitations/${id}/deactivate`)
+      return data
+    },
+
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/admin/invitations/${id}`)
+    },
+
+    reinvite: async (id: string, baseUrl: string): Promise<Invitation> => {
+      const { data } = await api.post(`/admin/invitations/${id}/reinvite`, null, { params: { base_url: baseUrl } })
       return data
     },
   },

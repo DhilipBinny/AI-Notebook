@@ -9,6 +9,7 @@ from typing import List
 from app.db.session import get_db
 from app.users.models import User
 from app.auth.dependencies import get_current_admin_user
+from app.email.service import EmailService
 from .service import InvitationService
 from .schemas import (
     InvitationCreate,
@@ -26,9 +27,22 @@ async def create_invitation(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """Create a new invitation code."""
+    """Create a new invitation and send email."""
     service = InvitationService(db)
-    invitation = await service.create(created_by=admin.id, data=data)
+    try:
+        invitation, raw_token = await service.create(created_by=admin.id, data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    if data.email and EmailService.is_configured():
+        EmailService.send_invitation_background(
+            email=data.email,
+            invite_code=raw_token,
+            note=data.note,
+            expires_at=data.expires_at,
+            base_url=data.base_url,
+        )
+
     return invitation
 
 
@@ -38,10 +52,59 @@ async def batch_create_invitations(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """Create one invitation per email (locked to that email)."""
+    """Create one invitation per email and send emails."""
     service = InvitationService(db)
-    invitations = await service.batch_create(created_by=admin.id, data=data)
+    try:
+        results = await service.batch_create(created_by=admin.id, data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    invitations = []
+    for invitation, raw_token in results:
+        if invitation.email and EmailService.is_configured():
+            EmailService.send_invitation_background(
+                email=invitation.email,
+                invite_code=raw_token,
+                note=data.note,
+                expires_at=data.expires_at,
+                base_url=data.base_url,
+            )
+        invitations.append(invitation)
+
     return invitations
+
+
+@router.post("/{invitation_id}/reinvite", response_model=InvitationResponse, status_code=status.HTTP_201_CREATED)
+async def reinvite(
+    invitation_id: str,
+    base_url: str = "",
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """Deactivate old invitation and create a new one for the same email."""
+    service = InvitationService(db)
+    old = await service.get_by_id(invitation_id)
+    if not old:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    if not old.email:
+        raise HTTPException(status_code=400, detail="Cannot re-invite: no email on invitation")
+
+    # Deactivate the old invitation
+    await service.deactivate(invitation_id)
+
+    # Create a new invitation for the same email
+    new_data = InvitationCreate(email=old.email, note=old.note, base_url=base_url or None)
+    new_invitation, raw_token = await service.create(created_by=admin.id, data=new_data)
+
+    if EmailService.is_configured():
+        EmailService.send_invitation_background(
+            email=old.email,
+            invite_code=raw_token,
+            note=old.note,
+            base_url=base_url or None,
+        )
+
+    return new_invitation
 
 
 @router.get("/", response_model=List[InvitationResponse])
@@ -70,7 +133,7 @@ async def get_invitation(
     return invitation
 
 
-@router.delete("/{invitation_id}", response_model=InvitationResponse)
+@router.patch("/{invitation_id}/deactivate", response_model=InvitationResponse)
 async def deactivate_invitation(
     invitation_id: str,
     db: AsyncSession = Depends(get_db),
@@ -82,3 +145,16 @@ async def deactivate_invitation(
     if not invitation:
         raise HTTPException(status_code=404, detail="Invitation not found")
     return invitation
+
+
+@router.delete("/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_invitation(
+    invitation_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """Permanently delete an invitation."""
+    service = InvitationService(db)
+    deleted = await service.delete(invitation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Invitation not found")

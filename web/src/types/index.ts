@@ -13,10 +13,9 @@ export interface User {
 
 export interface Invitation {
   id: string
-  code: string
+  code_prefix: string
   email?: string
-  max_uses: number
-  used_count: number
+  is_used: boolean
   created_by: string
   expires_at?: string
   is_active: boolean
