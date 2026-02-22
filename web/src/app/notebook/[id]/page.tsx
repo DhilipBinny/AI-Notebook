@@ -1941,10 +1941,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           // Add assistant response and persist to S3
           if (response.response) {
             setChatMessages((prev) => {
-              const updated = [
+              const updated: ChatMessage[] = [
                 ...prev,
                 {
-                  role: 'assistant',
+                  role: 'assistant' as const,
                   content: response.response,
                   steps: response.steps,
                 },
