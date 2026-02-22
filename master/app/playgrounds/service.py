@@ -17,7 +17,6 @@ from .docker_client import docker_client
 from app.projects.models import Project
 from app.users.models import User
 from app.core.config import settings
-from app.platform_keys.service import PlatformKeyService
 
 logger = logging.getLogger(__name__)
 
@@ -97,21 +96,14 @@ class PlaygroundService:
         await self.db.flush()
 
         try:
-            # Fetch platform API keys from DB for container env
-            pk_service = PlatformKeyService(self.db)
-            platform_keys = await pk_service.get_all_active_keys()
-            platform_models = await pk_service.get_active_models()
-            platform_base_urls = await pk_service.get_active_base_urls()
-
             # Create Docker container
+            # NOTE: API keys are NOT passed as env vars (security — users can read os.environ).
+            # Keys are injected per-request via HTTP headers by master (see chat/routes.py).
             container_id, container_ip = docker_client.create_container(
                 container_name=container_name,
                 project_id=project.id,
                 storage_path=project.storage_path,
                 internal_secret=internal_secret,
-                platform_keys=platform_keys,
-                platform_models=platform_models,
-                platform_base_urls=platform_base_urls,
             )
 
             playground.container_id = container_id

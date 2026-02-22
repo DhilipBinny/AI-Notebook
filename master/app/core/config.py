@@ -44,20 +44,6 @@ class Settings(BaseSettings):
     google_client_secret: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET")
     oauth_redirect_base_url: str = Field(default="http://localhost:8001", alias="OAUTH_REDIRECT_BASE_URL")
 
-    #---------------------------------------------------------------------------------------
-    # LLM API Keys (passed to playground containers as environment variables)
-    #---------------------------------------------------------------------------------------
-    # Note: These are visible via 'docker inspect'. For high-security deployments,
-    # consider using Docker Secrets (Swarm mode) or a secrets manager like HashiCorp Vault.
-    gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
-    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
-    anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
-
-    # LLM Models (passed to playground containers if set)
-    gemini_model: Optional[str] = Field(default=None, alias="GEMINI_MODEL")
-    openai_model: Optional[str] = Field(default=None, alias="OPENAI_MODEL")
-    anthropic_model: Optional[str] = Field(default=None, alias="ANTHROPIC_MODEL")
-
     # Optional LLM settings for playground containers
     # If set in env, passed to playground; otherwise playground uses its own defaults
     default_llm_provider: Optional[str] = Field(default=None, alias="DEFAULT_LLM_PROVIDER")
@@ -72,9 +58,6 @@ class Settings(BaseSettings):
     playground_cpu_limit: float = Field(default=4.0, alias="PLAYGROUND_CPU_LIMIT")
     playground_idle_timeout: int = Field(default=3600, alias="PLAYGROUND_IDLE_TIMEOUT")
     master_api_url: str = Field(default="http://ainotebook-master-api:8001/api", alias="MASTER_API_URL")
-    #---------------------------------------------------------------------------------------
-    # xx
-    #--------------------------------------------------------------------------------------
 
     # Invite system
     require_invite_code: bool = Field(default=False, alias="REQUIRE_INVITE_CODE")

@@ -18,25 +18,28 @@ MASTER_API_URL = os.environ.get("MASTER_API_URL", "http://master-api:8000/api")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "dev-internal-secret")
 
 # === LLM Provider Configuration ===
-# SOURCE OF TRUTH: platform_api_keys table in the database (managed via Admin UI).
-# Master-api injects API keys, model names, and base URLs as request headers.
-# The env vars below are ONLY emergency fallbacks if headers are missing.
+# SECURITY: API keys are NEVER stored in environment variables.
+# Users can run os.environ in notebooks, so all LLM credentials are injected
+# exclusively via per-request HTTP headers by the master API (see chat/routes.py
+# _build_proxy_headers and middleware/security.py extract_key_overrides).
+#
+# The defaults below are used ONLY when no header override is provided (e.g. local dev).
 
 # OpenAI-Compatible (Ollama, OpenRouter, vLLM, etc.)
 OPENAI_COMPATIBLE_BASE_URL = os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1")
 OPENAI_COMPATIBLE_API_KEY = os.environ.get("OPENAI_COMPATIBLE_API_KEY", "")
 OPENAI_COMPATIBLE_MODEL = os.environ.get("OPENAI_COMPATIBLE_MODEL", "qwen3-coder:30b")
 
-# Gemini
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# Gemini — key comes via per-request headers in production
+GEMINI_API_KEY = None
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
-# OpenAI
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+# OpenAI — key comes via per-request headers in production
+OPENAI_API_KEY = None
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 
-# Anthropic
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+# Anthropic — key comes via per-request headers in production
+ANTHROPIC_API_KEY = None
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
 # === Function Calling Behavior ===
@@ -90,7 +93,11 @@ LLM_PROVIDER = os.environ.get("LLM_PROVIDER", _get_default_provider())
 
 
 def get_provider_info():
-    """Get information about the current provider configuration"""
+    """Get information about the current provider configuration.
+
+    Note: gemini/openai/anthropic keys are None in production (injected per-request
+    via headers). 'configured' here reflects local dev env only.
+    """
     return {
         "provider": LLM_PROVIDER,
         "auto_function_calling": AUTO_FUNCTION_CALLING,

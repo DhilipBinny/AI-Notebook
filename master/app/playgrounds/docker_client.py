@@ -52,12 +52,14 @@ class DockerClient:
         project_id: str,
         storage_path: str,
         internal_secret: str,
-        platform_keys: dict[str, str] | None = None,
-        platform_models: dict[str, str] | None = None,
-        platform_base_urls: dict[str, str] | None = None,
     ) -> tuple[str, str]:
         """
         Create and start a new playground container.
+
+        SECURITY: API keys and model configs are NOT passed as environment variables.
+        Users can run os.environ in notebooks, so all LLM credentials are injected
+        exclusively via per-request HTTP headers by the master API (see chat/routes.py
+        _build_proxy_headers). This prevents users from extracting platform API keys.
 
         Args:
             container_name: Unique container name
@@ -71,7 +73,7 @@ class DockerClient:
         try:
             # Always cleanup any existing container with this name first
             self.cleanup_container_by_name(container_name)
-            # Build environment with LLM API keys
+            # Build environment — infrastructure only, NO API keys
             env = {
                 "PROJECT_ID": project_id,
                 "INTERNAL_SECRET": internal_secret,
@@ -83,36 +85,6 @@ class DockerClient:
                 # Master API URL for LLM tools to fetch notebook data
                 "MASTER_API_URL": settings.master_api_url,
             }
-            # Add LLM API keys: prefer platform DB keys, fall back to env vars
-            _pk = platform_keys or {}
-            gemini_key = _pk.get("gemini") or settings.gemini_api_key
-            openai_key = _pk.get("openai") or settings.openai_api_key
-            anthropic_key = _pk.get("anthropic") or settings.anthropic_api_key
-            if gemini_key:
-                env["GEMINI_API_KEY"] = gemini_key
-            if openai_key:
-                env["OPENAI_API_KEY"] = openai_key
-            if anthropic_key:
-                env["ANTHROPIC_API_KEY"] = anthropic_key
-
-            # Add LLM model configurations: prefer platform DB models, fall back to env
-            _pm = platform_models or {}
-            if _pm.get("gemini") or settings.gemini_model:
-                env["GEMINI_MODEL"] = _pm.get("gemini") or settings.gemini_model
-            if _pm.get("openai") or settings.openai_model:
-                env["OPENAI_MODEL"] = _pm.get("openai") or settings.openai_model
-            if _pm.get("anthropic") or settings.anthropic_model:
-                env["ANTHROPIC_MODEL"] = _pm.get("anthropic") or settings.anthropic_model
-
-            # Add OpenAI-compatible provider configuration from platform DB
-            _pb = platform_base_urls or {}
-            oc_key = _pk.get("openai_compatible")
-            if oc_key is not None:
-                env["OPENAI_COMPATIBLE_API_KEY"] = oc_key
-            if _pb.get("openai_compatible"):
-                env["OPENAI_COMPATIBLE_BASE_URL"] = _pb["openai_compatible"]
-            if _pm.get("openai_compatible"):
-                env["OPENAI_COMPATIBLE_MODEL"] = _pm["openai_compatible"]
 
             # Add optional LLM settings if configured in master env
             # If not set, playground container uses its own defaults
