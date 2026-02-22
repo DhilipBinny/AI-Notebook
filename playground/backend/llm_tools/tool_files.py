@@ -26,12 +26,10 @@ def _get_project_root() -> Optional[Path]:
     if not session:
         return None
 
-    # Project files are stored in MinIO under projects/{project_id}/
-    # For local access, we use the mounted path
-    project_id = session.session_id
-
-    # The project data path from config
-    project_path = Path(cfg.MINIO_DATA_PATH) / "notebooks" / "projects" / project_id
+    # Workspace is the project root inside the container —
+    # master restores files directly to /workspace.
+    # Each container is scoped to one user, so no per-project nesting needed.
+    project_path = Path(cfg.WORKSPACE_PATH)
 
     if project_path.exists():
         return project_path

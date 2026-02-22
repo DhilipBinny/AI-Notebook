@@ -102,7 +102,6 @@ class PlaygroundService:
             container_id, container_ip = docker_client.create_container(
                 container_name=container_name,
                 project_id=project.id,
-                storage_path=project.storage_path,
                 internal_secret=internal_secret,
             )
 

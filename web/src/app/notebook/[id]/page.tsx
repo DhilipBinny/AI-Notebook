@@ -23,6 +23,7 @@ import {
   Plus,
   AlertTriangle,
   FolderOpen,
+  LogOut,
 } from 'lucide-react'
 
 // Configure marked for PDF export
@@ -1003,14 +1004,18 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     setIsSaving(true)
     try {
       await saveNotebookCore()
-      console.log('Notebook saved')
+      // Also persist chat history to S3
+      if (chatMessages.length > 0) {
+        await chat.saveHistory(projectId, chatMessages)
+      }
+      console.log('Notebook and chat saved')
     } catch (err) {
       console.error('Failed to save:', err)
       setErrorPopup('Failed to save notebook. Please try again.')
     } finally {
       setIsSaving(false)
     }
-  }, [currentProject, saveNotebookCore])
+  }, [currentProject, saveNotebookCore, chatMessages, projectId])
 
   const handleExport = useCallback(async () => {
     if (!currentProject) return
@@ -1826,6 +1831,33 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     })
   }, [projectId, cells, updateCell])
 
+  const handleCloseSession = useCallback(() => {
+    setConfirmPopup({
+      title: 'Close Session',
+      message: 'Stop the playground and return to dashboard?\n\nAll kernel state, variables, and installed packages will be lost. Your notebook and chat history are saved.',
+      confirmText: 'Close Session',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        setConfirmPopup(null)
+        try {
+          // Save notebook if dirty
+          if (isDirty) {
+            await saveNotebookCore()
+          }
+          // Save chat history
+          if (chatMessages.length > 0) {
+            await chat.saveHistory(projectId, chatMessages)
+          }
+          // Stop the playground
+          await playgrounds.stop()
+        } catch (err) {
+          console.error('Failed to close session:', err)
+        }
+        router.push('/dashboard')
+      },
+    })
+  }, [projectId, isDirty, saveNotebookCore, chatMessages, router])
+
   // Handle LLM provider change (local state only, not persisted)
   const handleProviderChange = useCallback((provider: string) => {
     setLlmProvider(provider)
@@ -1906,16 +1938,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             setPendingTools(response.pending_tool_calls)
           }
 
-          // Add assistant response
+          // Add assistant response and persist to S3
           if (response.response) {
-            setChatMessages((prev) => [
-              ...prev,
-              {
-                role: 'assistant',
-                content: response.response,
-                steps: response.steps,
-              },
-            ])
+            setChatMessages((prev) => {
+              const updated = [
+                ...prev,
+                {
+                  role: 'assistant',
+                  content: response.response,
+                  steps: response.steps,
+                },
+              ]
+              chat.saveHistory(projectId, updated).catch(err => console.error('Failed to save chat history:', err))
+              return updated
+            })
           }
 
           // Only reload from S3 if WebSocket is not connected (fallback)
@@ -2019,6 +2055,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                     steps: response.steps,
                   })
                 }
+                chat.saveHistory(projectId, newMessages).catch(err => console.error('Failed to save chat history:', err))
                 return newMessages
               })
             }
@@ -2026,7 +2063,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             // Final response - no more pending tools
             setPendingTools([])
 
-            // Update the last assistant message with final response and all steps
+            // Update the last assistant message with final response and all steps, then persist
             if (response.response) {
               setChatMessages((prev) => {
                 const newMessages = [...prev]
@@ -2048,6 +2085,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                     steps: response.steps,
                   })
                 }
+                chat.saveHistory(projectId, newMessages).catch(err => console.error('Failed to save chat history:', err))
                 return newMessages
               })
             }
@@ -2224,6 +2262,14 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           >
             <FolderOpen className="w-4 h-4" />
             <span className="hidden sm:inline">Files</span>
+          </button>
+          <button
+            onClick={handleCloseSession}
+            className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+            title="Stop playground and return to dashboard"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Close Session</span>
           </button>
         </div>
       </header>

@@ -17,6 +17,10 @@ load_dotenv(Path(__file__).parent / ".env")
 MASTER_API_URL = os.environ.get("MASTER_API_URL", "http://master-api:8000/api")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "dev-internal-secret")
 
+# === Workspace Configuration ===
+# Root path inside the container where master restores project files
+WORKSPACE_PATH = "/workspace"
+
 # === LLM Provider Configuration ===
 # SECURITY: API keys are NEVER stored in environment variables.
 # Users can run os.environ in notebooks, so all LLM credentials are injected

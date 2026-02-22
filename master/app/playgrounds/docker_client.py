@@ -50,21 +50,20 @@ class DockerClient:
         self,
         container_name: str,
         project_id: str,
-        storage_path: str,
         internal_secret: str,
     ) -> tuple[str, str]:
         """
         Create and start a new playground container.
 
-        SECURITY: API keys and model configs are NOT passed as environment variables.
-        Users can run os.environ in notebooks, so all LLM credentials are injected
-        exclusively via per-request HTTP headers by the master API (see chat/routes.py
-        _build_proxy_headers). This prevents users from extracting platform API keys.
+        SECURITY: API keys, model configs, and S3 credentials are NOT passed as
+        environment variables. Users can run os.environ in notebooks, so all
+        sensitive credentials are injected exclusively via per-request HTTP headers
+        by the master API (see chat/routes.py _build_proxy_headers). All S3/file
+        operations go through master API endpoints — containers never touch S3 directly.
 
         Args:
             container_name: Unique container name
             project_id: Project ID
-            storage_path: S3 path to notebook
             internal_secret: Secret for internal auth
 
         Returns:
@@ -73,15 +72,10 @@ class DockerClient:
         try:
             # Always cleanup any existing container with this name first
             self.cleanup_container_by_name(container_name)
-            # Build environment — infrastructure only, NO API keys
+            # Build environment — infrastructure only, NO API keys or S3 credentials
             env = {
                 "PROJECT_ID": project_id,
                 "INTERNAL_SECRET": internal_secret,
-                "S3_NOTEBOOK_PATH": storage_path,
-                "S3_ENDPOINT": settings.s3_endpoint,
-                "S3_ACCESS_KEY": settings.s3_access_key,
-                "S3_SECRET_KEY": settings.s3_secret_key,
-                "S3_BUCKET": settings.s3_bucket_notebooks,
                 # Master API URL for LLM tools to fetch notebook data
                 "MASTER_API_URL": settings.master_api_url,
             }
