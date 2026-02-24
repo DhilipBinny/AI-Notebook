@@ -1057,6 +1057,11 @@ export const admin = {
       const { data } = await api.post(`/admin/platform-keys/${id}/validate`)
       return data
     },
+
+    toggleProviderVisibility: async (provider: string, visible: boolean): Promise<{ provider: string; user_visible: boolean }> => {
+      const { data } = await api.post(`/admin/platform-keys/provider/${provider}/visibility`, null, { params: { visible } })
+      return data
+    },
   },
 }
 

@@ -481,6 +481,7 @@ CREATE TABLE IF NOT EXISTS platform_api_keys (
 
     is_active BOOLEAN NOT NULL DEFAULT FALSE,
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    user_visible BOOLEAN NOT NULL DEFAULT TRUE,
     priority INT NOT NULL DEFAULT 0,
 
     created_by CHAR(36) NULL,

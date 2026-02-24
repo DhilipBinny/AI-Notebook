@@ -213,6 +213,7 @@ export interface PlatformKey {
   base_url?: string
   is_active: boolean
   is_default: boolean
+  user_visible: boolean
   priority: number
   created_by?: string
   created_at: string

@@ -149,6 +149,7 @@ class ApiKeyService:
         platform_key_providers = set(active_platform_keys.keys())
         platform_models = await pk_service.get_active_models()
         default_provider = await pk_service.get_default_provider()
+        user_visible = await pk_service.get_user_visible_providers()
 
         # Get models from registry
         model_service = LLMModelService(self.db)
@@ -165,6 +166,9 @@ class ApiKeyService:
         for provider in provider_models:
             has_own = provider in user_key_providers
             has_platform = provider in platform_key_providers
+            # Skip providers hidden by admin (unless user has their own key)
+            if has_platform and not has_own and not user_visible.get(provider, True):
+                continue
             if has_own or has_platform:
                 providers.append({
                     "provider": provider,

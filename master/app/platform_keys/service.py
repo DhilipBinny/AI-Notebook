@@ -24,18 +24,20 @@ _cache_models: Dict[str, str] = {}  # {provider: model_name}
 _cache_base_urls: Dict[str, str] = {}  # {provider: base_url}
 _cache_auth_types: Dict[str, str] = {}  # {provider: auth_type}
 _cache_default: Optional[str] = None  # default provider
+_cache_user_visible: Dict[str, bool] = {}  # {provider: user_visible}
 _cache_ts: float = 0
 _CACHE_TTL = 300  # 5 minutes
 
 
 def _invalidate_cache():
     """Clear the in-memory key cache."""
-    global _cache, _cache_models, _cache_base_urls, _cache_auth_types, _cache_default, _cache_ts
+    global _cache, _cache_models, _cache_base_urls, _cache_auth_types, _cache_default, _cache_user_visible, _cache_ts
     _cache = {}
     _cache_models = {}
     _cache_base_urls = {}
     _cache_auth_types = {}
     _cache_default = None
+    _cache_user_visible = {}
     _cache_ts = 0
 
 # Standard providers that require model validation against registry
@@ -235,6 +237,7 @@ class PlatformKeyService:
         new_base_urls = {}
         new_auth_types = {}
         new_default = None
+        new_user_visible = {}
         for k in keys:
             try:
                 new_cache[k.provider.value] = decrypt_key(k.api_key_encrypted)
@@ -243,17 +246,19 @@ class PlatformKeyService:
                 if k.base_url:
                     new_base_urls[k.provider.value] = k.base_url
                 new_auth_types[k.provider.value] = k.auth_type.value if k.auth_type else "api_key"
+                new_user_visible[k.provider.value] = k.user_visible
                 if k.is_default:
                     new_default = k.provider.value
             except Exception as e:
                 logger.error(f"Failed to decrypt platform key {k.id}: {e}")
 
-        global _cache_models, _cache_base_urls, _cache_auth_types, _cache_default
+        global _cache_models, _cache_base_urls, _cache_auth_types, _cache_default, _cache_user_visible
         _cache = new_cache
         _cache_models = new_models
         _cache_base_urls = new_base_urls
         _cache_auth_types = new_auth_types
         _cache_default = new_default
+        _cache_user_visible = new_user_visible
         _cache_ts = time.time()
         return dict(_cache)
 
@@ -276,6 +281,28 @@ class PlatformKeyService:
         """Get the default provider name. Cached."""
         await self.get_all_active_keys()  # ensures cache is fresh
         return _cache_default
+
+    async def get_user_visible_providers(self) -> Dict[str, bool]:
+        """Get user_visible flags for active keys. Returns {provider: bool}. Cached."""
+        await self.get_all_active_keys()  # ensures cache is fresh
+        return dict(_cache_user_visible)
+
+    async def toggle_provider_visibility(self, provider: str, visible: bool) -> bool:
+        """Toggle user_visible on all keys for a provider."""
+        result = await self.db.execute(
+            select(PlatformApiKey).where(PlatformApiKey.provider == provider)
+        )
+        provider_keys = result.scalars().all()
+        if not provider_keys:
+            return False
+        await self.db.execute(
+            update(PlatformApiKey)
+            .where(PlatformApiKey.provider == provider)
+            .values(user_visible=visible)
+        )
+        await self.db.flush()
+        _invalidate_cache()
+        return True
 
     # ── Validation ────────────────────────────────────────────────────
 

@@ -274,6 +274,18 @@ export default function PlatformKeysTab() {
     }
   }
 
+  const handleToggleVisibility = async (provider: string, currentVisible: boolean) => {
+    try {
+      await admin.platformKeys.toggleProviderVisibility(provider, !currentVisible)
+      // Update local state — toggle user_visible on all keys of this provider
+      setKeys(prev => prev.map(k =>
+        k.provider === provider ? { ...k, user_visible: !currentVisible } : k
+      ))
+    } catch {
+      setError('Failed to toggle provider visibility')
+    }
+  }
+
   // Group keys by provider
   const keysByProvider = PROVIDERS.map(provider => ({
     provider,
@@ -744,9 +756,39 @@ export default function PlatformKeysTab() {
                               </span>
                             )}
                           </div>
-                          <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>
-                            {providerKeys.length} key{providerKeys.length !== 1 ? 's' : ''}
-                          </span>
+                          <div className="flex items-center gap-4">
+                            <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>
+                              {providerKeys.length} key{providerKeys.length !== 1 ? 's' : ''}
+                            </span>
+                            {/* User Visible toggle */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleToggleVisibility(provider, providerKeys[0]?.user_visible ?? true)
+                              }}
+                              className="flex items-center gap-2 text-xs"
+                              title={providerKeys[0]?.user_visible !== false ? 'Visible to users — click to hide' : 'Hidden from users — click to show'}
+                            >
+                              <span style={{ color: 'var(--app-text-muted)' }}>Users</span>
+                              <div
+                                className="relative w-8 h-4 rounded-full transition-colors cursor-pointer"
+                                style={{
+                                  backgroundColor: providerKeys[0]?.user_visible !== false
+                                    ? 'var(--app-accent-success)' : 'var(--app-bg-tertiary)',
+                                  border: '1px solid var(--app-border-default)',
+                                }}
+                              >
+                                <div
+                                  className="absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all"
+                                  style={{
+                                    backgroundColor: providerKeys[0]?.user_visible !== false
+                                      ? '#fff' : 'var(--app-text-muted)',
+                                    left: providerKeys[0]?.user_visible !== false ? '14px' : '2px',
+                                  }}
+                                />
+                              </div>
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>

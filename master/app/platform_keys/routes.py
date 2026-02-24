@@ -115,6 +115,21 @@ async def set_default_platform_key(
     return key
 
 
+@router.post("/provider/{provider}/visibility")
+async def toggle_provider_visibility(
+    provider: str,
+    visible: bool = Query(...),
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle whether a provider is visible to users in the notebook."""
+    service = PlatformKeyService(db)
+    success = await service.toggle_provider_visibility(provider, visible)
+    if not success:
+        raise HTTPException(status_code=404, detail="No keys found for this provider")
+    return {"provider": provider, "user_visible": visible}
+
+
 @router.post("/{key_id}/validate")
 async def validate_platform_key(
     key_id: str,
