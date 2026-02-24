@@ -21,8 +21,12 @@ from .schemas import (
     TokenResponse,
     RefreshRequest,
     PasswordChangeRequest,
+    ForgotPasswordRequest,
+    ValidateResetTokenRequest,
+    ResetPasswordRequest,
     MessageResponse,
 )
+from .password_reset_service import PasswordResetService
 from .dependencies import get_current_active_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -225,5 +229,56 @@ async def get_current_user_info(
     Get current authenticated user info.
     """
     return current_user
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Request a password reset email. Always returns 200 to prevent user enumeration.
+    """
+    service = PasswordResetService(db)
+    await service.request_reset(email=request.email, base_url=request.base_url)
+    await db.commit()
+    return MessageResponse(message="If that email is registered, we've sent a password reset link.")
+
+
+@router.post("/validate-reset-token")
+async def validate_reset_token(
+    request: ValidateResetTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Check whether a password reset token is still valid.
+    """
+    service = PasswordResetService(db)
+    try:
+        user = await service.validate_token(request.token)
+        # Mask email: show first char + *** + @domain
+        email = user.email
+        at_idx = email.index("@")
+        masked = email[0] + "***" + email[at_idx:]
+        return {"valid": True, "email": masked}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    request: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Reset password using a valid token. The new_password is SHA-256 hashed by the client.
+    """
+    service = PasswordResetService(db)
+    try:
+        await service.reset_password(raw_token=request.token, new_password_hash=request.new_password)
+        await db.commit()
+        return MessageResponse(message="Password reset successfully")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 

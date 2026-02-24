@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
+import Link from 'next/link'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 
@@ -193,6 +194,15 @@ function LoginForm() {
                   }}
                   placeholder="Enter your password"
                 />
+                <div className="mt-1.5 text-right">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-xs font-medium transition-colors hover:opacity-80"
+                    style={{ color: 'var(--app-accent-primary)' }}
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
             </div>
 

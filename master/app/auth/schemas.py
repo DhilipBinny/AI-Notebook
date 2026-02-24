@@ -7,8 +7,13 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
+SHA256_HEX_RE = re.compile(r'^[a-f0-9]{64}$')
+
+
 def validate_password_policy(v: str) -> str:
-    """Shared password policy validation."""
+    """Shared password policy validation. Skips checks for pre-hashed (SHA-256 hex) passwords."""
+    if SHA256_HEX_RE.match(v):
+        return v  # Pre-hashed from client, skip policy
     errors = []
     if len(v) < 8:
         errors.append('at least 8 characters')
@@ -60,6 +65,28 @@ class RefreshRequest(BaseModel):
 class PasswordChangeRequest(BaseModel):
     """Schema for password change request."""
     current_password: str
+    new_password: str = Field(..., min_length=8, max_length=100)
+
+    @field_validator('new_password')
+    @classmethod
+    def check_password(cls, v: str) -> str:
+        return validate_password_policy(v)
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request."""
+    email: EmailStr
+    base_url: str
+
+
+class ValidateResetTokenRequest(BaseModel):
+    """Schema for validating a password reset token."""
+    token: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for resetting password with a valid token."""
+    token: str
     new_password: str = Field(..., min_length=8, max_length=100)
 
     @field_validator('new_password')

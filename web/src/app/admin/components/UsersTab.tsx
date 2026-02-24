@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { admin } from '@/lib/api'
+import { hashPassword } from '@/lib/crypto'
 import type { CreditBalance } from '@/types'
 import { useAuthStore } from '@/lib/store'
 import type { AdminUser, AdminUserDetail } from '@/types'
@@ -193,7 +194,8 @@ export default function UsersTab() {
     }
     try {
       setActionLoading(resetPasswordUser.id)
-      await admin.users.resetPassword(resetPasswordUser.id, newPassword)
+      const hashedPassword = await hashPassword(newPassword)
+      await admin.users.resetPassword(resetPasswordUser.id, hashedPassword)
       showSuccess(`Password reset for ${resetPasswordUser.email}. All sessions revoked.`)
       setResetPasswordUser(null)
       setNewPassword('')

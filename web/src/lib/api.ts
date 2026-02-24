@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMModel, LLMModelBrief, LLMModelGrouped, NotebookTemplate, PlatformKey, SystemPrompt, AdminUser, AdminUserDetail, AdminUserListResponse } from '@/types'
+import { hashPassword } from '@/lib/crypto'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -177,12 +178,14 @@ api.interceptors.response.use(
 // Auth API
 export const auth = {
   register: async (email: string, password: string, invite_code?: string): Promise<AuthTokens> => {
-    const { data } = await api.post('/auth/register', { email, password, invite_code })
+    const hashedPassword = await hashPassword(password)
+    const { data } = await api.post('/auth/register', { email, password: hashedPassword, invite_code })
     return data
   },
 
   login: async (email: string, password: string): Promise<AuthTokens> => {
-    const { data } = await api.post('/auth/login', { email, password })
+    const hashedPassword = await hashPassword(password)
+    const { data } = await api.post('/auth/login', { email, password: hashedPassword })
     return data
   },
 
@@ -195,6 +198,22 @@ export const auth = {
 
   getMe: async (): Promise<User> => {
     const { data } = await api.get('/users/me')
+    return data
+  },
+
+  forgotPassword: async (email: string, base_url: string): Promise<{ message: string }> => {
+    const { data } = await api.post('/auth/forgot-password', { email, base_url })
+    return data
+  },
+
+  validateResetToken: async (token: string): Promise<{ valid: boolean; email: string }> => {
+    const { data } = await api.post('/auth/validate-reset-token', { token })
+    return data
+  },
+
+  resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
+    const hashedPassword = await hashPassword(newPassword)
+    const { data } = await api.post('/auth/reset-password', { token, new_password: hashedPassword })
     return data
   },
 }

@@ -27,6 +27,7 @@ from app.llm_models.models import LLMModel
 from app.templates.models import NotebookTemplate
 from app.platform_keys.models import PlatformApiKey
 from app.system_prompts.models import SystemPrompt
+from app.auth.password_reset_models import PasswordResetToken
 # Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
 
 # Import routers

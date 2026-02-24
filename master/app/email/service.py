@@ -169,6 +169,103 @@ class EmailService:
 </html>"""
 
     @staticmethod
+    async def send_password_reset(email: str, reset_link: str) -> None:
+        html_body = EmailService._build_password_reset_html(reset_link)
+        text_body = EmailService._build_password_reset_text(reset_link)
+        await EmailService.send_email(
+            to=email,
+            subject="Reset your password — AI Notebook",
+            html_body=html_body,
+            text_body=text_body,
+        )
+
+    @staticmethod
+    def send_password_reset_background(email: str, reset_link: str) -> None:
+        """Fire-and-forget: schedule password reset email as a background task."""
+        asyncio.create_task(
+            EmailService.send_password_reset(email, reset_link)
+        )
+
+    @staticmethod
+    def _build_password_reset_html(reset_link: str) -> str:
+        return f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px;">
+          <tr>
+            <td style="padding: 40px 40px 0 40px;">
+              <h1 style="margin: 0 0 8px 0; color: #1a1a1a; font-size: 20px; font-weight: 600;">Reset your password</h1>
+              <p style="margin: 0 0 24px 0; color: #666666; font-size: 15px; line-height: 1.5;">We received a request to reset your AI Notebook password. Click the button below to choose a new one.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 40px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding: 0 0 24px 0;">
+                    <a href="{reset_link}" style="display: inline-block; padding: 12px 24px; background-color: #4a90d9; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">Reset password</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 0 0 20px 0;">
+                    <p style="margin: 0; color: #e74c3c; font-size: 13px; font-weight: 500;">This link expires in 10 minutes.</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 0 0 32px 0;">
+                    <p style="margin: 0; color: #999999; font-size: 12px; line-height: 1.5;">If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="margin: 4px 0 0 0; word-break: break-all;"><a href="{reset_link}" style="color: #4a90d9; font-size: 12px; text-decoration: none;">{reset_link}</a></p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px; border-top: 1px solid #eeeeee;">
+              <p style="margin: 0; color: #999999; font-size: 12px;">AI Notebook</p>
+            </td>
+          </tr>
+        </table>
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding: 20px 40px 0 40px;">
+              <p style="margin: 0; color: #bbbbbb; font-size: 11px; line-height: 1.5;">If you didn't request a password reset, you can safely ignore this email. Your password will not be changed.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+    @staticmethod
+    def _build_password_reset_text(reset_link: str) -> str:
+        return "\n".join([
+            "Reset your password",
+            "",
+            "We received a request to reset your AI Notebook password.",
+            "",
+            "Reset your password:",
+            reset_link,
+            "",
+            "This link expires in 10 minutes.",
+            "",
+            "---",
+            "AI Notebook",
+            "",
+            "If you didn't request a password reset, you can safely ignore this email.",
+        ])
+
+    @staticmethod
     def _build_invitation_text(
         invite_link: str, note: Optional[str], expires_at: Optional[datetime]
     ) -> str:
