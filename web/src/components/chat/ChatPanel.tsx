@@ -70,22 +70,6 @@ const themeColors = {
     assistantBubble: 'var(--nb-bg-code-cell)',
     border: 'var(--nb-border-default)',
   },
-  obsidian: {
-    panelBg: 'var(--nb-bg-primary)',
-    headerBg: 'var(--nb-bg-secondary)',
-    messagesBg: 'var(--nb-bg-primary)',
-    inputBg: 'var(--nb-bg-secondary)',
-    assistantBubble: 'var(--nb-bg-secondary)',
-    border: 'var(--nb-border-default)',
-  },
-  latte: {
-    panelBg: 'var(--nb-bg-primary)',
-    headerBg: 'var(--nb-bg-secondary)',
-    messagesBg: 'var(--nb-bg-primary)',
-    inputBg: 'var(--nb-bg-secondary)',
-    assistantBubble: 'var(--nb-bg-code-cell)',
-    border: 'var(--nb-border-default)',
-  },
 }
 
 export default function ChatPanel({

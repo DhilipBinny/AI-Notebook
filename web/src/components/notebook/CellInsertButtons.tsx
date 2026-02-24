@@ -18,7 +18,7 @@ export default function CellInsertButtons({
 
   return (
     <div
-      className="relative h-6 flex items-center justify-center group"
+      className="relative h-3 flex items-center justify-center group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
