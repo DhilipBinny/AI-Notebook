@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { admin, credits } from '@/lib/api'
+import { admin } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import type { LLMModel } from '@/types'
+import { Edit3, Trash2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
+import type { LLMModel, PlatformKey } from '@/types'
 
 const PROVIDERS = ['openai', 'anthropic', 'gemini', 'openai_compatible'] as const
 
@@ -36,6 +38,7 @@ export default function CreditsTab() {
   // Inline editing
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState({
+    model_id: '',
     display_name: '',
     context_window: '' as string,
     max_output_tokens: '' as string,
@@ -48,12 +51,31 @@ export default function CreditsTab() {
   })
   const [isSavingModel, setIsSavingModel] = useState(false)
 
+  // Pagination
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(15)
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<LLMModel | null>(null)
+  const [affectedKeys, setAffectedKeys] = useState<PlatformKey[]>([])
+
+  const openDeleteModal = async (row: LLMModel) => {
+    setDeleteTarget(row)
+    try {
+      const allKeys = await admin.platformKeys.list()
+      const affected = allKeys.filter(k => k.provider === row.provider && k.model_name === row.model_id && k.is_active)
+      setAffectedKeys(affected)
+    } catch {
+      setAffectedKeys([])
+    }
+  }
+
   const user = useAuthStore((state) => state.user)
 
   const fetchModels = useCallback(async () => {
     try {
       setIsLoadingModels(true)
-      const data = await credits.getPricing()
+      const data = await admin.models.list()
       setModelRegistry(data)
     } catch {
       setModelsError('Failed to load model registry')
@@ -128,16 +150,20 @@ export default function CreditsTab() {
     }
   }
 
-  const handleDeleteModel = async (row: LLMModel) => {
-    if (!confirm(`Delete model "${row.display_name}" (${row.provider}/${row.model_id})?`)) return
+  const confirmDeleteModel = async () => {
+    if (!deleteTarget) return
     try {
-      await admin.models.delete(row.id)
-      setModelsSuccess(row.is_custom ? 'Model deleted' : 'Model deactivated')
+      await admin.models.delete(deleteTarget.id)
+      setModelsSuccess('Model deactivated')
+      setDeleteTarget(null)
+      setAffectedKeys([])
       fetchModels()
       fetchWarnings()
       setTimeout(() => setModelsSuccess(''), 3000)
     } catch {
       setModelsError('Failed to delete model')
+      setDeleteTarget(null)
+      setAffectedKeys([])
     }
   }
 
@@ -145,6 +171,7 @@ export default function CreditsTab() {
   const startEditing = (row: LLMModel) => {
     setEditingId(row.id)
     setEditForm({
+      model_id: row.model_id,
       display_name: row.display_name,
       context_window: row.context_window?.toString() || '',
       max_output_tokens: row.max_output_tokens?.toString() || '',
@@ -165,6 +192,7 @@ export default function CreditsTab() {
     try {
       setIsSavingModel(true)
       await admin.models.update(row.id, {
+        model_id: editForm.model_id || undefined,
         display_name: editForm.display_name || undefined,
         context_window: editForm.context_window ? parseInt(editForm.context_window) : undefined,
         max_output_tokens: editForm.max_output_tokens ? parseInt(editForm.max_output_tokens) : undefined,
@@ -192,6 +220,12 @@ export default function CreditsTab() {
     if (ctx >= 1000000) return `${(ctx / 1000000).toFixed(1)}M`
     return `${Math.round(ctx / 1000)}K`
   }
+
+  const totalModels = modelRegistry.length
+  const totalPages = Math.ceil(totalModels / pageSize)
+  const startIdx = (page - 1) * pageSize
+  const endIdx = Math.min(startIdx + pageSize, totalModels)
+  const paginatedModels = modelRegistry.slice(startIdx, endIdx)
 
   const inputStyle = {
     backgroundColor: 'var(--app-bg-input)',
@@ -243,7 +277,7 @@ export default function CreditsTab() {
           </div>
         )}
         {modelsSuccess && (
-          <div className="mx-6 mt-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+          <div className="mx-6 mt-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981' }}>
             {modelsSuccess}
           </div>
         )}
@@ -256,7 +290,7 @@ export default function CreditsTab() {
               {/* Row 1: Provider, Model ID, Display Name */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Provider</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Provider</label>
                   <select
                     value={createModelForm.provider}
                     onChange={(e) => setCreateModelForm({ ...createModelForm, provider: e.target.value })}
@@ -269,7 +303,7 @@ export default function CreditsTab() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Model ID</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Model ID</label>
                   <input
                     type="text"
                     value={createModelForm.model_id}
@@ -281,7 +315,7 @@ export default function CreditsTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Display Name</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Display Name</label>
                   <input
                     type="text"
                     value={createModelForm.display_name}
@@ -297,7 +331,7 @@ export default function CreditsTab() {
               {/* Row 2: Capabilities */}
               <div className="grid grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Context Window</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Context Window</label>
                   <input
                     type="number"
                     value={createModelForm.context_window}
@@ -308,7 +342,7 @@ export default function CreditsTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Max Output Tokens</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Max Output Tokens</label>
                   <input
                     type="number"
                     value={createModelForm.max_output_tokens}
@@ -343,7 +377,7 @@ export default function CreditsTab() {
               {/* Row 3: Pricing */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Input Cost/1M (cents)</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Input Cost/1M (cents)</label>
                   <input
                     type="number"
                     value={createModelForm.input_cost_per_1m_cents}
@@ -353,7 +387,7 @@ export default function CreditsTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Output Cost/1M (cents)</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Output Cost/1M (cents)</label>
                   <input
                     type="number"
                     value={createModelForm.output_cost_per_1m_cents}
@@ -363,7 +397,7 @@ export default function CreditsTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--app-text-muted)' }}>Margin Multiplier</label>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Margin Multiplier</label>
                   <input
                     type="number"
                     step="0.01"
@@ -393,12 +427,14 @@ export default function CreditsTab() {
         ) : modelRegistry.length === 0 ? (
           <div className="p-8 text-center" style={{ color: 'var(--app-text-muted)' }}>No models in registry. Click &quot;Add Model&quot; to get started.</div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--app-border-default)' }}>
                   <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Provider</th>
-                  <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Model</th>
+                  <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Model ID</th>
+                  <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Display Name</th>
                   <th className="text-center px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Capabilities</th>
                   <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Input/1M</th>
                   <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Output/1M</th>
@@ -408,7 +444,7 @@ export default function CreditsTab() {
                 </tr>
               </thead>
               <tbody>
-                {modelRegistry.map((row) => (
+                {paginatedModels.map((row) => (
                   <tr key={row.id} style={{ borderBottom: '1px solid var(--app-border-default)' }}>
                     {editingId === row.id ? (
                       <>
@@ -416,12 +452,22 @@ export default function CreditsTab() {
                         <td className="px-4 py-3">
                           <input
                             type="text"
+                            value={editForm.model_id}
+                            onChange={(e) => setEditForm({ ...editForm, model_id: e.target.value })}
+                            className="w-full px-2 py-1 rounded text-sm font-mono focus:outline-none"
+                            style={inputStyle}
+                            placeholder="model_id"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
                             value={editForm.display_name}
                             onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })}
-                            className="w-full px-2 py-1 rounded text-sm focus:outline-none mb-1"
+                            className="w-full px-2 py-1 rounded text-sm focus:outline-none"
                             style={inputStyle}
+                            placeholder="Display name"
                           />
-                          <div className="font-mono text-xs" style={{ color: 'var(--app-text-muted)' }}>{row.model_id}</div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="space-y-1.5">
@@ -446,7 +492,7 @@ export default function CreditsTab() {
                               />
                             </div>
                             <div className="flex gap-3">
-                              <label className="flex items-center gap-1 text-[10px] cursor-pointer" style={{ color: 'var(--app-text-secondary)' }}>
+                              <label className="flex items-center gap-1 text-xs cursor-pointer" style={{ color: 'var(--app-text-secondary)' }}>
                                 <input
                                   type="checkbox"
                                   checked={editForm.supports_vision}
@@ -455,7 +501,7 @@ export default function CreditsTab() {
                                 />
                                 vision
                               </label>
-                              <label className="flex items-center gap-1 text-[10px] cursor-pointer" style={{ color: 'var(--app-text-secondary)' }}>
+                              <label className="flex items-center gap-1 text-xs cursor-pointer" style={{ color: 'var(--app-text-secondary)' }}>
                                 <input
                                   type="checkbox"
                                   checked={editForm.supports_function_calling}
@@ -498,12 +544,17 @@ export default function CreditsTab() {
                           />
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={editForm.is_active}
-                            onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
-                            className="rounded"
-                          />
+                          <button
+                            type="button"
+                            className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                            style={{ backgroundColor: editForm.is_active ? 'var(--app-accent-success)' : 'var(--app-text-muted)', opacity: 0.85 }}
+                            onClick={() => setEditForm({ ...editForm, is_active: !editForm.is_active })}
+                          >
+                            <span
+                              className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+                              style={{ transform: editForm.is_active ? 'translateX(18px)' : 'translateX(3px)' }}
+                            />
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex gap-2 justify-end">
@@ -529,33 +580,35 @@ export default function CreditsTab() {
                       <>
                         <td className="px-4 py-3" style={{ color: 'var(--app-text-primary)' }}>{row.provider}</td>
                         <td className="px-4 py-3">
+                          <div className="font-mono text-sm" style={{ color: 'var(--app-text-primary)' }}>{row.model_id}</div>
+                        </td>
+                        <td className="px-4 py-3">
                           <div style={{ color: 'var(--app-text-primary)' }}>{row.display_name}</div>
-                          <div className="font-mono text-xs" style={{ color: 'var(--app-text-muted)' }}>{row.model_id}</div>
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-wrap gap-1 justify-center">
                             {row.context_window && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
                                 {formatContextWindow(row.context_window)}
                               </span>
                             )}
                             {row.max_output_tokens && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
                                 out:{formatContextWindow(row.max_output_tokens)}
                               </span>
                             )}
                             {row.supports_vision && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
                                 vision
                               </span>
                             )}
                             {row.supports_function_calling && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
                                 tools
                               </span>
                             )}
                             {row.is_custom && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
                                 custom
                               </span>
                             )}
@@ -571,32 +624,44 @@ export default function CreditsTab() {
                           {row.margin_multiplier.toFixed(2)}x
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span
-                            className="px-2 py-0.5 rounded text-xs font-medium"
-                            style={{ color: row.is_active ? '#10b981' : 'var(--app-text-muted)' }}
+                          <button
+                            className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                            style={{ backgroundColor: row.is_active ? 'var(--app-accent-success)' : 'var(--app-text-muted)', opacity: 0.85 }}
+                            title={row.is_active ? 'Active' : 'Inactive'}
+                            onClick={() => {
+                              admin.models.update(row.id, { is_active: !row.is_active }).then(() => {
+                                fetchModels()
+                                fetchWarnings()
+                              })
+                            }}
                           >
-                            {row.is_active ? 'Yes' : 'No'}
-                          </span>
+                            <span
+                              className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+                              style={{ transform: row.is_active ? 'translateX(18px)' : 'translateX(3px)' }}
+                            />
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex gap-2 justify-end">
+                          <div className="flex gap-1.5 justify-end">
                             <button
                               onClick={() => startEditing(row)}
-                              className="px-2 py-1 rounded text-xs transition-colors"
-                              style={{
-                                backgroundColor: 'var(--app-bg-tertiary)',
-                                color: 'var(--app-text-secondary)',
-                                border: '1px solid var(--app-border-default)',
-                              }}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ color: 'var(--app-text-muted)' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'; e.currentTarget.style.color = 'var(--app-text-primary)' }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--app-text-muted)' }}
+                              title="Edit"
                             >
-                              Edit
+                              <Edit3 className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDeleteModel(row)}
-                              className="px-2 py-1 rounded text-xs transition-colors"
-                              style={{ color: 'var(--app-accent-error)' }}
+                              onClick={() => openDeleteModal(row)}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ color: 'var(--app-text-muted)' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--app-accent-error)' }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--app-text-muted)' }}
+                              title="Delete"
                             >
-                              {row.is_custom ? 'Delete' : 'Deactivate'}
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </td>
@@ -607,8 +672,124 @@ export default function CreditsTab() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalModels > 0 && (
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderTop: '1px solid var(--app-border-default)' }}>
+              <span className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
+                Showing {startIdx + 1}-{endIdx} of {totalModels}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page <= 1}
+                  className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-30"
+                  style={{
+                    backgroundColor: 'var(--app-bg-tertiary)',
+                    color: 'var(--app-text-secondary)',
+                    border: '1px solid var(--app-border-default)',
+                  }}
+                >
+                  Prev
+                </button>
+                <span className="px-3 py-1.5 text-xs" style={{ color: 'var(--app-text-secondary)' }}>
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  disabled={page >= totalPages}
+                  className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-30"
+                  style={{
+                    backgroundColor: 'var(--app-bg-tertiary)',
+                    color: 'var(--app-text-secondary)',
+                    border: '1px solid var(--app-border-default)',
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}>
+          <div
+            className="w-full max-w-md rounded-xl p-6 shadow-2xl"
+            style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+                <Trash2 className="w-5 h-5" style={{ color: 'var(--app-accent-error)' }} />
+              </div>
+              <h3 className="text-lg font-medium" style={{ color: 'var(--app-text-primary)' }}>
+                Deactivate Model
+              </h3>
+            </div>
+            <p className="text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>
+              Are you sure you want to deactivate this model?
+            </p>
+            <p className="text-sm font-medium mb-1" style={{ color: 'var(--app-text-primary)' }}>
+              {deleteTarget.display_name}
+            </p>
+            <p className="text-xs font-mono mb-4" style={{ color: 'var(--app-text-muted)' }}>
+              {deleteTarget.provider} / {deleteTarget.model_id}
+            </p>
+            {affectedKeys.length > 0 && (
+              <div
+                className="mb-5 p-3 rounded-lg text-sm"
+                style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4" style={{ color: 'var(--app-accent-warning)' }} />
+                  <span className="font-medium" style={{ color: 'var(--app-accent-warning)' }}>
+                    {affectedKeys.length} active platform key{affectedKeys.length !== 1 ? 's' : ''} use{affectedKeys.length === 1 ? 's' : ''} this model
+                  </span>
+                </div>
+                <ul className="space-y-1 ml-6">
+                  {affectedKeys.map(k => (
+                    <li key={k.id} className="text-xs" style={{ color: 'var(--app-text-secondary)' }}>
+                      <span className="font-medium" style={{ color: 'var(--app-text-primary)' }}>{k.label}</span>
+                      {k.is_default && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', color: 'var(--app-accent-indigo)' }}>
+                          DEFAULT
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs mt-2" style={{ color: 'var(--app-text-muted)' }}>
+                  Deactivating will make {affectedKeys.length === 1 ? 'this key' : 'these keys'} non-functional.
+                </p>
+              </div>
+            )}
+            {affectedKeys.length === 0 && <div className="mb-5" />}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setDeleteTarget(null); setAffectedKeys([]) }}
+                className="px-4 py-2 rounded-lg text-sm transition-colors"
+                style={{
+                  backgroundColor: 'var(--app-bg-tertiary)',
+                  color: 'var(--app-text-secondary)',
+                  border: '1px solid var(--app-border-default)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteModel}
+                className="px-4 py-2 rounded-lg text-sm text-white transition-colors"
+                style={{ backgroundColor: 'var(--app-accent-error)' }}
+              >
+                Deactivate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

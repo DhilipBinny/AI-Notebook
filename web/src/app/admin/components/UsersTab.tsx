@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { admin } from '@/lib/api'
 import type { CreditBalance } from '@/types'
 import { useAuthStore } from '@/lib/store'
@@ -236,16 +237,12 @@ export default function UsersTab() {
       setError('Amount must be a non-zero integer (cents)')
       return
     }
-    if (!adjustReason.trim()) {
-      setError('Reason is required')
-      return
-    }
     try {
       setActionLoading(userId)
       const result: CreditBalance = await admin.credits.adjust({
         user_id: userId,
         amount_cents: amount,
-        reason: adjustReason.trim(),
+        reason: adjustReason.trim() || undefined,
       })
       showSuccess(`Credits adjusted. New balance: $${result.balance_dollars.toFixed(2)}`)
       setEditingCredits(false)
@@ -267,8 +264,8 @@ export default function UsersTab() {
   const endIdx = Math.min(page * pageSize, total)
 
   const SortIcon = ({ col }: { col: string }) => {
-    if (sortBy !== col) return <span className="ml-1 opacity-30">&#8597;</span>
-    return <span className="ml-1">{sortOrder === 'asc' ? '&#9650;' : '&#9660;'}</span>
+    if (sortBy !== col) return <span className="ml-1 opacity-30">{'\u2195'}</span>
+    return <span className="ml-1">{sortOrder === 'asc' ? '\u25B2' : '\u25BC'}</span>
   }
 
   return (
@@ -313,19 +310,19 @@ export default function UsersTab() {
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
           {successMsg}
         </div>
       )}
 
-      {/* Reset Password Modal */}
-      {resetPasswordUser && (
+      {/* Reset Password Modal (portal to body) */}
+      {resetPasswordUser && createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => { setResetPasswordUser(null); setNewPassword(''); setConfirmPassword('') }}
           />
-          <div className="relative w-full max-w-md rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
+          <div className="relative w-full max-w-md rounded-xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
             <h3 className="text-lg font-bold mb-1" style={{ color: 'var(--app-text-primary)' }}>
               Reset Password
             </h3>
@@ -362,7 +359,7 @@ export default function UsersTab() {
                   style={{ backgroundColor: 'var(--app-bg-input)', border: `1px solid ${confirmPassword && !passwordsMatch ? 'rgba(239, 68, 68, 0.5)' : 'var(--app-border-default)'}`, color: 'var(--app-text-primary)' }}
                 />
                 {confirmPassword && !passwordsMatch && (
-                  <p className="text-xs mt-1" style={{ color: '#ef4444' }}>Passwords do not match</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--app-accent-error)' }}>Passwords do not match</p>
                 )}
               </div>
 
@@ -379,7 +376,7 @@ export default function UsersTab() {
                     ].map((rule) => (
                       <div key={rule.label} className="flex items-center gap-1.5">
                         <span className="text-xs">{rule.met ? '\u2705' : '\u274C'}</span>
-                        <span className="text-xs" style={{ color: rule.met ? '#10b981' : 'var(--app-text-muted)' }}>
+                        <span className="text-xs" style={{ color: rule.met ? 'var(--app-accent-success)' : 'var(--app-text-muted)' }}>
                           {rule.label}
                         </span>
                       </div>
@@ -388,7 +385,7 @@ export default function UsersTab() {
                 </div>
               )}
 
-              <div className="p-3 rounded-lg text-xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
+              <div className="p-3 rounded-lg text-xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', color: 'var(--app-accent-warning)' }}>
                 This will revoke all active sessions. The user will need to log in again.
               </div>
 
@@ -414,11 +411,12 @@ export default function UsersTab() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Slide-out Drawer */}
-      {drawerUser && (
+      {/* Slide-out Drawer (portal to body) */}
+      {drawerUser && createPortal(
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeDrawer} />
           <div
@@ -441,7 +439,7 @@ export default function UsersTab() {
 
             {loadingDrawer ? (
               <div className="p-8 text-center">
-                <div className="w-8 h-8 border-3 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-3" />
+                <div className="w-8 h-8 rounded-full animate-spin mx-auto mb-3" style={{ borderWidth: '3px', borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }} />
                 <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>Loading user details...</p>
               </div>
             ) : (
@@ -464,7 +462,7 @@ export default function UsersTab() {
                         className="px-2 py-0.5 rounded text-xs font-medium"
                         style={{
                           backgroundColor: drawerUser.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                          color: drawerUser.is_active ? '#10b981' : '#ef4444',
+                          color: drawerUser.is_active ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                         }}
                       >
                         {drawerUser.is_active ? 'Active' : 'Inactive'}
@@ -473,7 +471,7 @@ export default function UsersTab() {
                         className="px-2 py-0.5 rounded text-xs font-medium"
                         style={{
                           backgroundColor: drawerUser.is_admin ? 'rgba(99, 102, 241, 0.15)' : 'var(--app-bg-tertiary)',
-                          color: drawerUser.is_admin ? '#818cf8' : 'var(--app-text-muted)',
+                          color: drawerUser.is_admin ? 'var(--app-accent-indigo)' : 'var(--app-text-muted)',
                         }}
                       >
                         {drawerUser.is_admin ? 'Admin' : 'User'}
@@ -546,7 +544,7 @@ export default function UsersTab() {
                         className="h-full rounded-full transition-all"
                         style={{
                           width: `${Math.min(((drawerDetail.project_count ?? 0) / drawerUser.max_projects) * 100, 100)}%`,
-                          backgroundColor: (drawerDetail.project_count ?? 0) >= drawerUser.max_projects ? '#ef4444' : '#3b82f6',
+                          backgroundColor: (drawerDetail.project_count ?? 0) >= drawerUser.max_projects ? 'var(--app-accent-error)' : 'var(--app-accent-primary)',
                         }}
                       />
                     </div>
@@ -596,7 +594,7 @@ export default function UsersTab() {
                       <button
                         onClick={() => { setEditingCredits(true); setAdjustAmount(''); setAdjustReason('') }}
                         className="text-xs px-2 py-1 rounded-lg transition-colors hover:opacity-80"
-                        style={{ color: '#10b981' }}
+                        style={{ color: 'var(--app-accent-success)' }}
                       >
                         Adjust
                       </button>
@@ -607,8 +605,8 @@ export default function UsersTab() {
                   </p>
                   {drawerDetail && (
                     <div className="flex gap-4 mt-2 text-xs" style={{ color: 'var(--app-text-muted)' }}>
-                      <span>Deposited: <span style={{ color: '#10b981' }}>${(drawerDetail.total_deposited_cents / 100).toFixed(2)}</span></span>
-                      <span>Used: <span style={{ color: '#f59e0b' }}>${(drawerDetail.total_consumed_cents / 100).toFixed(2)}</span></span>
+                      <span>Deposited: <span style={{ color: 'var(--app-accent-success)' }}>${(drawerDetail.total_deposited_cents / 100).toFixed(2)}</span></span>
+                      <span>Used: <span style={{ color: 'var(--app-accent-warning)' }}>${(drawerDetail.total_consumed_cents / 100).toFixed(2)}</span></span>
                     </div>
                   )}
                   {/* Inline adjust */}
@@ -632,7 +630,7 @@ export default function UsersTab() {
                             type="text"
                             value={adjustReason}
                             onChange={(e) => setAdjustReason(e.target.value)}
-                            placeholder="e.g. Bonus credit"
+                            placeholder="e.g. Bonus credit (optional)"
                             className="w-full px-2 py-1.5 rounded-lg text-sm focus:outline-none"
                             style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                           />
@@ -676,7 +674,7 @@ export default function UsersTab() {
                       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                     >
-                      <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#f59e0b' }}>
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--app-accent-warning)' }}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                       </svg>
                       Reset Password
@@ -690,7 +688,7 @@ export default function UsersTab() {
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                   >
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: '#818cf8' }}>
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--app-accent-indigo)' }}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                     </svg>
                     {drawerUser.is_admin ? 'Remove Admin Role' : 'Grant Admin Role'}
@@ -699,7 +697,7 @@ export default function UsersTab() {
                     onClick={() => handleToggleActive(drawerUser)}
                     disabled={actionLoading === drawerUser.id || drawerUser.id === user?.id}
                     className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: 'var(--app-bg-card)', color: drawerUser.is_active ? '#ef4444' : '#10b981' }}
+                    style={{ backgroundColor: 'var(--app-bg-card)', color: drawerUser.is_active ? 'var(--app-accent-error)' : 'var(--app-accent-success)' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                   >
@@ -716,7 +714,8 @@ export default function UsersTab() {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Users Table */}
@@ -741,7 +740,27 @@ export default function UsersTab() {
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Status</th>
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Role</th>
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Provider</th>
-                    <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--app-text-secondary)' }}>Credits</th>
+                    <th
+                      className="text-right px-4 py-3 font-medium cursor-pointer select-none"
+                      style={{ color: 'var(--app-text-secondary)' }}
+                      onClick={() => handleSort('total_deposited_cents')}
+                    >
+                      Deposited <SortIcon col="total_deposited_cents" />
+                    </th>
+                    <th
+                      className="text-right px-4 py-3 font-medium cursor-pointer select-none"
+                      style={{ color: 'var(--app-text-secondary)' }}
+                      onClick={() => handleSort('total_consumed_cents')}
+                    >
+                      Consumed <SortIcon col="total_consumed_cents" />
+                    </th>
+                    <th
+                      className="text-center px-4 py-3 font-medium cursor-pointer select-none"
+                      style={{ color: 'var(--app-text-secondary)' }}
+                      onClick={() => handleSort('project_count')}
+                    >
+                      Projects <SortIcon col="project_count" />
+                    </th>
                     <th
                       className="text-left px-4 py-3 font-medium cursor-pointer select-none"
                       style={{ color: 'var(--app-text-secondary)' }}
@@ -760,7 +779,7 @@ export default function UsersTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {users.map((u, idx) => (
                     <tr
                       key={u.id}
                       className="cursor-pointer transition-colors"
@@ -782,7 +801,7 @@ export default function UsersTab() {
                           className="px-2 py-0.5 rounded text-xs font-medium"
                           style={{
                             backgroundColor: u.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                            color: u.is_active ? '#10b981' : '#ef4444',
+                            color: u.is_active ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                           }}
                         >
                           {u.is_active ? 'Active' : 'Inactive'}
@@ -793,7 +812,7 @@ export default function UsersTab() {
                           className="px-2 py-0.5 rounded text-xs font-medium"
                           style={{
                             backgroundColor: u.is_admin ? 'rgba(99, 102, 241, 0.15)' : 'var(--app-bg-tertiary)',
-                            color: u.is_admin ? '#818cf8' : 'var(--app-text-muted)',
+                            color: u.is_admin ? 'var(--app-accent-indigo)' : 'var(--app-text-muted)',
                           }}
                         >
                           {u.is_admin ? 'Admin' : 'User'}
@@ -804,8 +823,15 @@ export default function UsersTab() {
                           {u.oauth_provider}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs" style={{ color: 'var(--app-text-secondary)' }}>
-                        ${((u.credit_balance_cents || 0) / 100).toFixed(2)}
+                      <td className="px-4 py-3 text-right font-mono text-xs" style={{ color: 'var(--app-accent-success)' }}>
+                        ${((u.total_deposited_cents || 0) / 100).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs" style={{ color: 'var(--app-accent-warning)' }}>
+                        ${((u.total_consumed_cents || 0) / 100).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs" style={{ color: 'var(--app-text-secondary)' }}>
+                        <span className="font-mono">{u.project_count ?? 0}</span>
+                        <span style={{ color: 'var(--app-text-muted)' }}> / {u.max_projects}</span>
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--app-text-muted)' }}>
                         {new Date(u.created_at).toLocaleDateString()}
@@ -830,7 +856,7 @@ export default function UsersTab() {
 
                           {openMenuId === u.id && (
                             <div
-                              className="absolute right-0 top-full mt-1 w-48 rounded-xl shadow-xl z-20 py-1 overflow-hidden"
+                              className={`absolute right-0 w-48 rounded-xl shadow-xl z-20 py-1 overflow-hidden ${idx >= users.length - 2 ? 'bottom-full mb-1' : 'top-full mt-1'}`}
                               style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}
                             >
                               {u.oauth_provider === 'local' && (
@@ -842,7 +868,7 @@ export default function UsersTab() {
                                     setOpenMenuId(null)
                                   }}
                                   className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors"
-                                  style={{ color: '#f59e0b' }}
+                                  style={{ color: 'var(--app-accent-warning)' }}
                                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                 >
@@ -856,7 +882,7 @@ export default function UsersTab() {
                                 onClick={() => { handleToggleAdmin(u); setOpenMenuId(null) }}
                                 disabled={actionLoading === u.id || u.id === user?.id}
                                 className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50"
-                                style={{ color: '#818cf8' }}
+                                style={{ color: 'var(--app-accent-indigo)' }}
                                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >
@@ -870,7 +896,7 @@ export default function UsersTab() {
                                 onClick={() => { handleToggleActive(u); setOpenMenuId(null) }}
                                 disabled={actionLoading === u.id || u.id === user?.id}
                                 className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50"
-                                style={{ color: u.is_active ? '#ef4444' : '#10b981' }}
+                                style={{ color: u.is_active ? 'var(--app-accent-error)' : 'var(--app-accent-success)' }}
                                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
                                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >

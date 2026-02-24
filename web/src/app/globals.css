@@ -75,7 +75,7 @@
   --app-bg-tertiary: #181825;
   --app-bg-card: rgba(255, 255, 255, 0.05);
   --app-bg-card-hover: rgba(255, 255, 255, 0.1);
-  --app-bg-input: rgba(255, 255, 255, 0.05);
+  --app-bg-input: #252736;
   --app-bg-overlay: rgba(0, 0, 0, 0.6);
 
   /* App-wide borders */
@@ -86,8 +86,8 @@
   /* App-wide text */
   --app-text-primary: #cdd6f4;
   --app-text-secondary: #bac2de;
-  --app-text-muted: #6c7086;
-  --app-text-placeholder: #6c7086;
+  --app-text-muted: #7f849c;
+  --app-text-placeholder: #7f849c;
 
   /* App-wide accents - Blue/Teal */
   --app-accent-primary: #89b4fa;
@@ -96,6 +96,7 @@
   --app-accent-error: #f38ba8;
   --app-accent-warning: #fab387;
   --app-accent-info: #89dceb;
+  --app-accent-indigo: #b4befe;
 
   /* Gradients - Blue to Teal */
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
@@ -130,29 +131,29 @@
   --nb-border-selected: #89b4fa;
   --nb-border-code: #45475a;
   --nb-border-markdown: #45475a;
-  --nb-border-ai: rgba(139, 92, 246, 0.35);
+  --nb-border-ai: rgba(180, 170, 155, 0.25);
 
   /* Notebook text - off-white for reduced glare */
   --nb-text-primary: #cdd6f4;      /* Main text - Catppuccin text */
   --nb-text-secondary: #bac2de;    /* Secondary text */
-  --nb-text-muted: #6c7086;        /* Muted text */
+  --nb-text-muted: #7f849c;        /* Muted text */
   --nb-text-output: #cdd6f4;       /* Output text - softer than pure white */
 
   /* Notebook accents - Catppuccin Mocha inspired */
   --nb-accent-code: #89b4fa;       /* Blue */
   --nb-accent-markdown: #cba6f7;   /* Mauve */
-  --nb-accent-notes: #6c7086;      /* Overlay0 */
+  --nb-accent-notes: #7f849c;      /* Overlay0 */
   --nb-accent-success: #a6e3a1;    /* Green */
   --nb-accent-error: #f38ba8;      /* Red */
   --nb-accent-warning: #fab387;    /* Peach */
   --nb-accent-context: #94e2d5;    /* Teal */
-  --nb-accent-ai: #b4befe;         /* Lavender - slightly purple tint */
-  --nb-ai-sparkle: linear-gradient(135deg, #cba6f7 0%, #89b4fa 100%);  /* AI icon gradient */
+  --nb-accent-ai: #a8a29e;         /* Stone 400 */
+  --nb-ai-sparkle: linear-gradient(135deg, #a8a29e 0%, #d6d3d1 100%);  /* Stone to warm gray gradient */
 
   /* Cell indicators */
   --nb-cell-code-indicator: #89b4fa;
   --nb-cell-markdown-indicator: #cba6f7;
-  --nb-cell-notes-indicator: #6c7086;
+  --nb-cell-notes-indicator: #7f849c;
 
   /* Cell reference link colors */
   --nb-cell-ref-text: #94e2d5;           /* Teal - clickable cell reference */
@@ -163,7 +164,7 @@
   --syntax-keyword: #cba6f7;       /* Mauve */
   --syntax-string: #a6e3a1;        /* Green */
   --syntax-number: #fab387;        /* Peach */
-  --syntax-comment: #6c7086;       /* Overlay0 */
+  --syntax-comment: #7f849c;       /* Overlay0 */
   --syntax-function: #89b4fa;      /* Blue */
   --syntax-variable: #cdd6f4;      /* Text */
   --syntax-operator: #f38ba8;      /* Red */
@@ -199,6 +200,7 @@
   --app-accent-error: #ef4444;     /* Red 500 */
   --app-accent-warning: #f59e0b;   /* Amber 500 */
   --app-accent-info: #0ea5e9;      /* Sky 500 */
+  --app-accent-indigo: #818cf8;    /* Indigo 400 */
 
   /* Gradients - Same blue-teal style as dark theme */
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
@@ -225,7 +227,7 @@
   --nb-bg-raw-cell: #f8fafc;       /* Raw/notes cell */
   --nb-bg-output: #ffffff;         /* Output area - pure white */
   --nb-bg-header: #f1f5f9;         /* Header/toolbar */
-  --nb-bg-ai-cell: #faf5ff;        /* AI cell - subtle violet tint (violet-50) */
+  --nb-bg-ai-cell: #fafaf9;        /* AI cell - warm neutral (stone-50) */
   --nb-bg-selection: #bfdbfe;      /* Text selection - blue-200 */
 
   /* Notebook borders - Clean subtle borders */
@@ -233,7 +235,7 @@
   --nb-border-selected: #3b82f6;
   --nb-border-code: #cbd5e1;       /* Slate 300 - cooler gray for pop */
   --nb-border-markdown: #e2e8f0;
-  --nb-border-ai: rgba(124, 58, 237, 0.25);
+  --nb-border-ai: rgba(168, 162, 158, 0.30);
 
   /* Notebook text - High contrast for readability */
   --nb-text-primary: #1e293b;      /* Slate 800 */
@@ -249,11 +251,11 @@
   --nb-accent-error: #dc2626;      /* Red 600 */
   --nb-accent-warning: #d97706;    /* Amber 600 */
   --nb-accent-context: #0891b2;    /* Cyan 600 */
-  --nb-accent-ai: #8b5cf6;         /* Violet 500 */
-  --nb-ai-sparkle: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);  /* AI icon gradient */
+  --nb-accent-ai: #78716c;         /* Stone 500 */
+  --nb-ai-sparkle: linear-gradient(135deg, #78716c 0%, #a8a29e 100%);  /* Stone gradient */
 
-  /* Cell indicators - Slightly darker for visibility */
-  --nb-cell-code-indicator: #2563eb;
+  /* Cell indicators */
+  --nb-cell-code-indicator: #66b5dc;
   --nb-cell-markdown-indicator: #7c3aed;
   --nb-cell-notes-indicator: #64748b;
 
@@ -270,218 +272,6 @@
   --syntax-function: #2563eb;      /* Blue */
   --syntax-variable: #1e293b;      /* Slate 800 */
   --syntax-operator: #dc2626;      /* Red */
-  --syntax-class: #d97706;         /* Amber */
-}
-
-/* ============================================
-   OBSIDIAN PRO THEME - Industrial, Sharp, Achromatic
-   Best for: Deep focus, OLED screens, data visualization
-   ============================================ */
-[data-theme="obsidian"] {
-  /* App-wide backgrounds - Near-black zinc scale */
-  --app-bg-primary: #09090b;
-  --app-bg-secondary: #18181b;
-  --app-bg-tertiary: #27272a;
-  --app-bg-card: rgba(255, 255, 255, 0.03);
-  --app-bg-card-hover: rgba(255, 255, 255, 0.06);
-  --app-bg-input: rgba(255, 255, 255, 0.03);
-  --app-bg-overlay: rgba(0, 0, 0, 0.8);
-
-  /* App-wide borders - Subtle zinc */
-  --app-border-default: #27272a;
-  --app-border-subtle: #18181b;
-  --app-border-focus: #ffffff;
-
-  /* App-wide text - High contrast white */
-  --app-text-primary: #fafafa;
-  --app-text-secondary: #a1a1aa;
-  --app-text-muted: #52525b;
-  --app-text-placeholder: #52525b;
-
-  /* App-wide accents - Neon cyberpunk */
-  --app-accent-primary: #22d3ee;
-  --app-accent-secondary: #a855f7;
-  --app-accent-success: #4ade80;
-  --app-accent-error: #f87171;
-  --app-accent-warning: #fbbf24;
-  --app-accent-info: #38bdf8;
-
-  /* Gradients - Monochrome */
-  --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
-  --app-gradient-button: linear-gradient(135deg, #3f3f46 0%, #52525b 100%);
-  --app-gradient-success: linear-gradient(135deg, #4ade80 0%, #22d3ee 100%);
-
-  /* Divider text */
-  --app-text-divider: #71717a;
-  --app-border-divider: #27272a;
-
-  /* OAuth buttons - dark variant for obsidian theme */
-  --app-oauth-bg: #27272a;
-  --app-oauth-border: #3f3f46;
-  --app-oauth-text: #fafafa;
-  --app-oauth-hover: #3f3f46;
-
-  /* Notebook-specific backgrounds - Pure black canvas */
-  --nb-bg-primary: #09090b;        /* Near-black page */
-  --nb-bg-secondary: #18181b;      /* Zinc 900 toolbar */
-  --nb-bg-cell: #18181b;           /* Zinc 900 cell */
-  --nb-bg-code-cell: #18181b;      /* Zinc 900 */
-  --nb-bg-code-header: #27272a;    /* Zinc 800 header */
-  --nb-bg-markdown-cell: #18181b;
-  --nb-bg-raw-cell: #18181b;
-  --nb-bg-output: #000000;         /* Pure black for max contrast */
-  --nb-bg-header: #18181b;
-  --nb-bg-ai-cell: #111111;        /* Flat dark gray */
-  --nb-bg-selection: #262626;      /* Non-distracting selection */
-
-  /* Notebook borders - Minimal */
-  --nb-border-default: #27272a;
-  --nb-border-selected: #ffffff;   /* Pure white focus */
-  --nb-border-code: #27272a;
-  --nb-border-markdown: #27272a;
-  --nb-border-ai: rgba(250, 204, 21, 0.3);
-
-  /* Notebook text - Crisp white */
-  --nb-text-primary: #fafafa;
-  --nb-text-secondary: #a1a1aa;
-  --nb-text-muted: #52525b;
-  --nb-text-output: #fafafa;
-
-  /* Notebook accents - Neon pop */
-  --nb-accent-code: #22d3ee;       /* Cyan */
-  --nb-accent-markdown: #e879f9;   /* Fuchsia */
-  --nb-accent-notes: #52525b;
-  --nb-accent-success: #4ade80;    /* Green */
-  --nb-accent-error: #f87171;      /* Red */
-  --nb-accent-warning: #fbbf24;    /* Amber */
-  --nb-accent-context: #38bdf8;    /* Sky */
-  --nb-accent-ai: #facc15;         /* Neon Yellow */
-  --nb-ai-sparkle: linear-gradient(135deg, #facc15 0%, #22d3ee 100%);
-
-  /* Cell indicators - Neon */
-  --nb-cell-code-indicator: #22d3ee;
-  --nb-cell-markdown-indicator: #e879f9;
-  --nb-cell-notes-indicator: #52525b;
-
-  /* Cell reference link colors */
-  --nb-cell-ref-text: #22d3ee;           /* Cyan - neon accent */
-  --nb-cell-ref-bg: rgba(34, 211, 238, 0.15);
-  --nb-cell-ref-hover-bg: rgba(34, 211, 238, 0.25);
-
-  /* Syntax highlighting - Neon on black */
-  --syntax-keyword: #e879f9;       /* Fuchsia */
-  --syntax-string: #4ade80;        /* Green */
-  --syntax-number: #fbbf24;        /* Amber */
-  --syntax-comment: #52525b;       /* Zinc 600 */
-  --syntax-function: #22d3ee;      /* Cyan */
-  --syntax-variable: #fafafa;      /* White */
-  --syntax-operator: #f87171;      /* Red */
-  --syntax-class: #facc15;         /* Yellow */
-}
-
-/* ============================================
-   LATTE STUDIO THEME - Warm, Organic, Paper-like
-   Best for: Long reading sessions, documentation, reduced glare
-   ============================================ */
-[data-theme="latte"] {
-  /* App-wide backgrounds - Warm stone scale */
-  --app-bg-primary: #fdfbf7;       /* Warm white (paper) */
-  --app-bg-secondary: #f5f5f4;     /* Stone 100 */
-  --app-bg-tertiary: #e7e5e4;      /* Stone 200 */
-  --app-bg-card: rgba(255, 255, 255, 0.9);
-  --app-bg-card-hover: rgba(255, 255, 255, 1);
-  --app-bg-input: #ffffff;
-  --app-bg-overlay: rgba(68, 64, 60, 0.4);
-
-  /* App-wide borders - Warm stone */
-  --app-border-default: #e7e5e4;
-  --app-border-subtle: #f5f5f4;
-  --app-border-focus: #ea580c;
-
-  /* App-wide text - Warm charcoal */
-  --app-text-primary: #44403c;
-  --app-text-secondary: #78716c;
-  --app-text-muted: #a8a29e;
-  --app-text-placeholder: #a8a29e;
-
-  /* App-wide accents - Earth tones */
-  --app-accent-primary: #0d9488;   /* Teal */
-  --app-accent-secondary: #ea580c; /* Orange */
-  --app-accent-success: #16a34a;   /* Green */
-  --app-accent-error: #be123c;     /* Rose */
-  --app-accent-warning: #d97706;   /* Amber */
-  --app-accent-info: #0891b2;      /* Cyan */
-
-  /* Gradients - Warm earth */
-  --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
-  --app-gradient-button: linear-gradient(135deg, #14b8a6 0%, #f97316 100%);
-  --app-gradient-success: linear-gradient(135deg, #16a34a 0%, #0d9488 100%);
-
-  /* Divider text */
-  --app-text-divider: #78716c;
-  --app-border-divider: #d6d3d1;
-
-  /* OAuth buttons */
-  --app-oauth-bg: #ffffff;
-  --app-oauth-border: #d6d3d1;
-  --app-oauth-text: #44403c;
-  --app-oauth-hover: #fafaf9;
-
-  /* Notebook-specific backgrounds - Paper feel */
-  --nb-bg-primary: #fdfbf7;        /* Warm white page */
-  --nb-bg-secondary: #f5f5f4;      /* Stone 100 toolbar */
-  --nb-bg-cell: #f5f5f4;           /* Stone 100 */
-  --nb-bg-code-cell: #f5f5f4;      /* Stone 100 */
-  --nb-bg-code-header: #e7e5e4;    /* Stone 200 */
-  --nb-bg-markdown-cell: #f5f5f4;
-  --nb-bg-raw-cell: #f5f5f4;
-  --nb-bg-output: #ffffff;         /* Pure white paper */
-  --nb-bg-header: #f5f5f4;
-  --nb-bg-ai-cell: #fff1f2;        /* Rose 50 tint */
-  --nb-bg-selection: #e7e5e4;      /* Stone selection */
-
-  /* Notebook borders - Stone */
-  --nb-border-default: #e7e5e4;
-  --nb-border-selected: #ea580c;   /* Burnt orange focus */
-  --nb-border-code: #d6d3d1;       /* Stone 300 */
-  --nb-border-markdown: #e7e5e4;
-  --nb-border-ai: rgba(190, 18, 60, 0.25);
-
-  /* Notebook text - Warm charcoal */
-  --nb-text-primary: #44403c;
-  --nb-text-secondary: #78716c;
-  --nb-text-muted: #a8a29e;
-  --nb-text-output: #44403c;
-
-  /* Notebook accents - Earth tones */
-  --nb-accent-code: #0d9488;       /* Teal */
-  --nb-accent-markdown: #ea580c;   /* Orange */
-  --nb-accent-notes: #a8a29e;
-  --nb-accent-success: #16a34a;    /* Green */
-  --nb-accent-error: #be123c;      /* Rose */
-  --nb-accent-warning: #d97706;    /* Amber */
-  --nb-accent-context: #0891b2;    /* Cyan */
-  --nb-accent-ai: #be123c;         /* Rose */
-  --nb-ai-sparkle: linear-gradient(135deg, #be123c 0%, #ea580c 100%);
-
-  /* Cell indicators - Earth */
-  --nb-cell-code-indicator: #0d9488;
-  --nb-cell-markdown-indicator: #ea580c;
-  --nb-cell-notes-indicator: #a8a29e;
-
-  /* Cell reference link colors */
-  --nb-cell-ref-text: #0d9488;           /* Teal - earth tone accent */
-  --nb-cell-ref-bg: rgba(13, 148, 136, 0.1);
-  --nb-cell-ref-hover-bg: rgba(13, 148, 136, 0.2);
-
-  /* Syntax highlighting - Warm tones */
-  --syntax-keyword: #7c3aed;       /* Violet */
-  --syntax-string: #16a34a;        /* Green */
-  --syntax-number: #0891b2;        /* Cyan */
-  --syntax-comment: #a8a29e;       /* Stone 400 */
-  --syntax-function: #0d9488;      /* Teal */
-  --syntax-variable: #44403c;      /* Charcoal */
-  --syntax-operator: #be123c;      /* Rose */
   --syntax-class: #d97706;         /* Amber */
 }
 
@@ -531,29 +321,18 @@ body {
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
 }
 
-/* Dark theme markdown cell - transparent/document-like when rendered */
+/* Dark theme markdown cell */
 [data-theme="dark"] .cell-markdown {
   background-color: transparent;
-  border: 1px solid transparent;
+  border: 1px solid rgba(69, 71, 90, 0.4);
   border-radius: 8px;
 }
 
-[data-theme="dark"] .cell-markdown:hover {
-  background-color: rgba(30, 30, 46, 0.4);
-  border-color: rgba(69, 71, 90, 0.3);
-}
-
-/* When markdown is being edited, show card styling */
-[data-theme="dark"] .cell-markdown.cell-editing {
-  background-color: rgba(30, 30, 46, 0.8);
-  border-color: rgba(69, 71, 90, 0.6);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-/* Light theme code cell adjustments - elevated card on white page */
+/* Light theme code cell adjustments */
 [data-theme="light"] .cell-code {
-  background-color: #f8fafc;          /* Slate 50 - elevated from pure white page */
-  border: 1px solid #cbd5e1;          /* Slate 300 - cooler gray for pop */
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-left: 3px solid #66b5dc;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
@@ -563,194 +342,62 @@ body {
   border-bottom: 1px solid #e2e8f0;   /* Slate 200 */
 }
 
-/* Light theme markdown cell - transparent/document-like when rendered */
+/* Light theme markdown cell */
 [data-theme="light"] .cell-markdown {
   background-color: transparent;
-  border: 1px solid transparent;
+  border: 1px solid rgba(203, 213, 225, 0.5);
   border-radius: 8px;
 }
 
-[data-theme="light"] .cell-markdown:hover {
-  background-color: rgba(248, 250, 252, 0.8);  /* Slight Slate 50 tint */
-  border-color: rgba(203, 213, 225, 0.4);      /* Slate 300 border */
-}
-
-/* When markdown is being edited, show card styling */
-[data-theme="light"] .cell-markdown.cell-editing {
-  background-color: #f8fafc;          /* Match code cell */
-  border-color: #e2e8f0;              /* Slate 200 */
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-/* ============================================
-   OBSIDIAN THEME - Cell Overrides
-   ============================================ */
-[data-theme="obsidian"] .cell-code {
-  background-color: #18181b;
-  border: 1px solid #27272a;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-}
-
-[data-theme="obsidian"] .cell-code-header {
-  background-color: #27272a;
-  border-bottom: 1px solid #3f3f46;
-}
-
-[data-theme="obsidian"] .cell-markdown {
-  background-color: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-}
-
-[data-theme="obsidian"] .cell-markdown:hover {
-  background-color: rgba(24, 24, 27, 0.6);
-  border-color: rgba(39, 39, 42, 0.5);
-}
-
-[data-theme="obsidian"] .cell-markdown.cell-editing {
-  background-color: #18181b;
-  border-color: #27272a;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-}
-
-[data-theme="obsidian"] .cell-ai {
-  background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
-  border-color: rgba(250, 204, 21, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-}
-
-[data-theme="obsidian"] .cell-ai:hover {
-  border-color: rgba(250, 204, 21, 0.5);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-}
-
-[data-theme="obsidian"] .cell-ai-header {
-  background: linear-gradient(135deg, #27272a 0%, #3f3f46 100%);
-  border-bottom: 1px solid rgba(250, 204, 21, 0.2);
-}
-
-[data-theme="obsidian"] .cell-output {
-  background-color: #0f0f11;  /* 8% darker than code cell - deep black */
-  border-left-color: #27272a;
-  border-radius: 0 0 6px 6px;
-  margin: 0;
-  padding: 8px 12px;
-}
-
-[data-theme="obsidian"] .cell-wrapper textarea {
-  caret-color: #fafafa;
-}
-
-/* ============================================
-   LATTE THEME - Cell Overrides
-   ============================================ */
-[data-theme="latte"] .cell-code {
-  background-color: #f5f5f4;
-  border: 1px solid #d6d3d1;
-  box-shadow: 0 1px 3px rgba(68, 64, 60, 0.08);
-}
-
-[data-theme="latte"] .cell-code-header {
-  background-color: #e7e5e4;
-  border-bottom: 1px solid #d6d3d1;
-}
-
-[data-theme="latte"] .cell-markdown {
-  background-color: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-}
-
-[data-theme="latte"] .cell-markdown:hover {
-  background-color: rgba(245, 245, 244, 0.8);
-  border-color: rgba(214, 211, 209, 0.5);
-}
-
-[data-theme="latte"] .cell-markdown.cell-editing {
-  background-color: #f5f5f4;
-  border-color: #e7e5e4;
-  box-shadow: 0 1px 3px rgba(68, 64, 60, 0.08);
-}
-
-[data-theme="latte"] .cell-ai {
-  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
-  border-color: rgba(190, 18, 60, 0.25);
-  box-shadow: 0 2px 4px rgba(190, 18, 60, 0.08);
-}
-
-[data-theme="latte"] .cell-ai:hover {
-  border-color: rgba(190, 18, 60, 0.4);
-  box-shadow: 0 3px 8px rgba(190, 18, 60, 0.12);
-}
-
-[data-theme="latte"] .cell-ai-header {
-  background: linear-gradient(135deg, #fecdd3 0%, #fda4af 100%);
-  border-bottom: 1px solid rgba(190, 18, 60, 0.15);
-}
-
-[data-theme="latte"] .cell-output {
-  background-color: #eeeceb;  /* 3% darker than code cell - subtle cream */
-  border-left-color: rgba(168, 162, 158, 0.5);
-  border-radius: 0 0 6px 6px;
-  margin: 0;
-  padding: 8px 12px;
-}
-
-[data-theme="latte"] .cell-wrapper textarea {
-  caret-color: #44403c;
-}
-
-/* Markdown cell specific styling - Clean card style */
+/* Markdown cell specific styling */
 .cell-markdown {
   background-color: transparent;
+  border: 1px solid var(--nb-border-default);
   border-radius: 8px;
 }
 
-.cell-markdown:hover {
-  background-color: var(--nb-bg-markdown-cell);
-}
-
-/* AI cell specific styling */
+/* AI cell specific styling — gradient bg + colored border, no left accent bar */
 .cell-ai {
   background-color: var(--nb-bg-ai-cell);
   border: 1px solid var(--nb-border-ai);
-  border-left: 3px solid var(--nb-accent-ai);
   border-radius: 8px;
 }
 
-/* Dark theme AI cell - solid gradient (no transparency issues) */
+/* Dark theme AI cell - Warm neutral elevation */
 [data-theme="dark"] .cell-ai {
-  background: linear-gradient(135deg, #252538 0%, #1e2235 100%);
-  border-color: rgba(139, 92, 246, 0.4);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, #2a2a2e 0%, #262628 100%);
+  border-color: rgba(180, 170, 155, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="dark"] .cell-ai:hover {
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(135deg, #303034 0%, #2c2c2e 100%);
+  border-color: rgba(180, 170, 155, 0.40);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.20);
 }
 
 /* Dark theme AI cell header */
 [data-theme="dark"] .cell-ai-header {
-  background: linear-gradient(135deg, #2a2a42 0%, #252540 100%);
-  border-bottom: 1px solid rgba(139, 92, 246, 0.25);
+  background: linear-gradient(135deg, #333336 0%, #2f2f32 100%);
+  border-bottom: 1px solid rgba(180, 170, 155, 0.15);
 }
 
-/* Light theme AI cell - solid colors with subtle violet tint */
+/* Light theme AI cell - Warm neutral tint */
 [data-theme="light"] .cell-ai {
-  background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%);
-  border-color: rgba(124, 58, 237, 0.3);
-  box-shadow: 0 2px 4px rgba(124, 58, 237, 0.08);
+  background: linear-gradient(135deg, #fafaf9 0%, #f5f5f4 100%);
+  border-color: rgba(168, 162, 158, 0.30);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 [data-theme="light"] .cell-ai:hover {
-  border-color: rgba(124, 58, 237, 0.45);
-  box-shadow: 0 3px 8px rgba(124, 58, 237, 0.12);
+  background: linear-gradient(135deg, #f5f5f4 0%, #f0f0ee 100%);
+  border-color: rgba(168, 162, 158, 0.50);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
 [data-theme="light"] .cell-ai-header {
-  background: linear-gradient(135deg, #f3e8ff 0%, #ede9fe 100%);
-  border-bottom: 1px solid rgba(124, 58, 237, 0.15);
+  background: linear-gradient(135deg, #f0f0ee 0%, #ebebea 100%);
+  border-bottom: 1px solid rgba(168, 162, 158, 0.20);
 }
 
 /* ============================================
@@ -861,34 +508,6 @@ body {
   background-color: #fafafa;
 }
 
-/* Obsidian table styling */
-[data-theme="obsidian"] .output-html th {
-  background-color: #27272a;
-  color: #fafafa;
-}
-
-[data-theme="obsidian"] .output-html tr:nth-child(even) {
-  background-color: rgba(39, 39, 42, 0.3);
-}
-
-[data-theme="obsidian"] .output-html tbody tr:hover {
-  background-color: rgba(39, 39, 42, 0.5);
-}
-
-/* Latte table styling */
-[data-theme="latte"] .output-html th {
-  background-color: #e7e5e4;
-  color: #44403c;
-}
-
-[data-theme="latte"] .output-html tr:nth-child(even) {
-  background-color: #faf9f7;
-}
-
-[data-theme="latte"] .output-html tbody tr:hover {
-  background-color: rgba(231, 229, 228, 0.5);
-}
-
 /* Execution count badge */
 .execution-count {
   color: var(--nb-accent-code);
@@ -948,7 +567,7 @@ body {
   font-size: var(--size-h1);
   line-height: var(--lh-h1);
   font-weight: 700;
-  margin-top: 1.5em;
+  margin-top: 0.5em;
   margin-bottom: 0.5em;
 }
 
@@ -1012,12 +631,12 @@ body {
   --tw-prose-lead: #bac2de;
   --tw-prose-links: #89b4fa;
   --tw-prose-bold: #cdd6f4;
-  --tw-prose-counters: #6c7086;
-  --tw-prose-bullets: #6c7086;
+  --tw-prose-counters: #7f849c;
+  --tw-prose-bullets: #7f849c;
   --tw-prose-hr: #45475a;
   --tw-prose-quotes: #cdd6f4;
   --tw-prose-quote-borders: #cba6f7;
-  --tw-prose-captions: #6c7086;
+  --tw-prose-captions: #7f849c;
   --tw-prose-code: #e5c07b;
   --tw-prose-pre-code: #cdd6f4;
   --tw-prose-pre-bg: #181825;
@@ -1088,86 +707,6 @@ body {
   padding: 0;
 }
 
-/* Obsidian theme prose */
-[data-theme="obsidian"] .prose {
-  --tw-prose-body: #fafafa;
-  --tw-prose-headings: #fafafa;
-  --tw-prose-lead: #a1a1aa;
-  --tw-prose-links: #22d3ee;
-  --tw-prose-bold: #fafafa;
-  --tw-prose-counters: #52525b;
-  --tw-prose-bullets: #52525b;
-  --tw-prose-hr: #27272a;
-  --tw-prose-quotes: #fafafa;
-  --tw-prose-quote-borders: #e879f9;
-  --tw-prose-captions: #52525b;
-  --tw-prose-code: #4ade80;
-  --tw-prose-pre-code: #fafafa;
-  --tw-prose-pre-bg: #000000;
-  --tw-prose-th-borders: #27272a;
-  --tw-prose-td-borders: #27272a;
-}
-
-[data-theme="obsidian"] .prose pre {
-  background-color: #000000;
-  border: 1px solid #27272a;
-  border-radius: 6px;
-}
-
-[data-theme="obsidian"] .prose code {
-  color: #4ade80;
-  background-color: rgba(39, 39, 42, 0.6);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.875em;
-}
-
-[data-theme="obsidian"] .prose pre code {
-  color: #fafafa;
-  background-color: transparent;
-  padding: 0;
-}
-
-/* Latte theme prose */
-[data-theme="latte"] .prose {
-  --tw-prose-body: #44403c;
-  --tw-prose-headings: #292524;
-  --tw-prose-lead: #78716c;
-  --tw-prose-links: #0d9488;
-  --tw-prose-bold: #292524;
-  --tw-prose-counters: #a8a29e;
-  --tw-prose-bullets: #a8a29e;
-  --tw-prose-hr: #e7e5e4;
-  --tw-prose-quotes: #44403c;
-  --tw-prose-quote-borders: #ea580c;
-  --tw-prose-captions: #a8a29e;
-  --tw-prose-code: #986801;
-  --tw-prose-pre-code: #44403c;
-  --tw-prose-pre-bg: #f5f5f4;
-  --tw-prose-th-borders: #e7e5e4;
-  --tw-prose-td-borders: #e7e5e4;
-}
-
-[data-theme="latte"] .prose pre {
-  background-color: #f5f5f4;
-  border: 1px solid #e7e5e4;
-  border-radius: 6px;
-}
-
-[data-theme="latte"] .prose code {
-  color: #986801;
-  background-color: rgba(231, 229, 228, 0.6);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.875em;
-}
-
-[data-theme="latte"] .prose pre code {
-  color: #44403c;
-  background-color: transparent;
-  padding: 0;
-}
-
 /* ============================================
    SCROLLBAR STYLING
    ============================================ */
@@ -1189,7 +728,7 @@ body {
 }
 
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: #6c7086;
+  background: #7f849c;
 }
 
 [data-theme="light"] ::-webkit-scrollbar {
@@ -1212,48 +751,6 @@ body {
   background: #94a3b8;
 }
 
-/* Obsidian scrollbar */
-[data-theme="obsidian"] ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-[data-theme="obsidian"] ::-webkit-scrollbar-track {
-  background: #09090b;
-  border-radius: 5px;
-}
-
-[data-theme="obsidian"] ::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 5px;
-  border: 2px solid #09090b;
-}
-
-[data-theme="obsidian"] ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
-}
-
-/* Latte scrollbar */
-[data-theme="latte"] ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-[data-theme="latte"] ::-webkit-scrollbar-track {
-  background: #fdfbf7;
-  border-radius: 5px;
-}
-
-[data-theme="latte"] ::-webkit-scrollbar-thumb {
-  background: #d6d3d1;
-  border-radius: 5px;
-  border: 2px solid #fdfbf7;
-}
-
-[data-theme="latte"] ::-webkit-scrollbar-thumb:hover {
-  background: #a8a29e;
-}
-
 /* ============================================
    SELECTION STYLING
    ============================================ */
@@ -1266,18 +763,6 @@ body {
 [data-theme="light"] ::selection {
   background-color: rgba(59, 130, 246, 0.25);
   color: #1e293b;
-}
-
-/* Obsidian selection */
-[data-theme="obsidian"] ::selection {
-  background-color: rgba(34, 211, 238, 0.3);
-  color: #fafafa;
-}
-
-/* Latte selection */
-[data-theme="latte"] ::selection {
-  background-color: rgba(13, 148, 136, 0.25);
-  color: #44403c;
 }
 
 /* ============================================
@@ -1350,6 +835,48 @@ body {
 /* ============================================
    UTILITY CLASSES FOR THEMING
    ============================================ */
+
+/* ============================================
+   SELECT / DROPDOWN STYLING
+   Force option elements to use theme colors
+   (browsers ignore CSS variables on <option>)
+   ============================================ */
+
+[data-theme="dark"] select,
+[data-theme="dark"] select option {
+  background-color: #282a36;
+  color: #cdd6f4;
+}
+[data-theme="dark"] input,
+[data-theme="dark"] textarea {
+  background-color: #252736;
+  color: #cdd6f4;
+}
+[data-theme="dark"] input:-webkit-autofill,
+[data-theme="dark"] input:-webkit-autofill:hover,
+[data-theme="dark"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #252736 inset !important;
+  -webkit-text-fill-color: #cdd6f4 !important;
+  caret-color: #cdd6f4;
+}
+
+[data-theme="light"] select,
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+[data-theme="light"] input,
+[data-theme="light"] textarea {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+[data-theme="light"] input:-webkit-autofill,
+[data-theme="light"] input:-webkit-autofill:hover,
+[data-theme="light"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #1e293b !important;
+  caret-color: #1e293b;
+}
 
 .theme-bg-primary { background-color: var(--app-bg-primary); }
 .theme-bg-secondary { background-color: var(--app-bg-secondary); }

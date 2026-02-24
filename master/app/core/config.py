@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     # Invite system
     require_invite_code: bool = Field(default=False, alias="REQUIRE_INVITE_CODE")
 
+    # SMTP (for invitation emails)
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_user: str = Field(default="", alias="SMTP_USER")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from: str = Field(default="", alias="SMTP_FROM")
+    smtp_tls: bool = Field(default=True, alias="SMTP_TLS")
+
     # Encryption key for user API keys (Fernet)
     encryption_key: Optional[str] = Field(default=None, alias="ENCRYPTION_KEY")
 

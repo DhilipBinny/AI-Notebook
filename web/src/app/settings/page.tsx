@@ -35,10 +35,6 @@ export default function SettingsPage() {
 
   const user = useAuthStore((state) => state.user)
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   const fetchKeys = useCallback(async () => {
     try {
       setIsLoadingKeys(true)
@@ -276,7 +272,7 @@ export default function SettingsPage() {
                               <>
                                 <span className="font-mono">{key.api_key_hint}</span>
                                 {key.is_validated && (
-                                  <span className="ml-2 text-green-400">Validated</span>
+                                  <span className="ml-2" style={{ color: 'var(--app-accent-success)' }}>Validated</span>
                                 )}
                               </>
                             ) : (
@@ -284,7 +280,7 @@ export default function SettingsPage() {
                             )}
                           </p>
                           {showResult && (
-                            <p className={`text-xs mt-0.5 ${validationResult.valid ? 'text-green-400' : 'text-red-400'}`}>
+                            <p className="text-xs mt-0.5" style={{ color: validationResult.valid ? 'var(--app-accent-success)' : 'var(--app-accent-error)' }}>
                               {validationResult.message}
                             </p>
                           )}
@@ -407,7 +403,7 @@ export default function SettingsPage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           {record.is_own_key ? (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium text-green-400" style={{ backgroundColor: 'rgba(74, 222, 128, 0.1)' }}>
+                            <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ color: 'var(--app-accent-success)', backgroundColor: 'rgba(74, 222, 128, 0.1)' }}>
                               own key
                             </span>
                           ) : (

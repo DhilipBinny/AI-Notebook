@@ -34,6 +34,9 @@ docker==7.1.0
 # Encryption
 cryptography>=42.0.0
 
+# Email (async SMTP)
+aiosmtplib==3.0.2
+
 # Utilities
 python-dotenv==1.0.1
 uuid6==2024.7.10

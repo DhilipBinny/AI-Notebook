@@ -18,7 +18,7 @@ export default function CellInsertButtons({
 
   return (
     <div
-      className="relative h-6 flex items-center justify-center group"
+      className="relative h-3 flex items-center justify-center group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -48,7 +48,7 @@ export default function CellInsertButtons({
           className="flex items-center gap-1 px-2 py-0.5 text-xs rounded hover:opacity-80 transition-colors"
           style={{
             backgroundColor: 'var(--nb-accent-code)',
-            color: '#11111b',
+            color: 'var(--nb-bg-primary)',
           }}
           title="Insert Code cell"
         >
@@ -63,7 +63,7 @@ export default function CellInsertButtons({
           className="flex items-center gap-1 px-2 py-0.5 text-xs rounded hover:opacity-80 transition-colors"
           style={{
             backgroundColor: 'var(--nb-accent-markdown)',
-            color: '#11111b',
+            color: 'var(--nb-bg-primary)',
           }}
           title="Insert Markdown cell"
         >
@@ -78,8 +78,8 @@ export default function CellInsertButtons({
             }}
             className="flex items-center gap-1 px-2 py-0.5 text-xs rounded hover:opacity-80 transition-colors"
             style={{
-              backgroundColor: '#a855f7',
-              color: '#ffffff',
+              backgroundColor: 'var(--nb-accent-ai)',
+              color: 'white',
             }}
             title="Insert AI cell - ask questions about your notebook"
           >

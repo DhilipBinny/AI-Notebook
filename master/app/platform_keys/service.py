@@ -1,10 +1,9 @@
 """
 Platform API key service.
-Manages encrypted platform-level LLM provider keys with in-memory caching.
+Manages encrypted platform-level LLM provider keys.
 """
 
 import logging
-import time
 from typing import Optional, Dict, List
 
 from sqlalchemy import select, update
@@ -17,26 +16,6 @@ from app.api_keys.encryption import encrypt_key, decrypt_key, mask_key, test_pro
 from app.llm_models.service import LLMModelService
 
 logger = logging.getLogger(__name__)
-
-# In-memory cache for decrypted platform keys
-_cache: Dict[str, str] = {}  # {provider: decrypted_key}
-_cache_models: Dict[str, str] = {}  # {provider: model_name}
-_cache_base_urls: Dict[str, str] = {}  # {provider: base_url}
-_cache_auth_types: Dict[str, str] = {}  # {provider: auth_type}
-_cache_default: Optional[str] = None  # default provider
-_cache_ts: float = 0
-_CACHE_TTL = 300  # 5 minutes
-
-
-def _invalidate_cache():
-    """Clear the in-memory key cache."""
-    global _cache, _cache_models, _cache_base_urls, _cache_auth_types, _cache_default, _cache_ts
-    _cache = {}
-    _cache_models = {}
-    _cache_base_urls = {}
-    _cache_auth_types = {}
-    _cache_default = None
-    _cache_ts = 0
 
 # Standard providers that require model validation against registry
 _STANDARD_PROVIDERS = {"openai", "anthropic", "gemini"}
@@ -67,7 +46,6 @@ class PlatformKeyService:
         self.db.add(key)
         await self.db.flush()
         await self.db.refresh(key)
-        _invalidate_cache()
 
         # Auto-register model in registry if model is specified
         model_created = False
@@ -113,7 +91,6 @@ class PlatformKeyService:
 
         await self.db.flush()
         await self.db.refresh(key)
-        _invalidate_cache()
 
         # Auto-register model in registry if model changed
         model_created = False
@@ -145,7 +122,6 @@ class PlatformKeyService:
             return False
         await self.db.delete(key)
         await self.db.flush()
-        _invalidate_cache()
         return True
 
     async def list_all(self, provider: Optional[str] = None) -> List[PlatformApiKey]:
@@ -174,7 +150,6 @@ class PlatformKeyService:
         key.is_active = True
         await self.db.flush()
         await self.db.refresh(key)
-        _invalidate_cache()
         return key
 
     async def deactivate(self, key_id: str) -> Optional[PlatformApiKey]:
@@ -185,7 +160,6 @@ class PlatformKeyService:
         key.is_active = False
         await self.db.flush()
         await self.db.refresh(key)
-        _invalidate_cache()
         return key
 
     async def set_default(self, key_id: str) -> Optional[PlatformApiKey]:
@@ -209,73 +183,76 @@ class PlatformKeyService:
         key.is_active = True
         await self.db.flush()
         await self.db.refresh(key)
-        _invalidate_cache()
         return key
 
-    # ── Key retrieval (cached) ────────────────────────────────────────
+    # ── Key retrieval (direct DB query) ───────────────────────────────
+
+    async def _fetch_active_keys(self) -> List[PlatformApiKey]:
+        """Fetch all active platform keys from DB."""
+        result = await self.db.execute(
+            select(PlatformApiKey).where(PlatformApiKey.is_active == True)
+        )
+        return list(result.scalars().all())
 
     async def get_active_key(self, provider: str) -> Optional[str]:
-        """Get decrypted active key for a provider. Uses cache."""
+        """Get decrypted active key for a provider."""
         keys = await self.get_all_active_keys()
         return keys.get(provider)
 
     async def get_all_active_keys(self) -> Dict[str, str]:
-        """Get all active decrypted keys. Returns {provider: key}. Cached 5 min."""
-        global _cache, _cache_ts
-        if _cache and (time.time() - _cache_ts) < _CACHE_TTL:
-            return dict(_cache)
-
-        result = await self.db.execute(
-            select(PlatformApiKey).where(PlatformApiKey.is_active == True)
-        )
-        keys = result.scalars().all()
-
-        new_cache = {}
-        new_models = {}
-        new_base_urls = {}
-        new_auth_types = {}
-        new_default = None
+        """Get all active decrypted keys. Returns {provider: key}."""
+        keys = await self._fetch_active_keys()
+        result = {}
         for k in keys:
             try:
-                new_cache[k.provider.value] = decrypt_key(k.api_key_encrypted)
-                if k.model_name:
-                    new_models[k.provider.value] = k.model_name
-                if k.base_url:
-                    new_base_urls[k.provider.value] = k.base_url
-                new_auth_types[k.provider.value] = k.auth_type.value if k.auth_type else "api_key"
-                if k.is_default:
-                    new_default = k.provider.value
+                result[k.provider.value] = decrypt_key(k.api_key_encrypted)
             except Exception as e:
                 logger.error(f"Failed to decrypt platform key {k.id}: {e}")
-
-        global _cache_models, _cache_base_urls, _cache_auth_types, _cache_default
-        _cache = new_cache
-        _cache_models = new_models
-        _cache_base_urls = new_base_urls
-        _cache_auth_types = new_auth_types
-        _cache_default = new_default
-        _cache_ts = time.time()
-        return dict(_cache)
+        return result
 
     async def get_active_models(self) -> Dict[str, str]:
-        """Get model names for active keys. Returns {provider: model}. Cached."""
-        await self.get_all_active_keys()  # ensures cache is fresh
-        return dict(_cache_models)
+        """Get model names for active keys. Returns {provider: model}."""
+        keys = await self._fetch_active_keys()
+        return {k.provider.value: k.model_name for k in keys if k.model_name}
 
     async def get_active_base_urls(self) -> Dict[str, str]:
-        """Get base URLs for active keys. Returns {provider: base_url}. Cached."""
-        await self.get_all_active_keys()  # ensures cache is fresh
-        return dict(_cache_base_urls)
+        """Get base URLs for active keys. Returns {provider: base_url}."""
+        keys = await self._fetch_active_keys()
+        return {k.provider.value: k.base_url for k in keys if k.base_url}
 
     async def get_active_auth_types(self) -> Dict[str, str]:
-        """Get auth types for active keys. Returns {provider: auth_type}. Cached."""
-        await self.get_all_active_keys()  # ensures cache is fresh
-        return dict(_cache_auth_types)
+        """Get auth types for active keys. Returns {provider: auth_type}."""
+        keys = await self._fetch_active_keys()
+        return {k.provider.value: (k.auth_type.value if k.auth_type else "api_key") for k in keys}
 
     async def get_default_provider(self) -> Optional[str]:
-        """Get the default provider name. Cached."""
-        await self.get_all_active_keys()  # ensures cache is fresh
-        return _cache_default
+        """Get the default provider name."""
+        keys = await self._fetch_active_keys()
+        for k in keys:
+            if k.is_default:
+                return k.provider.value
+        return None
+
+    async def get_user_visible_providers(self) -> Dict[str, bool]:
+        """Get user_visible flags for active keys. Returns {provider: bool}."""
+        keys = await self._fetch_active_keys()
+        return {k.provider.value: k.user_visible for k in keys}
+
+    async def toggle_provider_visibility(self, provider: str, visible: bool) -> bool:
+        """Toggle user_visible on all keys for a provider."""
+        result = await self.db.execute(
+            select(PlatformApiKey).where(PlatformApiKey.provider == provider)
+        )
+        provider_keys = result.scalars().all()
+        if not provider_keys:
+            return False
+        await self.db.execute(
+            update(PlatformApiKey)
+            .where(PlatformApiKey.provider == provider)
+            .values(user_visible=visible)
+        )
+        await self.db.flush()
+        return True
 
     # ── Validation ────────────────────────────────────────────────────
 

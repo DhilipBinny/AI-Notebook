@@ -13,10 +13,9 @@ export interface User {
 
 export interface Invitation {
   id: string
-  code: string
+  code_prefix: string
   email?: string
-  max_uses: number
-  used_count: number
+  is_used: boolean
   created_by: string
   expires_at?: string
   is_active: boolean
@@ -185,6 +184,8 @@ export interface AdminUser {
   created_at: string
   last_login_at?: string
   credit_balance_cents?: number
+  total_deposited_cents?: number
+  total_consumed_cents?: number
   project_count?: number
 }
 
@@ -212,6 +213,7 @@ export interface PlatformKey {
   base_url?: string
   is_active: boolean
   is_default: boolean
+  user_visible: boolean
   priority: number
   created_by?: string
   created_at: string

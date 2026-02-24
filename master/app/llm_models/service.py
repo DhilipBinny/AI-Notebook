@@ -163,6 +163,8 @@ class LLMModelService:
         if not model:
             return None
 
+        if data.model_id is not None:
+            model.model_id = data.model_id
         if data.display_name is not None:
             model.display_name = data.display_name
         if data.context_window is not None:
@@ -191,16 +193,12 @@ class LLMModelService:
         return model
 
     async def delete_model(self, model_db_id: int) -> bool:
-        """Delete a model. Hard-delete if is_custom, otherwise soft-delete (is_active=False)."""
+        """Soft-delete a model (set is_active=False)."""
         model = await self.get_model_by_id(model_db_id)
         if not model:
             return False
 
-        if model.is_custom:
-            await self.db.delete(model)
-        else:
-            model.is_active = False
-
+        model.is_active = False
         await self.db.flush()
         return True
 

@@ -97,6 +97,7 @@ async def get_pricing(
             "id": m.id,
             "provider": m.provider,
             "model": m.model_id,
+            "model_id": m.model_id,
             "display_name": m.display_name,
             "input_cost_per_1m_cents": m.input_cost_per_1m_cents,
             "output_cost_per_1m_cents": m.output_cost_per_1m_cents,

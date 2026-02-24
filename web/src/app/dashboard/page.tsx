@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import { auth, projects, playgrounds, notebooks, workspaces } from '@/lib/api'
 import { getRelativeTime, sortByDateDesc } from '@/lib/dateUtils'
 import { useAuthStore, useProjectsStore } from '@/lib/store'
+import AppHeader from '@/components/AppHeader'
 import type { Project, Workspace } from '@/types'
 import {
   Plus,
@@ -15,34 +15,19 @@ import {
   Square,
   Trash2,
   Edit3,
-  FileCode,
-  Folder,
-  FolderPlus,
-  LogOut,
-  Activity,
-  MoreVertical,
   Check,
   X,
-  ChevronRight,
   ChevronDown,
-  Settings,
   RefreshCw,
   ExternalLink,
   BookOpen,
   Sparkles,
   CheckCircle,
   CloudUpload,
-  User,
   FileText,
   Terminal,
 } from 'lucide-react'
 
-// Apply dark theme on mount for dashboard
-const useDashboardTheme = () => {
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-}
 
 interface PlaygroundStatus {
   [projectId: string]: {
@@ -55,7 +40,6 @@ interface PlaygroundStatus {
 }
 
 export default function DashboardPage() {
-  useDashboardTheme()
   const router = useRouter()
   const { user, isLoading: authLoading, setUser } = useAuthStore()
   const { projects: projectList, setProjects, addProject, removeProject } = useProjectsStore()
@@ -95,8 +79,6 @@ export default function DashboardPage() {
   const [editWorkspaceColor, setEditWorkspaceColor] = useState('')
   const [updatingWorkspace, setUpdatingWorkspace] = useState(false)
   const [deleteWorkspaceConfirm, setDeleteWorkspaceConfirm] = useState<Workspace | null>(null)
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
-  const profileMenuRef = useRef<HTMLDivElement>(null)
 
   // Modal states for Logs and Terminal
   const [logsModal, setLogsModal] = useState<{ projectId: string; projectName: string } | null>(null)
@@ -566,24 +548,6 @@ export default function DashboardPage() {
     }
   }
 
-  const handleLogout = async () => {
-    // Per-user model: stop the single user playground if running
-    const hasRunning = Object.values(playgroundStatuses).some(s => s.status === 'running')
-    if (hasRunning) {
-      try {
-        await playgrounds.stop()
-      } catch {
-        // Ignore errors
-      }
-    }
-
-    try { await auth.logout() } catch {}
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    setUser(null)
-    router.push('/auth/login')
-  }
-
   // Workspace handlers
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -685,27 +649,6 @@ export default function DashboardPage() {
   const uncategorizedCount = projectList.filter(p => !p.workspace_id).length
   const activePlaygrounds = Object.values(playgroundStatuses).filter(s => s.status === 'running').length
 
-  // Get user initials for avatar
-  const getUserInitials = () => {
-    if (!user?.email) return '?'
-    const parts = user.email.split('@')[0].split(/[._-]/)
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase()
-    }
-    return user.email.substring(0, 2).toUpperCase()
-  }
-
-  // Close profile menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setShowProfileMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
   if (isLoading || authLoading) {
     return (
       <div
@@ -772,135 +715,17 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Header - Full width */}
-      <header
-        className="relative z-50 backdrop-blur-xl"
-        style={{
-          backgroundColor: 'var(--app-bg-secondary)',
-          borderBottom: '1px solid var(--app-border-default)'
+      {/* Header */}
+      <AppHeader
+        title="AI Notebook"
+        subtitle="Intelligent Computing Environment"
+        onBeforeLogout={async () => {
+          const hasRunning = Object.values(playgroundStatuses).some(s => s.status === 'running')
+          if (hasRunning) {
+            try { await playgrounds.stop() } catch {}
+          }
         }}
-      >
-        <div className="px-6 py-3">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <Image
-                src="/a7ac5906-c5c1-4819-b60b-6141da54bf2f.png"
-                alt="AI Notebook"
-                width={40}
-                height={40}
-                className="rounded-xl"
-                style={{ objectFit: 'contain' }}
-              />
-              <div>
-                <h1 className="text-base font-bold" style={{ color: 'var(--app-text-primary)' }}>AI Notebook</h1>
-                <p className="text-xs" style={{ color: 'var(--app-accent-primary)' }}>Intelligent Computing Environment</p>
-              </div>
-            </div>
-            {/* Profile Menu */}
-            <div className="relative z-50" ref={profileMenuRef}>
-              <button
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all hover:bg-white/5"
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ring-2 ring-transparent hover:ring-white/20 transition-all"
-                  style={{
-                    background: 'var(--app-gradient-primary)',
-                    color: 'white'
-                  }}
-                >
-                  {getUserInitials()}
-                </div>
-                <span className="text-sm font-medium" style={{ color: 'var(--app-text-primary)' }}>
-                  {user?.email?.split('@')[0]}
-                </span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`}
-                  style={{ color: 'var(--app-text-muted)' }}
-                />
-              </button>
-
-              {/* Dropdown Menu */}
-              {showProfileMenu && (
-                <div
-                  className="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
-                  style={{
-                    backgroundColor: 'var(--app-bg-secondary)',
-                    border: '1px solid var(--app-border-default)'
-                  }}
-                >
-                  {/* User Info */}
-                  <div className="p-4" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold"
-                        style={{
-                          background: 'var(--app-gradient-primary)',
-                          color: 'white'
-                        }}
-                      >
-                        {getUserInitials()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: 'var(--app-text-primary)' }}>
-                          {user?.email?.split('@')[0]}
-                        </p>
-                        <p className="text-xs truncate" style={{ color: 'var(--app-text-muted)' }}>
-                          {user?.email}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Settings Link */}
-                  <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
-                    <button
-                      onClick={() => { setShowProfileMenu(false); router.push('/settings') }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
-                      style={{ color: 'var(--app-text-secondary)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span className="text-sm">Settings & API Keys</span>
-                    </button>
-                  </div>
-
-                  {/* Admin Link */}
-                  {user?.is_admin && (
-                    <div className="p-2" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
-                      <button
-                        onClick={() => { setShowProfileMenu(false); router.push('/admin') }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
-                        style={{ color: 'var(--app-text-secondary)' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      >
-                        <Settings className="w-4 h-4" />
-                        <span className="text-sm">Admin Dashboard</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Sign Out */}
-                  <div className="p-2">
-                    <button
-                      onClick={() => { setShowProfileMenu(false); handleLogout() }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left"
-                      style={{ color: 'var(--app-accent-error)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      <LogOut className="w-4 h-4" />
-                      <span className="text-sm">Sign Out</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+      />
 
       {/* Main Content - 3 Column Layout */}
       <div className="relative z-10 flex h-[calc(100vh-57px)]">
@@ -1569,7 +1394,7 @@ export default function DashboardPage() {
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Color</label>
                 <div className="flex flex-wrap gap-2">
                   {workspaceColors.map((color) => (
-                    <button key={color.value} type="button" onClick={() => setNewWorkspaceColor(color.value)} className={`w-8 h-8 rounded-lg transition-all ${newWorkspaceColor === color.value ? 'ring-2 ring-white ring-offset-2 ring-offset-[#21222c] scale-110' : 'hover:scale-105'}`} style={{ backgroundColor: color.value }} title={color.name} />
+                    <button key={color.value} type="button" onClick={() => setNewWorkspaceColor(color.value)} className={`w-8 h-8 rounded-lg transition-all ${newWorkspaceColor === color.value ? 'ring-2 ring-white ring-offset-2 ring-offset-[var(--app-bg-primary)] scale-110' : 'hover:scale-105'}`} style={{ backgroundColor: color.value }} title={color.name} />
                   ))}
                 </div>
               </div>
@@ -1646,10 +1471,10 @@ export default function DashboardPage() {
           >
             <div className="relative w-16 h-16 mx-auto mb-4">
               {/* Outer spinning ring */}
-              <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full" />
-              <div className="absolute inset-0 border-4 border-transparent border-t-blue-500 rounded-full animate-spin" />
+              <div className="absolute inset-0 border-4 rounded-full" style={{ borderColor: 'rgba(59, 130, 246, 0.2)' }} />
+              <div className="absolute inset-0 border-4 border-transparent rounded-full animate-spin" style={{ borderTopColor: 'var(--app-accent-primary)' }} />
               {/* Inner pulsing circle */}
-              <div className="absolute inset-3 bg-gradient-to-br from-blue-500 to-teal-500 rounded-full animate-pulse" />
+              <div className="absolute inset-3 rounded-full animate-pulse" style={{ background: 'linear-gradient(to bottom right, var(--app-accent-primary), var(--app-accent-secondary))' }} />
             </div>
             <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--app-text-primary)' }}>
               Starting Playground
@@ -1658,9 +1483,9 @@ export default function DashboardPage() {
               Setting up your Python environment...
             </p>
             <div className="mt-4 flex justify-center gap-1">
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--app-accent-primary)', animationDelay: '0ms' }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--app-accent-primary)', animationDelay: '150ms' }} />
+              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--app-accent-primary)', animationDelay: '300ms' }} />
             </div>
           </div>
         </div>

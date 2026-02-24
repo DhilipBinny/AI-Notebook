@@ -929,17 +929,17 @@ export const admin = {
   },
 
   invitations: {
-    list: async (activeOnly = false): Promise<Invitation[]> => {
-      const { data } = await api.get('/admin/invitations', { params: { active_only: activeOnly } })
+    list: async (params?: { page?: number; page_size?: number; search?: string; active_only?: boolean }): Promise<{ invitations: Invitation[]; total: number; page: number; page_size: number }> => {
+      const { data } = await api.get('/admin/invitations/', { params })
       return data
     },
 
-    create: async (params: { email?: string; max_uses?: number; expires_at?: string; note?: string }): Promise<Invitation> => {
-      const { data } = await api.post('/admin/invitations', params)
+    create: async (params: { email?: string; expires_at?: string; note?: string; base_url?: string }): Promise<Invitation> => {
+      const { data } = await api.post('/admin/invitations/', params)
       return data
     },
 
-    batchCreate: async (params: { emails: string[]; note?: string; expires_at?: string }): Promise<Invitation[]> => {
+    batchCreate: async (params: { emails: string[]; note?: string; expires_at?: string; base_url?: string }): Promise<Invitation[]> => {
       const { data } = await api.post('/admin/invitations/batch', params)
       return data
     },
@@ -950,13 +950,22 @@ export const admin = {
     },
 
     deactivate: async (id: string): Promise<Invitation> => {
-      const { data } = await api.delete(`/admin/invitations/${id}`)
+      const { data } = await api.patch(`/admin/invitations/${id}/deactivate`)
+      return data
+    },
+
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/admin/invitations/${id}`)
+    },
+
+    reinvite: async (id: string, baseUrl: string): Promise<Invitation> => {
+      const { data } = await api.post(`/admin/invitations/${id}/reinvite`, null, { params: { base_url: baseUrl } })
       return data
     },
   },
 
   credits: {
-    adjust: async (params: { user_id: string; amount_cents: number; reason: string }): Promise<CreditBalance> => {
+    adjust: async (params: { user_id: string; amount_cents: number; reason?: string }): Promise<CreditBalance> => {
       const { data } = await api.post('/admin/credits/adjust', params)
       return data
     },
@@ -973,7 +982,7 @@ export const admin = {
       return data
     },
 
-    update: async (id: number, params: { display_name?: string; context_window?: number; max_output_tokens?: number; supports_vision?: boolean; supports_function_calling?: boolean; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean; sort_order?: number }): Promise<LLMModel> => {
+    update: async (id: number, params: { model_id?: string; display_name?: string; context_window?: number; max_output_tokens?: number; supports_vision?: boolean; supports_function_calling?: boolean; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean; sort_order?: number }): Promise<LLMModel> => {
       const { data } = await api.put(`/admin/models/${id}`, params)
       return data
     },
@@ -1046,6 +1055,11 @@ export const admin = {
 
     validate: async (id: string): Promise<{ valid: boolean; error?: string }> => {
       const { data } = await api.post(`/admin/platform-keys/${id}/validate`)
+      return data
+    },
+
+    toggleProviderVisibility: async (provider: string, visible: boolean): Promise<{ provider: string; user_visible: boolean }> => {
+      const { data } = await api.post(`/admin/platform-keys/provider/${provider}/visibility`, null, { params: { visible } })
       return data
     },
   },

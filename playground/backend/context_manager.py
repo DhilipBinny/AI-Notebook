@@ -16,10 +16,10 @@ This allows sending ALL cells as context while keeping token usage minimal.
 LLM uses get_cell_content(cell_id) to dig deeper when needed.
 
 Public Methods:
-- build_ai_cell_context(): Complete AI Cell message with position info and context
-- build_chat_context(): Complete Chat Panel message with tiered overview
+- build_ai_cell_context(): Complete AI Cell message with position info and context (cells above only)
+- build_chat_context(): Complete Chat Panel message with tiered overview (all cells)
 - process_context(): Raw tiered context formatting (used by build_chat_context)
-- process_positional_context(): Raw positional formatting (used by build_ai_cell_context)
+- process_positional_context(): Raw positional formatting, cells above only (used by build_ai_cell_context)
 """
 
 import re
@@ -236,9 +236,7 @@ NOTEBOOK CONTEXT:
 
         position_info = f"You are in Cell #{ai_cell_index + 1} of {total_cells} total cells."
         if ai_cell_index > 0:
-            position_info += f" There are {ai_cell_index} cell(s) ABOVE you."
-        if ai_cell_index < total_cells - 1:
-            position_info += f" There are {total_cells - ai_cell_index - 1} cell(s) BELOW you."
+            position_info += f" There are {ai_cell_index} cell(s) ABOVE you (included as context)."
 
         return position_info
 
@@ -582,11 +580,9 @@ NOTEBOOK CONTEXT:
         """
         Process notebook cells into positional context for AI Cell.
 
-        This creates a context with cells organized as "above" and "below"
-        the AI cell's position, with immediate neighbors marked.
-
-        Full Mode: No truncation on content, output, ai_prompt, or ai_response.
-        LLM gets complete context to understand the notebook state.
+        Only includes cells ABOVE the AI cell (top-to-bottom execution model).
+        Cells below are excluded since they haven't been executed yet.
+        Immediate neighbor above is marked for proximity awareness.
 
         Args:
             cells: List of cell dicts with id, type, content, output, cellNumber
@@ -594,7 +590,7 @@ NOTEBOOK CONTEXT:
             format: Output format - PLAIN, XML, or JSON
 
         Returns:
-            Positional context string for AI Cell
+            Positional context string for AI Cell (cells above only)
         """
         if not cells:
             if format == ContextFormat.XML:
@@ -604,10 +600,13 @@ NOTEBOOK CONTEXT:
             return "(No other cells in notebook)"
 
         cells_above = []
-        cells_below = []
 
         for i, cell in enumerate(cells):
             cell_position = cell.get("cellNumber", i + 1) - 1 if cell.get("cellNumber") else i
+
+            # Only include cells above the AI cell (top-to-bottom execution model)
+            if ai_cell_index >= 0 and cell_position >= ai_cell_index:
+                continue
 
             # Full Mode: Source code only, no outputs
             # LLM can use get_cell_content() tool if it needs output
@@ -620,43 +619,38 @@ NOTEBOOK CONTEXT:
                 "content": cell.get("content", "") or "",  # Full source code
                 "has_output": bool(output.strip()),  # Indicator only
                 "position": cell_position,
-                "is_immediate": False,
+                "is_immediate": (cell_position == ai_cell_index - 1),
                 # AI cell specific fields
                 "ai_prompt": cell.get("ai_prompt", "") or "",  # Full prompt
                 "has_response": bool(ai_response.strip()),  # Indicator only
             }
 
-            if ai_cell_index >= 0 and cell_position < ai_cell_index:
-                cell_data["is_immediate"] = (cell_position == ai_cell_index - 1)
-                cells_above.append(cell_data)
-            else:
-                cell_data["is_immediate"] = (cell_position == ai_cell_index + 1)
-                cells_below.append(cell_data)
+            cells_above.append(cell_data)
 
         # Sort by position
         cells_above.sort(key=lambda x: x["position"])
-        cells_below.sort(key=lambda x: x["position"])
 
-        # Build context based on format
+        # Build context based on format (only cells above)
         if format == ContextFormat.XML:
-            context_str = self._format_positional_xml(cells_above, cells_below, ai_cell_index)
+            context_str = self._format_positional_xml(cells_above, ai_cell_index)
         elif format == ContextFormat.JSON:
-            context_str = self._format_positional_json(cells_above, cells_below, ai_cell_index)
+            context_str = self._format_positional_json(cells_above, ai_cell_index)
         else:
-            context_str = self._format_positional_plain(cells_above, cells_below, ai_cell_index)
+            context_str = self._format_positional_plain(cells_above, ai_cell_index)
 
-        log(f"📋 Positional Context [{format.value}]: {len(context_str)} chars, {len(cells_above)} above, {len(cells_below)} below")
+        log(f"📋 Positional Context [{format.value}]: {len(context_str)} chars, {len(cells_above)} cells above")
 
         return context_str
 
-    def _format_positional_plain(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
+    def _format_positional_plain(self, cells_above: List[Dict], ai_cell_index: int) -> str:
         """
         Format positional context in plain text with delimiter style.
 
         Uses clear separators between cells and their outputs.
         Includes line numbers for position anchoring.
+        Only includes cells above the AI cell.
         """
-        total = len(cells_above) + len(cells_below) + 1
+        total = len(cells_above) + 1
         num_width = len(str(total))  # Dynamic padding width
         parts = []
 
@@ -686,18 +680,13 @@ NOTEBOOK CONTEXT:
         parts.append(f"POSITION: {ai_cell_index + 1}/{total}")
 
         if cells_above:
-            parts.append("\n[ABOVE]")
+            parts.append("\n[CELLS ABOVE]")
             for cell in cells_above:
-                parts.append(format_cell(cell, cell["is_immediate"]))
-
-        if cells_below:
-            parts.append("\n[BELOW]")
-            for cell in cells_below:
                 parts.append(format_cell(cell, cell["is_immediate"]))
 
         return "\n".join(parts)
 
-    def _format_positional_xml(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
+    def _format_positional_xml(self, cells_above: List[Dict], ai_cell_index: int) -> str:
         """
         Format positional context in optimized XML.
 
@@ -706,8 +695,9 @@ NOTEBOOK CONTEXT:
         - out="1" attribute instead of <out> content
         - near="1" for immediate neighbors
         - type="md" for markdown
+        Only includes cells above the AI cell.
         """
-        total = len(cells_above) + len(cells_below) + 1
+        total = len(cells_above) + 1
         parts = []
         parts.append(f'<notebook pos="{ai_cell_index + 1}/{total}">')
 
@@ -724,11 +714,9 @@ NOTEBOOK CONTEXT:
                 resp_attr = ' resp="1"' if cell.get("has_response") else ''
                 cell_parts.append(f'<cell id="{cell["id"]}" type="{cell_type}"{near_attr}{resp_attr}>')
                 if ai_prompt:
-                    # Raw content - LLM reads text, doesn't parse XML
                     cell_parts.append(f'<q>{self._raw_content(ai_prompt)}</q>')
             else:
                 cell_parts.append(f'<cell id="{cell["id"]}" type="{cell_type}"{near_attr}{out_attr}>')
-                # Raw content - clean code for LLM comprehension
                 cell_parts.append(f'<src>{self._raw_content(cell["content"])}</src>')
 
             cell_parts.append('</cell>')
@@ -740,16 +728,10 @@ NOTEBOOK CONTEXT:
                 parts.extend(format_cell_xml(cell))
             parts.append('</above>')
 
-        if cells_below:
-            parts.append('<below>')
-            for cell in cells_below:
-                parts.extend(format_cell_xml(cell))
-            parts.append('</below>')
-
         parts.append('</notebook>')
         return '\n'.join(parts)
 
-    def _format_positional_json(self, cells_above: List[Dict], cells_below: List[Dict], ai_cell_index: int) -> str:
+    def _format_positional_json(self, cells_above: List[Dict], ai_cell_index: int) -> str:
         """
         Format positional context in ultra-compact JSON.
 
@@ -758,8 +740,9 @@ NOTEBOOK CONTEXT:
         - near: 1 if immediate neighbor, 0 otherwise
         - src: content for code/md, prompt for ai
         - has_out: 1 if has output/response, 0 otherwise
+        Only includes cells above the AI cell.
         """
-        total = len(cells_above) + len(cells_below) + 1
+        total = len(cells_above) + 1
 
         def format_cell_array(cell: Dict) -> list:
             """Format a single cell as array: [id, type, near, src, has_out]"""
@@ -784,9 +767,6 @@ NOTEBOOK CONTEXT:
 
         if cells_above:
             context_obj["cells"]["above"] = [format_cell_array(cell) for cell in cells_above]
-
-        if cells_below:
-            context_obj["cells"]["below"] = [format_cell_array(cell) for cell in cells_below]
 
         # Minified JSON output
         return json.dumps(context_obj, separators=(',', ':'))
@@ -1008,13 +988,15 @@ def prepare_positional_context(
     """
     Quick function to process cells into positional context for AI Cell.
 
+    Only includes cells above the AI cell (top-to-bottom execution model).
+
     Args:
         cells: List of cell dicts
         ai_cell_index: 0-based index of the AI cell
         format: PLAIN or XML
 
     Returns:
-        Positional context string with above/below sections
+        Positional context string with cells above
     """
     manager = ContextManager()
     return manager.process_positional_context(cells, ai_cell_index, format)

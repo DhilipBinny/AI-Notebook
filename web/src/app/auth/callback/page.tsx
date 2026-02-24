@@ -86,11 +86,6 @@ function OAuthCallbackHandler() {
     handleCallback()
   }, [searchParams, router, setUser])
 
-  // Apply dark theme
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
@@ -128,7 +123,7 @@ function OAuthCallbackHandler() {
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
-                style={{ color: '#22c55e' }}
+                style={{ color: 'var(--app-accent-success)' }}
               >
                 <path
                   strokeLinecap="round"
@@ -161,7 +156,7 @@ function OAuthCallbackHandler() {
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
-                style={{ color: '#ef4444' }}
+                style={{ color: 'var(--app-accent-error)' }}
               >
                 <path
                   strokeLinecap="round"

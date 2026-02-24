@@ -22,6 +22,8 @@ class AdminUserResponse(BaseModel):
     created_at: datetime
     last_login_at: Optional[datetime] = None
     credit_balance_cents: Optional[int] = None
+    total_deposited_cents: Optional[int] = None
+    total_consumed_cents: Optional[int] = None
     project_count: Optional[int] = None
 
     model_config = {"from_attributes": True}

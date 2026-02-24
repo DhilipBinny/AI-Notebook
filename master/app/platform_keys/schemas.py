@@ -37,6 +37,7 @@ class PlatformKeyResponse(BaseModel):
     base_url: Optional[str] = None
     is_active: bool
     is_default: bool
+    user_visible: bool = True
     priority: int
     created_by: Optional[str] = None
     created_at: datetime

@@ -924,3 +924,38 @@ async def run_ai_cell(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/ai-cell/cancel")
+async def cancel_ai_cell(
+    project_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a running AI Cell execution by proxying to the playground."""
+    project_service = ProjectService(db)
+    project = await project_service.get_by_id_for_user(project_id, current_user.id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    playground_service = PlaygroundService(db)
+    playground = await playground_service.get_by_user_id(current_user.id)
+
+    if not playground or playground.status.value != "running":
+        return {"success": False, "message": "Playground is not running"}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{playground.internal_url}/ai-cell/cancel",
+                headers={"X-Internal-Secret": playground.internal_secret},
+                json={"session_id": project_id},
+                timeout=10,
+            )
+            return response.json()
+    except Exception as e:
+        return {"success": False, "message": f"Failed to cancel: {str(e)}"}

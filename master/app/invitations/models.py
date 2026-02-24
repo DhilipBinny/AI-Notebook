@@ -31,8 +31,17 @@ class Invitation(Base):
     creator = relationship("User", foreign_keys=[created_by])
     uses = relationship("InvitationUse", back_populates="invitation", cascade="all, delete-orphan")
 
+    @property
+    def is_used(self) -> bool:
+        return self.used_count > 0
+
+    @property
+    def code_prefix(self) -> str:
+        """First 8 chars of the hash for admin display."""
+        return self.code[:8] if self.code else ""
+
     def __repr__(self) -> str:
-        return f"<Invitation {self.code[:8]}... ({self.used_count}/{self.max_uses})>"
+        return f"<Invitation {self.code_prefix}... (used={self.used_count})>"
 
 
 class InvitationUse(Base):

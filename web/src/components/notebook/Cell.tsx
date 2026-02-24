@@ -763,61 +763,66 @@ export default function Cell({
   const getCellBgColor = () => {
     if (cell.type === 'code') return 'var(--nb-bg-code-cell)'
     if (cell.type === 'raw') return 'var(--nb-bg-raw-cell)'
-    return 'var(--nb-bg-markdown-cell)'
+    return 'transparent'
   }
 
-  // Get selection indicator style - left stripe instead of full border
-  // Blue = command mode (selected), Green = edit mode (typing)
+  // Get selection indicator style
+  // Code cells: always show blue left accent (card style)
+  // Markdown cells: transparent when unselected (document style), accent only on select/edit
   const getSelectionStyle = () => {
     // Running state - animated blue pulse (highest priority)
     if (isRunning) {
       return {
-        borderLeft: '3px solid #3b82f6',
-        boxShadow: '0 0 12px rgba(59, 130, 246, 0.4)',
+        borderLeft: '3px solid var(--app-accent-primary)',
+        boxShadow: '0 0 12px color-mix(in srgb, var(--app-accent-primary) 40%, transparent)',
         animation: 'gutter-pulse 1.5s ease-in-out infinite',
       }
     }
 
     if (!isSelected) {
-      return {
-        borderLeft: '3px solid transparent',
+      if (cell.type === 'code') {
+        return { borderLeft: '3px solid var(--nb-cell-code-indicator)' }
       }
+      // Markdown/raw: no left accent
+      return {}
+    }
+
+    // Markdown cells: no left accent even when selected
+    if (cell.type === 'markdown') {
+      return {}
     }
 
     // Edit mode - green left stripe
     if (isEditMode) {
       return {
-        borderLeft: '3px solid #10b981',
-        boxShadow: '0 0 8px rgba(16, 185, 129, 0.15)',
+        borderLeft: '3px solid var(--app-accent-success)',
+        boxShadow: '0 0 8px color-mix(in srgb, var(--app-accent-success) 15%, transparent)',
       }
     }
 
     // Command mode - blue left stripe
     return {
-      borderLeft: '3px solid #3b82f6',
-      boxShadow: '0 0 6px rgba(59, 130, 246, 0.1)',
+      borderLeft: '3px solid var(--app-accent-primary)',
+      boxShadow: '0 0 6px color-mix(in srgb, var(--app-accent-primary) 10%, transparent)',
     }
   }
-
-  // Add cell-editing class for markdown cells in edit mode (shows card styling)
-  const editingClass = cell.type === 'markdown' && isEditMode ? 'cell-editing' : ''
 
   // Cell ID already includes 'cell-' prefix (e.g., 'cell-1764683711390-swbvvzf58')
   // Use it directly as the DOM element ID
   return (
     <div
       id={cell.id}
-      className={`group rounded-lg transition-all overflow-hidden cell-wrapper ${cellTypeClass} ${editingClass}`}
+      className={`group rounded-lg transition-all overflow-hidden cell-wrapper ${cellTypeClass}`}
       onClick={onSelect}
       style={{
         backgroundColor: getCellBgColor(),
-        borderColor: 'var(--nb-border-default)',
+        ...(cell.type === 'code' ? { borderColor: 'var(--nb-border-default)' } : {}),
         ...getSelectionStyle(),
       }}
     >
       {/* Cell content wrapper */}
       <div>
-        {/* Cell Header - minimal, content-first design */}
+        {/* Cell Header */}
         <div
           className={`flex items-center justify-between px-3 py-1 transition-all duration-200 ${
             cell.type === 'code' ? 'cell-code-header' : 'cell-markdown-header'
@@ -832,9 +837,9 @@ export default function Cell({
             />
           )}
 
-          {/* Minimal cell type icon - no badge, just a small icon */}
+          {/* Cell type icon - color-coded for quick identification */}
           <span
-            className="opacity-40 group-hover:opacity-70 transition-opacity"
+            className="opacity-60 group-hover:opacity-90 transition-opacity"
             style={{
               color: cell.type === 'code'
                 ? 'var(--nb-accent-code)'
@@ -953,7 +958,7 @@ export default function Cell({
       </div>
 
       {/* Cell Input */}
-      <div className="px-3 py-2" style={{ color: 'var(--nb-text-primary)' }}>
+      <div className="px-3 py-1" style={{ color: 'var(--nb-text-primary)' }}>
         {!showTextarea ? (
           // Rendered markdown view - click to edit
           <div

@@ -43,6 +43,7 @@ class PlatformApiKey(Base):
     base_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=False, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
+    user_visible = Column(Boolean, default=True, nullable=False)
     priority = Column(Integer, default=0, nullable=False)
     created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)

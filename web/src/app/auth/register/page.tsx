@@ -7,28 +7,6 @@ import Image from 'next/image'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 
-// Google Icon SVG
-const GoogleIcon = () => (
-  <svg className="w-5 h-5" viewBox="0 0 24 24">
-    <path
-      fill="#4285F4"
-      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-    />
-    <path
-      fill="#34A853"
-      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-    />
-    <path
-      fill="#FBBC05"
-      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-    />
-    <path
-      fill="#EA4335"
-      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-    />
-  </svg>
-)
-
 function RegisterPageContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -36,15 +14,19 @@ function RegisterPageContent() {
   const [inviteCode, setInviteCode] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const setUser = useAuthStore((state) => state.setUser)
 
-  // Pre-fill invite code from URL query param
+  const hasInviteToken = Boolean(inviteCode)
+  const emailFromInvite = Boolean(searchParams.get('email'))
+
+  // Pre-fill invite code and email from URL query params
   useEffect(() => {
     const invite = searchParams.get('invite')
+    const emailParam = searchParams.get('email')
     if (invite) setInviteCode(invite)
+    if (emailParam) setEmail(emailParam)
   }, [searchParams])
 
   // Redirect to dashboard if already logged in (validate token first)
@@ -59,11 +41,6 @@ function RegisterPageContent() {
       })
     }
   }, [router])
-
-  // Apply dark theme on mount for auth pages
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
 
   const passwordPolicy = {
     minLength: password.length >= 8,
@@ -158,215 +135,191 @@ function RegisterPageContent() {
             border: '1px solid var(--app-border-default)'
           }}
         >
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            {error && (
+          {!hasInviteToken ? (
+            /* No invite token — show gated message */
+            <div className="text-center py-6">
               <div
-                className="rounded-xl p-4"
+                className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)' }}
+              >
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: 'var(--app-accent-primary)' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h3
+                className="text-lg font-semibold mb-2"
+                style={{ color: 'var(--app-text-primary)' }}
+              >
+                Invitation Required
+              </h3>
+              <p
+                className="text-sm mb-6"
+                style={{ color: 'var(--app-text-muted)' }}
+              >
+                Registration is by invitation only. Please use the invite link sent to your email, or contact an administrator to request access.
+              </p>
+              <div className="text-center text-sm">
+                <span style={{ color: 'var(--app-text-muted)' }}>
+                  Already have an account?{' '}
+                </span>
+                <Link
+                  href="/auth/login"
+                  className="font-medium transition-colors hover:opacity-80"
+                  style={{ color: 'var(--app-accent-primary)' }}
+                >
+                  Sign in
+                </Link>
+              </div>
+            </div>
+          ) : (
+            /* Has invite token — show registration form */
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              {error && (
+                <div
+                  className="rounded-xl p-4"
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)'
+                  }}
+                >
+                  <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="block text-sm font-medium mb-2"
+                    style={{ color: 'var(--app-text-secondary)' }}
+                  >
+                    Email address
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    readOnly={emailFromInvite}
+                    value={email}
+                    onChange={(e) => !emailFromInvite && setEmail(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                    style={{
+                      backgroundColor: emailFromInvite ? 'var(--app-bg-tertiary)' : 'var(--app-bg-input)',
+                      border: '1px solid var(--app-border-default)',
+                      color: 'var(--app-text-primary)',
+                      opacity: emailFromInvite ? 0.7 : 1,
+                    }}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="password"
+                    className="block text-sm font-medium mb-2"
+                    style={{ color: 'var(--app-text-secondary)' }}
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                    style={{
+                      backgroundColor: 'var(--app-bg-input)',
+                      border: '1px solid var(--app-border-default)',
+                      color: 'var(--app-text-primary)',
+                    }}
+                    placeholder="Create a strong password"
+                  />
+                  {/* Password Policy Checklist */}
+                  {password.length > 0 && (
+                    <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-tertiary)', border: '1px solid var(--app-border-default)' }}>
+                      <div className="grid grid-cols-2 gap-1">
+                        {[
+                          { met: passwordPolicy.minLength, label: 'Min 8 characters' },
+                          { met: passwordPolicy.uppercase, label: 'Uppercase letter' },
+                          { met: passwordPolicy.lowercase, label: 'Lowercase letter' },
+                          { met: passwordPolicy.number, label: 'Number' },
+                          { met: passwordPolicy.special, label: 'Special character' },
+                        ].map((rule) => (
+                          <div key={rule.label} className="flex items-center gap-1.5">
+                            <span className="text-xs">{rule.met ? '\u2705' : '\u274C'}</span>
+                            <span className="text-xs" style={{ color: rule.met ? 'var(--app-accent-success)' : 'var(--app-text-muted)' }}>
+                              {rule.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label
+                    htmlFor="confirm-password"
+                    className="block text-sm font-medium mb-2"
+                    style={{ color: 'var(--app-text-secondary)' }}
+                  >
+                    Confirm Password
+                  </label>
+                  <input
+                    id="confirm-password"
+                    name="confirmPassword"
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                    style={{
+                      backgroundColor: 'var(--app-bg-input)',
+                      border: '1px solid var(--app-border-default)',
+                      color: 'var(--app-text-primary)',
+                    }}
+                    placeholder="Confirm your password"
+                  />
+                  {confirmPassword && !passwordsMatch && (
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--app-accent-error)' }}>Passwords do not match</p>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !allPoliciesMet || !passwordsMatch}
+                className="w-full py-3 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:opacity-90"
                 style={{
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)'
+                  background: 'var(--app-gradient-primary)',
+                  boxShadow: '0 4px 20px rgba(59, 130, 246, 0.3)'
                 }}
               >
-                <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{error}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label
-                  htmlFor="invite-code"
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: 'var(--app-text-secondary)' }}
-                >
-                  Invitation Code
-                </label>
-                <input
-                  id="invite-code"
-                  name="inviteCode"
-                  type="text"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
-                  style={{
-                    backgroundColor: 'var(--app-bg-input)',
-                    border: '1px solid var(--app-border-default)',
-                    color: 'var(--app-text-primary)',
-                  }}
-                  placeholder="Enter your invitation code"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: 'var(--app-text-secondary)' }}
-                >
-                  Email address
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
-                  style={{
-                    backgroundColor: 'var(--app-bg-input)',
-                    border: '1px solid var(--app-border-default)',
-                    color: 'var(--app-text-primary)',
-                  }}
-                  placeholder="you@example.com"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: 'var(--app-text-secondary)' }}
-                >
-                  Password
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
-                  style={{
-                    backgroundColor: 'var(--app-bg-input)',
-                    border: '1px solid var(--app-border-default)',
-                    color: 'var(--app-text-primary)',
-                  }}
-                  placeholder="Create a strong password"
-                />
-                {/* Password Policy Checklist */}
-                {password.length > 0 && (
-                  <div className="mt-2 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-tertiary)', border: '1px solid var(--app-border-default)' }}>
-                    <div className="grid grid-cols-2 gap-1">
-                      {[
-                        { met: passwordPolicy.minLength, label: 'Min 8 characters' },
-                        { met: passwordPolicy.uppercase, label: 'Uppercase letter' },
-                        { met: passwordPolicy.lowercase, label: 'Lowercase letter' },
-                        { met: passwordPolicy.number, label: 'Number' },
-                        { met: passwordPolicy.special, label: 'Special character' },
-                      ].map((rule) => (
-                        <div key={rule.label} className="flex items-center gap-1.5">
-                          <span className="text-xs">{rule.met ? '\u2705' : '\u274C'}</span>
-                          <span className="text-xs" style={{ color: rule.met ? '#10b981' : 'var(--app-text-muted)' }}>
-                            {rule.label}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Creating account...
+                  </>
+                ) : (
+                  'Create account'
                 )}
-              </div>
-              <div>
-                <label
-                  htmlFor="confirm-password"
-                  className="block text-sm font-medium mb-2"
-                  style={{ color: 'var(--app-text-secondary)' }}
-                >
-                  Confirm Password
-                </label>
-                <input
-                  id="confirm-password"
-                  name="confirmPassword"
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
-                  style={{
-                    backgroundColor: 'var(--app-bg-input)',
-                    border: '1px solid var(--app-border-default)',
-                    color: 'var(--app-text-primary)',
-                  }}
-                  placeholder="Confirm your password"
-                />
-                {confirmPassword && !passwordsMatch && (
-                  <p className="text-xs mt-1.5" style={{ color: 'var(--app-accent-error)' }}>Passwords do not match</p>
-                )}
-              </div>
-            </div>
+              </button>
 
-            <button
-              type="submit"
-              disabled={isLoading || !allPoliciesMet || !passwordsMatch}
-              className="w-full py-3 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 hover:opacity-90"
-              style={{
-                background: 'var(--app-gradient-primary)',
-                boxShadow: '0 4px 20px rgba(59, 130, 246, 0.3)'
-              }}
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Creating account...
-                </>
-              ) : (
-                'Create account'
-              )}
-            </button>
-
-            {/* Divider with visible lines */}
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full" style={{ borderTop: '1px solid var(--app-border-divider)' }} />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4" style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-text-divider)' }}>
-                  Or continue with
+              <div className="text-center text-sm">
+                <span style={{ color: 'var(--app-text-muted)' }}>
+                  Already have an account?{' '}
                 </span>
+                <Link
+                  href="/auth/login"
+                  className="font-medium transition-colors hover:opacity-80"
+                  style={{ color: 'var(--app-accent-primary)' }}
+                >
+                  Sign in
+                </Link>
               </div>
-            </div>
-
-            {/* Google Sign-up Button - Standard white style for recognition */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsGoogleLoading(true)
-                window.location.href = '/api/auth/google'
-              }}
-              disabled={isGoogleLoading}
-              className="w-full py-3 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
-              style={{
-                backgroundColor: 'var(--app-oauth-bg)',
-                border: '1px solid var(--app-oauth-border)',
-                color: 'var(--app-oauth-text)',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-oauth-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-oauth-bg)'}
-            >
-              {isGoogleLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-                  <span style={{ color: 'var(--app-oauth-text)' }}>Redirecting to Google...</span>
-                </>
-              ) : (
-                <>
-                  <GoogleIcon />
-                  <span style={{ color: 'var(--app-oauth-text)' }}>Sign up with Google</span>
-                </>
-              )}
-            </button>
-
-            <div className="text-center text-sm">
-              <span style={{ color: 'var(--app-text-muted)' }}>
-                Already have an account?{' '}
-              </span>
-              <Link
-                href="/auth/login"
-                className="font-medium transition-colors hover:opacity-80"
-                style={{ color: 'var(--app-accent-primary)' }}
-              >
-                Sign in
-              </Link>
-            </div>
-          </form>
+            </form>
+          )}
         </div>
 
         {/* Footer */}

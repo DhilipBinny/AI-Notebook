@@ -57,35 +57,35 @@ function getFileIcon(filename: string) {
     case 'tsx':
     case 'r':
     case 'sql':
-      return <FileCode className="w-4 h-4 text-blue-400" />
+      return <FileCode className="w-4 h-4" style={{ color: 'var(--app-accent-primary)' }} />
     case 'json':
     case 'yaml':
     case 'yml':
     case 'toml':
-      return <FileJson className="w-4 h-4 text-yellow-400" />
+      return <FileJson className="w-4 h-4" style={{ color: 'var(--app-accent-warning)' }} />
     case 'csv':
     case 'xlsx':
     case 'xls':
     case 'parquet':
-      return <Table className="w-4 h-4 text-green-400" />
+      return <Table className="w-4 h-4" style={{ color: 'var(--app-accent-success)' }} />
     case 'png':
     case 'jpg':
     case 'jpeg':
     case 'gif':
     case 'svg':
     case 'webp':
-      return <FileImage className="w-4 h-4 text-purple-400" />
+      return <FileImage className="w-4 h-4" style={{ color: 'var(--nb-accent-ai)' }} />
     case 'zip':
     case 'tar':
     case 'gz':
     case '7z':
-      return <FileArchive className="w-4 h-4 text-orange-400" />
+      return <FileArchive className="w-4 h-4" style={{ color: 'var(--app-accent-warning)' }} />
     case 'md':
     case 'txt':
     case 'pdf':
-      return <FileText className="w-4 h-4 text-gray-400" />
+      return <FileText className="w-4 h-4" style={{ color: 'var(--app-text-muted)' }} />
     default:
-      return <File className="w-4 h-4 text-gray-400" />
+      return <File className="w-4 h-4" style={{ color: 'var(--app-text-muted)' }} />
   }
 }
 
@@ -304,12 +304,12 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
     return (
       <div key={file.path}>
         <div
-          className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded text-sm transition-colors ${
-            isSelected
-              ? 'bg-blue-500/20 text-blue-300'
-              : 'hover:bg-white/5 text-gray-300'
-          }`}
-          style={{ paddingLeft: `${8 + depth * 16}px` }}
+          className="flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded text-sm transition-colors"
+          style={{
+            paddingLeft: `${8 + depth * 16}px`,
+            backgroundColor: isSelected ? 'color-mix(in srgb, var(--app-accent-primary) 20%, transparent)' : undefined,
+            color: isSelected ? 'var(--app-accent-primary)' : 'var(--app-text-secondary)',
+          }}
           onClick={() => {
             setSelectedFile(file.path)
             if (file.is_directory) {
@@ -321,11 +321,11 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
           {file.is_directory ? (
             <>
               {isExpanded ? (
-                <ChevronDown className="w-3 h-3 text-gray-500" />
+                <ChevronDown className="w-3 h-3" style={{ color: 'var(--app-text-muted)' }} />
               ) : (
-                <ChevronRight className="w-3 h-3 text-gray-500" />
+                <ChevronRight className="w-3 h-3" style={{ color: 'var(--app-text-muted)' }} />
               )}
-              <FolderOpen className="w-4 h-4 text-yellow-400" />
+              <FolderOpen className="w-4 h-4" style={{ color: 'var(--app-accent-warning)' }} />
             </>
           ) : (
             <>
@@ -335,14 +335,14 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
           )}
           <span className="flex-1 truncate">{file.name}</span>
           {!file.is_directory && (
-            <span className="text-xs text-gray-500">{formatFileSize(file.size)}</span>
+            <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{formatFileSize(file.size)}</span>
           )}
           <button
             onClick={(e) => {
               e.stopPropagation()
               handleContextMenu(e as unknown as React.MouseEvent, file)
             }}
-            className="p-1 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded"
+            className="p-1 opacity-0 group-hover:opacity-100 rounded"
           >
             <MoreVertical className="w-3 h-3" />
           </button>
@@ -354,21 +354,22 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
   const { rootFiles } = buildTree(fileList)
 
   return (
-    <div className="h-full flex flex-col bg-slate-900/95 border-r border-white/10">
+    <div className="h-full flex flex-col border-r" style={{ backgroundColor: 'var(--app-bg-secondary)', borderColor: 'var(--app-border-default)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+      <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: 'var(--app-border-default)' }}>
         <div className="flex items-center gap-2">
-          <FolderOpen className="w-4 h-4 text-gray-400" />
-          <span className="text-sm font-medium text-white">Files</span>
+          <FolderOpen className="w-4 h-4" style={{ color: 'var(--app-text-muted)' }} />
+          <span className="text-sm font-medium" style={{ color: 'var(--app-text-primary)' }}>Files</span>
           {fileList.length > 0 && (
-            <span className="text-xs text-gray-500">({formatFileSize(totalSize)})</span>
+            <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>({formatFileSize(totalSize)})</span>
           )}
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={refreshFiles}
             disabled={!isPlaygroundRunning || isLoading}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-50"
+            className="p-1.5 rounded transition-colors disabled:opacity-50"
+            style={{ color: 'var(--app-text-muted)' }}
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -376,7 +377,8 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+              className="p-1.5 rounded transition-colors"
+              style={{ color: 'var(--app-text-muted)' }}
             >
               <X className="w-4 h-4" />
             </button>
@@ -385,11 +387,12 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
+      <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--app-border-default)' }}>
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={!isPlaygroundRunning || isUploading}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ backgroundColor: 'var(--app-accent-primary)', color: 'var(--app-text-primary)' }}
         >
           <Upload className="w-3.5 h-3.5" />
           {isUploading ? 'Uploading...' : 'Upload'}
@@ -397,7 +400,8 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
         <button
           onClick={handleSaveToS3}
           disabled={!isPlaygroundRunning || isSaving || fileList.length === 0}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-green-600 hover:bg-green-500 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ backgroundColor: 'var(--app-accent-success)', color: 'var(--app-text-primary)' }}
           title="Save files to cloud storage"
         >
           <Save className="w-3.5 h-3.5" />
@@ -419,12 +423,12 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
 
       {/* Status messages */}
       {error && (
-        <div className="px-3 py-2 bg-red-500/10 border-b border-red-500/20 text-red-400 text-xs">
+        <div className="px-3 py-2 border-b text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-danger) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--app-accent-danger) 20%, transparent)', color: 'var(--app-accent-danger)' }}>
           {error}
         </div>
       )}
       {successMessage && (
-        <div className="px-3 py-2 bg-green-500/10 border-b border-green-500/20 text-green-400 text-xs">
+        <div className="px-3 py-2 border-b text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-success) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--app-accent-success) 20%, transparent)', color: 'var(--app-accent-success)' }}>
           {successMessage}
         </div>
       )}
@@ -432,7 +436,8 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
       {/* File list / Drop zone */}
       <div
         ref={dropZoneRef}
-        className={`flex-1 overflow-y-auto ${isDragging ? 'bg-blue-500/10' : ''}`}
+        className="flex-1 overflow-y-auto"
+        style={isDragging ? { backgroundColor: 'color-mix(in srgb, var(--app-accent-primary) 10%, transparent)' } : undefined}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -440,26 +445,26 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
       >
         {!isPlaygroundRunning ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
-            <FolderOpen className="w-10 h-10 text-gray-600 mb-3" />
-            <p className="text-sm text-gray-500 mb-1">Playground not running</p>
-            <p className="text-xs text-gray-600">Start the playground to manage files</p>
+            <FolderOpen className="w-10 h-10 mb-3" style={{ color: 'var(--app-text-muted)' }} />
+            <p className="text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>Playground not running</p>
+            <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Start the playground to manage files</p>
           </div>
         ) : isLoading && fileList.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <RefreshCw className="w-6 h-6 text-gray-500 animate-spin" />
+            <RefreshCw className="w-6 h-6 animate-spin" style={{ color: 'var(--app-text-muted)' }} />
           </div>
         ) : fileList.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
-            <Upload className="w-10 h-10 text-gray-600 mb-3" />
-            <p className="text-sm text-gray-500 mb-1">No files yet</p>
-            <p className="text-xs text-gray-600">
+            <Upload className="w-10 h-10 mb-3" style={{ color: 'var(--app-text-muted)' }} />
+            <p className="text-sm mb-1" style={{ color: 'var(--app-text-muted)' }}>No files yet</p>
+            <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>
               {isDragging ? 'Drop files here' : 'Drag & drop files or click Upload'}
             </p>
           </div>
         ) : (
           <div className="py-1">
             {isDragging && (
-              <div className="mx-2 my-1 p-4 border-2 border-dashed border-blue-500 rounded-lg text-center text-blue-400 text-sm">
+              <div className="mx-2 my-1 p-4 border-2 border-dashed rounded-lg text-center text-sm" style={{ borderColor: 'var(--app-accent-primary)', color: 'var(--app-accent-primary)' }}>
                 Drop files here to upload
               </div>
             )}
@@ -471,8 +476,8 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
       {/* Context menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-slate-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className="fixed z-50 border rounded-lg shadow-xl py-1 min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y, backgroundColor: 'var(--app-bg-tertiary)', borderColor: 'var(--app-border-default)' }}
         >
           {!contextMenu.file.is_directory && (
             <button
@@ -480,7 +485,8 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
                 handleDownload(contextMenu.file)
                 setContextMenu(null)
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors"
+              style={{ color: 'var(--app-text-secondary)' }}
             >
               <Download className="w-4 h-4" />
               Download
@@ -491,7 +497,8 @@ export default function FilePanel({ projectId, isPlaygroundRunning, onClose }: F
               handleDelete(contextMenu.file)
               setContextMenu(null)
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-white/10 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors"
+            style={{ color: 'var(--app-accent-danger)' }}
           >
             <Trash2 className="w-4 h-4" />
             Delete

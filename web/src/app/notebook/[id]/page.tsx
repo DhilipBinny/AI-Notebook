@@ -9,10 +9,11 @@ import AICell from '@/components/notebook/AICell'
 import NotebookToolbar from '@/components/notebook/NotebookToolbar'
 import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
+import LogsPanel from '@/components/logs/LogsPanel'
 import FilePanel from '@/components/files/FilePanel'
+import AppHeader from '@/components/AppHeader'
 import { useKernel } from '@/hooks/useKernel'
 import { useNotebookUpdates } from '@/hooks/useNotebookUpdates'
-import { ThemeProvider } from '@/contexts/ThemeContext'
 import type { Cell as CellType, CellOutput, Playground, ChatMessage, ImageInput } from '@/types'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -22,7 +23,6 @@ import {
   RefreshCw,
   Plus,
   AlertTriangle,
-  FolderOpen,
   LogOut,
 } from 'lucide-react'
 
@@ -173,6 +173,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [isResizing, setIsResizing] = useState(false)
   const notebookContainerRef = useRef<HTMLDivElement>(null)
 
+  // Chat panel width state - stored in localStorage for persistence
+  const [chatWidth, setChatWidth] = useState<number | null>(null) // null = default 30%
+  const [isChatResizing, setIsChatResizing] = useState(false)
+  const chatPanelRef = useRef<HTMLDivElement>(null)
+
   // Ref to prevent double-processing of Shift+Enter
   const shiftEnterHandledRef = useRef(false)
 
@@ -192,7 +197,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [availableProviders, setAvailableProviders] = useState<{ provider: string; display_name: string }[]>([])
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
-  const [showChat, setShowChat] = useState(true)
+  const [rightPanel, setRightPanel] = useState<'chat' | 'logs' | null>(null)
   const [showFiles, setShowFiles] = useState(false)  // File panel visibility
   const [chatStreamStatus, setChatStreamStatus] = useState<string | null>(null)  // Real-time SSE status
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
@@ -522,6 +527,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [])
 
+  // Load chat panel width from localStorage on mount
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('chat-panel-width')
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10)
+      if (!isNaN(width) && width >= 320 && width <= 900) {
+        setChatWidth(width)
+      }
+    }
+  }, [])
+
   // Handle resize drag - side parameter determines direction
   const handleResizeStart = useCallback((e: React.MouseEvent, side: 'left' | 'right') => {
     e.preventDefault()
@@ -560,6 +576,38 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const resetNotebookWidth = useCallback(() => {
     setNotebookWidth(null)
     localStorage.removeItem('notebook-width')
+  }, [])
+
+  // Handle chat panel resize drag - dragging left edge to expand/shrink
+  const handleChatResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsChatResizing(true)
+
+    const startX = e.clientX
+    const panel = chatPanelRef.current
+    if (!panel) return
+
+    const startWidth = panel.offsetWidth
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Dragging left (negative deltaX) = expand chat, dragging right = shrink
+      const deltaX = startX - e.clientX
+      const newWidth = Math.max(320, Math.min(900, startWidth + deltaX))
+      setChatWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      setIsChatResizing(false)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      // Save to localStorage
+      if (chatPanelRef.current) {
+        localStorage.setItem('chat-panel-width', chatPanelRef.current.offsetWidth.toString())
+      }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
   }, [])
 
   // Heartbeat to keep playground alive - sends activity ping every 2 minutes
@@ -657,14 +705,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     // Save notebook first to ensure context is up to date
     await saveNotebook()
 
-    // Get all cell IDs for context (excluding the AI cell itself, but including other AI cells)
-    // Other AI cells' user_ask_ai and ai_response will be included in context by the backend
-    const contextCellIds = cells
-      .filter(c => c.id !== cellId)
-      .map(c => c.id)
-
     // Get AI cell's position for positional awareness
     const aiCellIndex = cells.findIndex(c => c.id === cellId)
+
+    // Only send cells ABOVE the AI cell as context (top-to-bottom execution model)
+    const contextCellIds = cells
+      .slice(0, aiCellIndex)
+      .map(c => c.id)
 
     // Initialize streaming state - clear previous response, steps, thinking, and errors
     updateCell(cellId, {
@@ -1360,8 +1407,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [currentProject, projectId, cells.length, isDirty, handleSave, playground, llmProvider, addCell])
 
-  // Handle logs - open in new tab
-  const handleOpenLogs = useCallback(() => {
+  // Handle logs
+  const handleOpenLogsWindow = useCallback(() => {
     window.open(`/logs/${projectId}`, '_blank')
   }, [projectId])
 
@@ -2215,17 +2262,22 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--app-bg-primary)' }}
+      >
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-          <span className="text-blue-300 text-sm">Loading notebook...</span>
+          <div
+            className="w-12 h-12 border-4 rounded-full animate-spin"
+            style={{ borderColor: 'color-mix(in srgb, var(--app-accent-primary) 30%, transparent)', borderTopColor: 'var(--app-accent-primary)' }}
+          />
+          <span className="text-sm" style={{ color: 'var(--app-accent-primary)' }}>Loading notebook...</span>
         </div>
       </div>
     )
   }
 
   return (
-    <ThemeProvider>
     <div
       className="h-screen flex flex-col"
       style={{
@@ -2233,46 +2285,44 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         color: 'var(--nb-text-primary)',
       }}
     >
-      {/* Header - Fixed dark styling, not affected by theme */}
-      <header className="flex items-center justify-between px-4 py-2 backdrop-blur-xl bg-slate-900/95 border-b border-white/10">
-        <div className="flex items-center gap-4">
+      {/* Header */}
+      <AppHeader
+        title={currentProject?.name || 'Notebook'}
+        subtitle={isDirty ? 'Unsaved changes' : undefined}
+        subtitleColor={isDirty ? 'var(--app-accent-warning)' : undefined}
+        leftActions={
           <button
             onClick={() => router.push('/dashboard')}
-            className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+            className="p-2 rounded-lg transition-all"
+            style={{ color: 'var(--app-text-muted)' }}
+            title="Back to dashboard"
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <h1 className="text-lg font-semibold text-white">{currentProject?.name || 'Notebook'}</h1>
-          </div>
-          {isDirty && <span className="text-amber-400 text-sm flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> Unsaved</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowFiles(!showFiles)}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm ${
-              showFiles
-                ? 'bg-blue-500/20 text-blue-400'
-                : 'text-gray-400 hover:text-white hover:bg-white/10'
-            }`}
-            title="Toggle file browser"
-          >
-            <FolderOpen className="w-4 h-4" />
-            <span className="hidden sm:inline">Files</span>
-          </button>
+        }
+        rightActions={
           <button
             onClick={handleCloseSession}
-            className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+            className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm"
+            style={{ color: 'var(--app-text-muted)' }}
             title="Stop playground and return to dashboard"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--app-accent-error)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--app-text-muted)' }}
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Close Session</span>
           </button>
-        </div>
-      </header>
+        }
+        onBeforeLogout={async () => {
+          try {
+            if (isDirty) await saveNotebookCore()
+            if (chatMessages.length > 0) await chat.saveHistory(projectId, chatMessages)
+            await playgrounds.stop()
+          } catch {}
+        }}
+      />
 
       {/* Toolbar */}
       <NotebookToolbar
@@ -2296,19 +2346,22 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onStopKernel={handleStopKernel}
         onRestartKernel={handleRestartKernel}
         onRestartPlayground={handleRestartPlayground}
-        showChat={showChat}
-        onToggleChat={() => setShowChat(!showChat)}
-        onOpenLogs={handleOpenLogs}
+        rightPanel={rightPanel}
+        onToggleChat={() => setRightPanel(rightPanel === 'chat' ? null : 'chat')}
+        onOpenLogsPanel={() => setRightPanel(rightPanel === 'logs' ? null : 'logs')}
+        onOpenLogsWindow={handleOpenLogsWindow}
         onOpenTerminal={() => window.open(`/terminal/${projectId}`, '_blank')}
         llmProvider={llmProvider}
         onProviderChange={setLlmProvider}
         availableProviders={availableProviders}
         contextFormat={contextFormat}
         onContextFormatChange={setContextFormat}
+        showFiles={showFiles}
+        onToggleFiles={() => setShowFiles(!showFiles)}
       />
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className={`flex-1 flex overflow-hidden ${isResizing || isChatResizing ? 'select-none cursor-ew-resize' : ''}`}>
         {/* File panel - left side */}
         {showFiles && (
           <div className="w-[240px] min-w-[200px] max-w-[300px] flex-shrink-0">
@@ -2341,7 +2394,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             className={`mx-auto space-y-4 relative ${isResizing ? 'select-none' : ''}`}
             style={{
               width: notebookWidth ? `${notebookWidth}px` : undefined,
-              maxWidth: notebookWidth ? undefined : '72rem', // max-w-6xl equivalent
+              maxWidth: notebookWidth ? '100%' : '72rem', // max-w-6xl equivalent; 100% caps to parent when chat opens
             }}
           >
             {/* Left resize handle */}
@@ -2491,36 +2544,59 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
 
-        {/* Chat panel - 30% width */}
-        {showChat && (
-          <div className="w-[30%] min-w-[320px] flex-shrink-0">
-            <ChatPanel
-              messages={chatMessages}
-              isLoading={chatLoading}
-              pendingTools={pendingTools}
-              onSendMessage={handleSendMessage}
-              onApproveTools={handleApproveTools}
-              onRejectTools={handleRejectTools}
-              llmProvider={llmProvider}
-              onProviderChange={handleProviderChange}
-              toolMode={toolMode}
-              onToolModeChange={setToolMode}
-              contextFormat={contextFormat}
-              onContextFormatChange={setContextFormat}
-              onDeleteMessage={handleDeleteMessage}
-              onEditMessage={handleEditMessage}
-              onRerunMessage={handleRerunMessage}
-              onClearHistory={handleClearHistory}
-              onSummarize={handleSummarize}
-              isSummarizing={isSummarizing}
-              onScrollToCell={handleScrollToCell}
-              streamStatus={chatStreamStatus}
-              onPanelClick={() => {
-                if (isEditMode) {
-                  setIsEditMode(false)
-                }
-              }}
-            />
+        {/* Right panel (Chat or Logs) with resize handle */}
+        {rightPanel && (
+          <div
+            ref={chatPanelRef}
+            className={`flex-shrink-0 relative ${isChatResizing ? 'select-none' : ''}`}
+            style={{
+              width: chatWidth ? `${chatWidth}px` : '30%',
+              minWidth: '320px',
+              maxWidth: '900px',
+            }}
+          >
+            {/* Left resize handle */}
+            <div
+              className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize group hover:bg-blue-500/30 transition-colors z-10 -ml-0.5"
+              onMouseDown={handleChatResizeStart}
+              title="Drag to resize panel"
+            >
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-gray-500/30 rounded group-hover:bg-blue-500 transition-colors" />
+            </div>
+            {rightPanel === 'chat' ? (
+              <ChatPanel
+                messages={chatMessages}
+                isLoading={chatLoading}
+                pendingTools={pendingTools}
+                onSendMessage={handleSendMessage}
+                onApproveTools={handleApproveTools}
+                onRejectTools={handleRejectTools}
+                llmProvider={llmProvider}
+                onProviderChange={handleProviderChange}
+                toolMode={toolMode}
+                onToolModeChange={setToolMode}
+                contextFormat={contextFormat}
+                onContextFormatChange={setContextFormat}
+                onDeleteMessage={handleDeleteMessage}
+                onEditMessage={handleEditMessage}
+                onRerunMessage={handleRerunMessage}
+                onClearHistory={handleClearHistory}
+                onSummarize={handleSummarize}
+                isSummarizing={isSummarizing}
+                onScrollToCell={handleScrollToCell}
+                streamStatus={chatStreamStatus}
+                onPanelClick={() => {
+                  if (isEditMode) {
+                    setIsEditMode(false)
+                  }
+                }}
+              />
+            ) : (
+              <LogsPanel
+                projectId={projectId}
+                onOpenInWindow={handleOpenLogsWindow}
+              />
+            )}
           </div>
         )}
       </div>
@@ -2657,6 +2733,5 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         </div>
       )}
     </div>
-    </ThemeProvider>
   )
 }

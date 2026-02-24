@@ -81,6 +81,15 @@ services:
       PLAYGROUND_IDLE_TIMEOUT: ${PLAYGROUND_IDLE_TIMEOUT:-3600}
       # AI Cell Streaming
       AI_CELL_STREAMING_ENABLED: ${AI_CELL_STREAMING_ENABLED:-true}
+      # Invite System
+      REQUIRE_INVITE_CODE: ${REQUIRE_INVITE_CODE:-true}
+      # SMTP (for invitation emails)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
       # User Limits
       DEFAULT_MAX_PROJECTS: ${DEFAULT_MAX_PROJECTS:-5}
     volumes:

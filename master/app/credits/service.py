@@ -142,7 +142,7 @@ class CreditService:
         return record
 
     async def admin_adjust_credits(
-        self, user_id: str, amount_cents: int, reason: str
+        self, user_id: str, amount_cents: int, reason: Optional[str] = None
     ) -> Optional[UserCredit]:
         """Admin: adjust a user's credit balance."""
         credit = await self.get_balance(user_id)

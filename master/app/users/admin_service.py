@@ -39,12 +39,14 @@ class AdminUserService:
         query = select(
             User,
             func.coalesce(UserCredit.balance_cents, 0).label("credit_balance_cents"),
+            func.coalesce(UserCredit.total_deposited_cents, 0).label("total_deposited_cents"),
+            func.coalesce(UserCredit.total_consumed_cents, 0).label("total_consumed_cents"),
             func.count(Project.id.distinct()).label("project_count"),
         ).outerjoin(
             UserCredit, User.id == UserCredit.user_id
         ).outerjoin(
             Project, User.id == Project.user_id
-        ).group_by(User.id, UserCredit.balance_cents)
+        ).group_by(User.id, UserCredit.balance_cents, UserCredit.total_deposited_cents, UserCredit.total_consumed_cents)
 
         # Count query
         count_query = select(func.count(User.id.distinct()))
@@ -83,11 +85,22 @@ class AdminUserService:
             count_query = count_query.where(User.created_at <= created_to)
 
         # Sorting
-        allowed_sort = {"created_at", "name", "email", "last_login_at"}
-        if sort_by not in allowed_sort:
-            sort_by = "created_at"
+        allowed_user_sort = {"created_at", "name", "email", "last_login_at", "max_projects"}
+        # Computed columns from JOINs
+        computed_sort = {
+            "credit_balance_cents": func.coalesce(UserCredit.balance_cents, 0),
+            "total_deposited_cents": func.coalesce(UserCredit.total_deposited_cents, 0),
+            "total_consumed_cents": func.coalesce(UserCredit.total_consumed_cents, 0),
+            "project_count": func.count(Project.id.distinct()),
+        }
 
-        sort_col = getattr(User, sort_by)
+        if sort_by in computed_sort:
+            sort_col = computed_sort[sort_by]
+        elif sort_by in allowed_user_sort:
+            sort_col = getattr(User, sort_by)
+        else:
+            sort_col = User.created_at
+
         if sort_order == "asc":
             query = query.order_by(sort_col.asc())
         else:
@@ -120,7 +133,9 @@ class AdminUserService:
                 "created_at": user.created_at,
                 "last_login_at": user.last_login_at,
                 "credit_balance_cents": row[1],
-                "project_count": row[2],
+                "total_deposited_cents": row[2],
+                "total_consumed_cents": row[3],
+                "project_count": row[4],
             })
 
         return users, total

@@ -5,11 +5,16 @@ Authentication API routes.
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
 from app.db.session import get_db
 from app.users.models import User
 from app.users.schemas import UserResponse
 from app.audit import audit_log, AuditStatus
+from app.playgrounds.service import PlaygroundService
 from .service import AuthService
+
+logger = logging.getLogger(__name__)
 from .schemas import (
     LoginRequest,
     RegisterRequest,
@@ -185,6 +190,16 @@ async def logout(
     """
     auth_service = AuthService(db)
     await auth_service.logout(request.refresh_token)
+
+    # Stop running playground on logout
+    try:
+        playground_service = PlaygroundService(db)
+        playground = await playground_service.get_by_user_id(current_user.id)
+        if playground and playground.status.value == "running":
+            await playground_service.stop(playground)
+            logger.info(f"Stopped playground for user {current_user.id} on logout")
+    except Exception as e:
+        logger.warning(f"Failed to stop playground on logout: {e}")
 
     # Audit log: logout
     await audit_log(
