@@ -9,6 +9,7 @@ import AICell from '@/components/notebook/AICell'
 import NotebookToolbar from '@/components/notebook/NotebookToolbar'
 import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
+import LogsPanel from '@/components/logs/LogsPanel'
 import FilePanel from '@/components/files/FilePanel'
 import AppHeader from '@/components/AppHeader'
 import { useKernel } from '@/hooks/useKernel'
@@ -196,7 +197,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [availableProviders, setAvailableProviders] = useState<{ provider: string; display_name: string }[]>([])
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
-  const [showChat, setShowChat] = useState(false)
+  const [rightPanel, setRightPanel] = useState<'chat' | 'logs' | null>(null)
   const [showFiles, setShowFiles] = useState(false)  // File panel visibility
   const [chatStreamStatus, setChatStreamStatus] = useState<string | null>(null)  // Real-time SSE status
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
@@ -1406,8 +1407,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [currentProject, projectId, cells.length, isDirty, handleSave, playground, llmProvider, addCell])
 
-  // Handle logs - open in new tab
-  const handleOpenLogs = useCallback(() => {
+  // Handle logs
+  const handleOpenLogsWindow = useCallback(() => {
     window.open(`/logs/${projectId}`, '_blank')
   }, [projectId])
 
@@ -2345,9 +2346,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         onStopKernel={handleStopKernel}
         onRestartKernel={handleRestartKernel}
         onRestartPlayground={handleRestartPlayground}
-        showChat={showChat}
-        onToggleChat={() => setShowChat(!showChat)}
-        onOpenLogs={handleOpenLogs}
+        rightPanel={rightPanel}
+        onToggleChat={() => setRightPanel(rightPanel === 'chat' ? null : 'chat')}
+        onOpenLogsPanel={() => setRightPanel(rightPanel === 'logs' ? null : 'logs')}
+        onOpenLogsWindow={handleOpenLogsWindow}
         onOpenTerminal={() => window.open(`/terminal/${projectId}`, '_blank')}
         llmProvider={llmProvider}
         onProviderChange={setLlmProvider}
@@ -2542,8 +2544,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
 
-        {/* Chat panel with resize handle */}
-        {showChat && (
+        {/* Right panel (Chat or Logs) with resize handle */}
+        {rightPanel && (
           <div
             ref={chatPanelRef}
             className={`flex-shrink-0 relative ${isChatResizing ? 'select-none' : ''}`}
@@ -2557,37 +2559,44 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             <div
               className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize group hover:bg-blue-500/30 transition-colors z-10 -ml-0.5"
               onMouseDown={handleChatResizeStart}
-              title="Drag to resize chat panel"
+              title="Drag to resize panel"
             >
               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-gray-500/30 rounded group-hover:bg-blue-500 transition-colors" />
             </div>
-            <ChatPanel
-              messages={chatMessages}
-              isLoading={chatLoading}
-              pendingTools={pendingTools}
-              onSendMessage={handleSendMessage}
-              onApproveTools={handleApproveTools}
-              onRejectTools={handleRejectTools}
-              llmProvider={llmProvider}
-              onProviderChange={handleProviderChange}
-              toolMode={toolMode}
-              onToolModeChange={setToolMode}
-              contextFormat={contextFormat}
-              onContextFormatChange={setContextFormat}
-              onDeleteMessage={handleDeleteMessage}
-              onEditMessage={handleEditMessage}
-              onRerunMessage={handleRerunMessage}
-              onClearHistory={handleClearHistory}
-              onSummarize={handleSummarize}
-              isSummarizing={isSummarizing}
-              onScrollToCell={handleScrollToCell}
-              streamStatus={chatStreamStatus}
-              onPanelClick={() => {
-                if (isEditMode) {
-                  setIsEditMode(false)
-                }
-              }}
-            />
+            {rightPanel === 'chat' ? (
+              <ChatPanel
+                messages={chatMessages}
+                isLoading={chatLoading}
+                pendingTools={pendingTools}
+                onSendMessage={handleSendMessage}
+                onApproveTools={handleApproveTools}
+                onRejectTools={handleRejectTools}
+                llmProvider={llmProvider}
+                onProviderChange={handleProviderChange}
+                toolMode={toolMode}
+                onToolModeChange={setToolMode}
+                contextFormat={contextFormat}
+                onContextFormatChange={setContextFormat}
+                onDeleteMessage={handleDeleteMessage}
+                onEditMessage={handleEditMessage}
+                onRerunMessage={handleRerunMessage}
+                onClearHistory={handleClearHistory}
+                onSummarize={handleSummarize}
+                isSummarizing={isSummarizing}
+                onScrollToCell={handleScrollToCell}
+                streamStatus={chatStreamStatus}
+                onPanelClick={() => {
+                  if (isEditMode) {
+                    setIsEditMode(false)
+                  }
+                }}
+              />
+            ) : (
+              <LogsPanel
+                projectId={projectId}
+                onOpenInWindow={handleOpenLogsWindow}
+              />
+            )}
           </div>
         )}
       </div>

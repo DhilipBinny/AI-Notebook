@@ -24,6 +24,8 @@ import {
   Type,
   FileDown,
   FolderOpen,
+  ExternalLink,
+  PanelRight,
 } from 'lucide-react'
 
 interface NotebookToolbarProps {
@@ -47,9 +49,10 @@ interface NotebookToolbarProps {
   onStopKernel: () => void
   onRestartKernel: () => void
   onRestartPlayground: () => void
-  showChat: boolean
+  rightPanel: 'chat' | 'logs' | null
   onToggleChat: () => void
-  onOpenLogs: () => void
+  onOpenLogsPanel: () => void
+  onOpenLogsWindow: () => void
   onOpenTerminal: () => void
   // AI Settings
   llmProvider: string
@@ -83,9 +86,10 @@ export default function NotebookToolbar({
   onStopKernel,
   onRestartKernel,
   onRestartPlayground,
-  showChat,
+  rightPanel,
   onToggleChat,
-  onOpenLogs,
+  onOpenLogsPanel,
+  onOpenLogsWindow,
   onOpenTerminal,
   llmProvider,
   onProviderChange,
@@ -96,12 +100,16 @@ export default function NotebookToolbar({
   onToggleFiles,
 }: NotebookToolbarProps) {
   const { density, setDensity } = useTheme()
+  const showChat = rightPanel === 'chat'
+  const showLogs = rightPanel === 'logs'
   const [justSaved, setJustSaved] = useState(false)
   const [prevIsDirty, setPrevIsDirty] = useState(isDirty)
   const [showAISettings, setShowAISettings] = useState(false)
   const [showDensityDropdown, setShowDensityDropdown] = useState(false)
+  const [showLogsDropdown, setShowLogsDropdown] = useState(false)
   const aiSettingsRef = useRef<HTMLDivElement>(null)
   const densityDropdownRef = useRef<HTMLDivElement>(null)
+  const logsDropdownRef = useRef<HTMLDivElement>(null)
 
   // Flash green when save completes (isDirty goes from true to false)
   useEffect(() => {
@@ -121,6 +129,9 @@ export default function NotebookToolbar({
       }
       if (densityDropdownRef.current && !densityDropdownRef.current.contains(event.target as Node)) {
         setShowDensityDropdown(false)
+      }
+      if (logsDropdownRef.current && !logsDropdownRef.current.contains(event.target as Node)) {
+        setShowLogsDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -562,15 +573,53 @@ export default function NotebookToolbar({
           )}
         </button>
 
-        {/* Logs button - ghost style */}
-        <button
-          onClick={onOpenLogs}
-          className="p-2 rounded-md transition-all flex items-center justify-center border border-transparent hover:border-current/20 hover:bg-gray-500/10"
-          style={{ color: 'var(--nb-text-muted)' }}
-          title="Open Logs (new tab)"
-        >
-          <FileText className="w-5 h-5" />
-        </button>
+        {/* Logs dropdown */}
+        <div className="relative" ref={logsDropdownRef}>
+          <button
+            onClick={() => setShowLogsDropdown(!showLogsDropdown)}
+            className={`p-2 rounded-md transition-all flex items-center justify-center border ${
+              showLogs
+                ? 'border-emerald-500/40 bg-emerald-500/15'
+                : 'border-transparent hover:border-current/20 hover:bg-gray-500/10'
+            }`}
+            style={{ color: showLogs ? '#34d399' : 'var(--nb-text-muted)' }}
+            title="Logs"
+          >
+            <FileText className="w-5 h-5" />
+            <ChevronDown className="w-3 h-3 ml-0.5" />
+          </button>
+
+          {showLogsDropdown && (
+            <div
+              className="absolute right-0 top-full mt-2 w-52 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
+              style={{
+                backgroundColor: 'var(--nb-bg-secondary)',
+                border: '1px solid var(--nb-border-default)',
+              }}
+            >
+              <button
+                onClick={() => { onOpenLogsPanel(); setShowLogsDropdown(false) }}
+                className="w-full px-4 py-2.5 text-sm text-left flex items-center gap-2.5 transition-colors"
+                style={{ color: 'var(--nb-text-primary)' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <PanelRight className="w-4 h-4" style={{ color: 'var(--nb-text-muted)' }} />
+                Open in Panel
+              </button>
+              <button
+                onClick={() => { onOpenLogsWindow(); setShowLogsDropdown(false) }}
+                className="w-full px-4 py-2.5 text-sm text-left flex items-center gap-2.5 transition-colors"
+                style={{ color: 'var(--nb-text-primary)', borderTop: '1px solid var(--nb-border-default)' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <ExternalLink className="w-4 h-4" style={{ color: 'var(--nb-text-muted)' }} />
+                Open in New Window
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Terminal button - ghost style */}
         <button
