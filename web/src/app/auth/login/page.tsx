@@ -53,11 +53,6 @@ function LoginForm() {
     }
   }, [router])
 
-  // Apply dark theme on mount for auth pages
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')

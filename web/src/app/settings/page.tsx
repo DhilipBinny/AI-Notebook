@@ -35,10 +35,6 @@ export default function SettingsPage() {
 
   const user = useAuthStore((state) => state.user)
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   const fetchKeys = useCallback(async () => {
     try {
       setIsLoadingKeys(true)

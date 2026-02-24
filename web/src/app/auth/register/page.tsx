@@ -42,11 +42,6 @@ function RegisterPageContent() {
     }
   }, [router])
 
-  // Apply dark theme on mount for auth pages
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   const passwordPolicy = {
     minLength: password.length >= 8,
     uppercase: /[A-Z]/.test(password),

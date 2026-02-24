@@ -86,11 +86,6 @@ function OAuthCallbackHandler() {
     handleCallback()
   }, [searchParams, router, setUser])
 
-  // Apply dark theme
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"

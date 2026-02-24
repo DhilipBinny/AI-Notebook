@@ -28,12 +28,6 @@ import {
   Terminal,
 } from 'lucide-react'
 
-// Apply dark theme on mount for dashboard
-const useDashboardTheme = () => {
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-}
 
 interface PlaygroundStatus {
   [projectId: string]: {
@@ -46,7 +40,6 @@ interface PlaygroundStatus {
 }
 
 export default function DashboardPage() {
-  useDashboardTheme()
   const router = useRouter()
   const { user, isLoading: authLoading, setUser } = useAuthStore()
   const { projects: projectList, setProjects, addProject, removeProject } = useProjectsStore()

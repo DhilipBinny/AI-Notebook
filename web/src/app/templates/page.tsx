@@ -23,10 +23,6 @@ export default function TemplatesPage() {
   const [forkingId, setForkingId] = useState<string | null>(null)
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
-  useEffect(() => {
     const token = localStorage.getItem('access_token')
     if (!token) {
       router.push('/auth/login')

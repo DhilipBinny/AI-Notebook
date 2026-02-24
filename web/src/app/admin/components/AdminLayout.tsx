@@ -29,10 +29,6 @@ export default function AdminLayout({ activeTab, onTabChange, children }: AdminL
   const [authChecked, setAuthChecked] = useState(false)
   const [hoveredTab, setHoveredTab] = useState<string | null>(null)
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }, [])
-
   // Fetch user on mount if not in store (handles page refresh)
   useEffect(() => {
     const init = async () => {

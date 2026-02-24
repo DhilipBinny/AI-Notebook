@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { Sun, Moon } from 'lucide-react'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface AppHeaderProps {
   title?: string
@@ -18,6 +20,7 @@ interface AppHeaderProps {
 export default function AppHeader({ title, subtitle, subtitleColor, leftActions, rightActions, onBeforeLogout }: AppHeaderProps) {
   const router = useRouter()
   const { user, setUser } = useAuthStore()
+  const { theme, setTheme } = useTheme()
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -88,6 +91,36 @@ export default function AppHeader({ title, subtitle, subtitleColor, leftActions,
           {/* Right: Actions + Profile */}
           <div className="flex items-center gap-3">
           {rightActions}
+
+          {/* Theme toggle */}
+          <button
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className="p-2 rounded-lg transition-all hover:opacity-80"
+            style={{
+              backgroundColor: 'var(--app-bg-card)',
+              border: '1px solid var(--app-border-default)',
+              color: theme === 'dark' ? '#a5b4fc' : '#d97706',
+            }}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            <div className="relative w-5 h-5">
+              <Sun
+                className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${
+                  theme === 'light'
+                    ? 'opacity-100 rotate-0 scale-100'
+                    : 'opacity-0 rotate-90 scale-50'
+                }`}
+              />
+              <Moon
+                className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${
+                  theme === 'dark'
+                    ? 'opacity-100 rotate-0 scale-100'
+                    : 'opacity-0 -rotate-90 scale-50'
+                }`}
+              />
+            </div>
+          </button>
+
           <div className="relative z-50" ref={menuRef}>
             <button
               onClick={() => setShowMenu(!showMenu)}
