@@ -2,15 +2,13 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
-export type NotebookTheme = 'dark' | 'light' | 'obsidian' | 'latte'
+export type NotebookTheme = 'dark' | 'light'
 export type DensityMode = 'standard' | 'cozy' | 'compact'
 
 // Theme metadata for dropdown display
 export const themeOptions: { value: NotebookTheme; label: string; description: string }[] = [
-  { value: 'dark', label: 'Dark (Catppuccin)', description: 'Cozy dark theme with warm accents' },
-  { value: 'light', label: 'Light (Slate)', description: 'Clean modern light theme' },
-  { value: 'obsidian', label: 'Obsidian Pro', description: 'Industrial dark with neon accents' },
-  { value: 'latte', label: 'Latte Studio', description: 'Warm paper-like light theme' },
+  { value: 'dark', label: 'Dark', description: 'Cozy dark theme with warm accents' },
+  { value: 'light', label: 'Light', description: 'Clean modern light theme' },
 ]
 
 // Density mode metadata for dropdown display
@@ -29,7 +27,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-const validThemes: NotebookTheme[] = ['dark', 'light', 'obsidian', 'latte']
+const validThemes: NotebookTheme[] = ['dark', 'light']
 const validDensities: DensityMode[] = ['standard', 'cozy', 'compact']
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -96,7 +94,7 @@ export const themeColors = {
       header: '#313244',
       card: 'rgba(255, 255, 255, 0.05)',
       input: 'rgba(255, 255, 255, 0.05)',
-      aiCell: '#1e3a5f',
+      aiCell: '#2a2a2e',
     },
     // Border colors
     border: {
@@ -111,10 +109,10 @@ export const themeColors = {
     text: {
       primary: '#cdd6f4',
       secondary: '#bac2de',
-      muted: '#6c7086',
+      muted: '#7f849c',
       code: '#89b4fa',
       markdown: '#cdd6f4',
-      placeholder: '#6c7086',
+      placeholder: '#7f849c',
     },
     // Accent colors (Catppuccin Mocha palette)
     accent: {
@@ -126,14 +124,14 @@ export const themeColors = {
       error: '#f38ba8',      // Red
       warning: '#fab387',    // Peach
       info: '#89dceb',       // Sky
-      ai: '#89b4fa',         // Blue
+      ai: '#a8a29e',         // Stone 400
     },
     // Syntax highlighting
     syntax: {
       keyword: '#cba6f7',    // Mauve
       string: '#a6e3a1',     // Green
       number: '#fab387',     // Peach
-      comment: '#6c7086',    // Overlay0
+      comment: '#7f849c',    // Overlay0
       function: '#89b4fa',   // Blue
       variable: '#cdd6f4',   // Text
       operator: '#f38ba8',   // Red
@@ -153,7 +151,7 @@ export const themeColors = {
       header: '#f1f5f9',
       card: 'rgba(255, 255, 255, 0.8)',
       input: '#ffffff',
-      aiCell: '#eff6ff',
+      aiCell: '#fafaf9',
     },
     border: {
       default: '#e2e8f0',
@@ -181,7 +179,7 @@ export const themeColors = {
       error: '#ef4444',      // Red 500
       warning: '#f59e0b',    // Amber 500
       info: '#0ea5e9',       // Sky 500
-      ai: '#7c3aed',         // Violet 600
+      ai: '#78716c',         // Stone 500
     },
     // Syntax highlighting
     syntax: {
@@ -192,112 +190,6 @@ export const themeColors = {
       function: '#2563eb',   // Blue
       variable: '#1e293b',   // Slate 800
       operator: '#dc2626',   // Red
-      class: '#d97706',      // Amber
-    },
-  },
-  obsidian: {
-    name: 'Obsidian Pro',
-    bg: {
-      primary: '#09090b',
-      secondary: '#18181b',
-      tertiary: '#27272a',
-      cell: '#18181b',
-      codeCell: '#18181b',
-      markdownCell: '#18181b',
-      output: '#000000',
-      header: '#18181b',
-      card: 'rgba(255, 255, 255, 0.03)',
-      input: 'rgba(255, 255, 255, 0.03)',
-      aiCell: '#111111',
-    },
-    border: {
-      default: '#27272a',
-      subtle: '#18181b',
-      selected: '#ffffff',
-      code: '#27272a',
-      markdown: '#27272a',
-      focus: '#ffffff',
-    },
-    text: {
-      primary: '#fafafa',
-      secondary: '#a1a1aa',
-      muted: '#52525b',
-      code: '#22d3ee',
-      markdown: '#fafafa',
-      placeholder: '#52525b',
-    },
-    accent: {
-      primary: '#22d3ee',    // Cyan
-      secondary: '#a855f7',  // Purple
-      code: '#22d3ee',       // Cyan
-      markdown: '#e879f9',   // Fuchsia
-      success: '#4ade80',    // Green
-      error: '#f87171',      // Red
-      warning: '#fbbf24',    // Amber
-      info: '#38bdf8',       // Sky
-      ai: '#facc15',         // Yellow
-    },
-    syntax: {
-      keyword: '#e879f9',    // Fuchsia
-      string: '#4ade80',     // Green
-      number: '#fbbf24',     // Amber
-      comment: '#52525b',    // Zinc 600
-      function: '#22d3ee',   // Cyan
-      variable: '#fafafa',   // White
-      operator: '#f87171',   // Red
-      class: '#facc15',      // Yellow
-    },
-  },
-  latte: {
-    name: 'Latte Studio',
-    bg: {
-      primary: '#fdfbf7',
-      secondary: '#f5f5f4',
-      tertiary: '#e7e5e4',
-      cell: '#f5f5f4',
-      codeCell: '#f5f5f4',
-      markdownCell: '#f5f5f4',
-      output: '#ffffff',
-      header: '#f5f5f4',
-      card: 'rgba(255, 255, 255, 0.9)',
-      input: '#ffffff',
-      aiCell: '#fff1f2',
-    },
-    border: {
-      default: '#e7e5e4',
-      subtle: '#f5f5f4',
-      selected: '#ea580c',
-      code: '#d6d3d1',
-      markdown: '#e7e5e4',
-      focus: '#ea580c',
-    },
-    text: {
-      primary: '#44403c',
-      secondary: '#78716c',
-      muted: '#a8a29e',
-      code: '#0d9488',
-      markdown: '#44403c',
-      placeholder: '#a8a29e',
-    },
-    accent: {
-      primary: '#0d9488',    // Teal
-      secondary: '#ea580c',  // Orange
-      code: '#0d9488',       // Teal
-      markdown: '#ea580c',   // Orange
-      success: '#16a34a',    // Green
-      error: '#be123c',      // Rose
-      warning: '#d97706',    // Amber
-      info: '#0891b2',       // Cyan
-      ai: '#be123c',         // Rose
-    },
-    syntax: {
-      keyword: '#7c3aed',    // Violet
-      string: '#16a34a',     // Green
-      number: '#0891b2',     // Cyan
-      comment: '#a8a29e',    // Stone 400
-      function: '#0d9488',   // Teal
-      variable: '#44403c',   // Charcoal
-      operator: '#be123c',   // Rose
       class: '#d97706',      // Amber
     },
   },

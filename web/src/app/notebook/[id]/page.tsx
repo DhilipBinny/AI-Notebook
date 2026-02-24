@@ -13,7 +13,6 @@ import FilePanel from '@/components/files/FilePanel'
 import AppHeader from '@/components/AppHeader'
 import { useKernel } from '@/hooks/useKernel'
 import { useNotebookUpdates } from '@/hooks/useNotebookUpdates'
-import { ThemeProvider } from '@/contexts/ThemeContext'
 import type { Cell as CellType, CellOutput, Playground, ChatMessage, ImageInput } from '@/types'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -173,6 +172,11 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [isResizing, setIsResizing] = useState(false)
   const notebookContainerRef = useRef<HTMLDivElement>(null)
 
+  // Chat panel width state - stored in localStorage for persistence
+  const [chatWidth, setChatWidth] = useState<number | null>(null) // null = default 30%
+  const [isChatResizing, setIsChatResizing] = useState(false)
+  const chatPanelRef = useRef<HTMLDivElement>(null)
+
   // Ref to prevent double-processing of Shift+Enter
   const shiftEnterHandledRef = useRef(false)
 
@@ -192,7 +196,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [availableProviders, setAvailableProviders] = useState<{ provider: string; display_name: string }[]>([])
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
-  const [showChat, setShowChat] = useState(true)
+  const [showChat, setShowChat] = useState(false)
   const [showFiles, setShowFiles] = useState(false)  // File panel visibility
   const [chatStreamStatus, setChatStreamStatus] = useState<string | null>(null)  // Real-time SSE status
   const [errorPopup, setErrorPopup] = useState<string | null>(null)
@@ -522,6 +526,17 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
   }, [])
 
+  // Load chat panel width from localStorage on mount
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('chat-panel-width')
+    if (savedWidth) {
+      const width = parseInt(savedWidth, 10)
+      if (!isNaN(width) && width >= 320 && width <= 900) {
+        setChatWidth(width)
+      }
+    }
+  }, [])
+
   // Handle resize drag - side parameter determines direction
   const handleResizeStart = useCallback((e: React.MouseEvent, side: 'left' | 'right') => {
     e.preventDefault()
@@ -560,6 +575,38 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const resetNotebookWidth = useCallback(() => {
     setNotebookWidth(null)
     localStorage.removeItem('notebook-width')
+  }, [])
+
+  // Handle chat panel resize drag - dragging left edge to expand/shrink
+  const handleChatResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsChatResizing(true)
+
+    const startX = e.clientX
+    const panel = chatPanelRef.current
+    if (!panel) return
+
+    const startWidth = panel.offsetWidth
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Dragging left (negative deltaX) = expand chat, dragging right = shrink
+      const deltaX = startX - e.clientX
+      const newWidth = Math.max(320, Math.min(900, startWidth + deltaX))
+      setChatWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      setIsChatResizing(false)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      // Save to localStorage
+      if (chatPanelRef.current) {
+        localStorage.setItem('chat-panel-width', chatPanelRef.current.offsetWidth.toString())
+      }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
   }, [])
 
   // Heartbeat to keep playground alive - sends activity ping every 2 minutes
@@ -2215,17 +2262,22 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--app-bg-primary)' }}
+      >
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-          <span className="text-blue-300 text-sm">Loading notebook...</span>
+          <div
+            className="w-12 h-12 border-4 rounded-full animate-spin"
+            style={{ borderColor: 'color-mix(in srgb, var(--app-accent-primary) 30%, transparent)', borderTopColor: 'var(--app-accent-primary)' }}
+          />
+          <span className="text-sm" style={{ color: 'var(--app-accent-primary)' }}>Loading notebook...</span>
         </div>
       </div>
     )
   }
 
   return (
-    <ThemeProvider>
     <div
       className="h-screen flex flex-col"
       style={{
@@ -2308,7 +2360,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       />
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className={`flex-1 flex overflow-hidden ${isResizing || isChatResizing ? 'select-none cursor-ew-resize' : ''}`}>
         {/* File panel - left side */}
         {showFiles && (
           <div className="w-[240px] min-w-[200px] max-w-[300px] flex-shrink-0">
@@ -2341,7 +2393,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             className={`mx-auto space-y-4 relative ${isResizing ? 'select-none' : ''}`}
             style={{
               width: notebookWidth ? `${notebookWidth}px` : undefined,
-              maxWidth: notebookWidth ? undefined : '72rem', // max-w-6xl equivalent
+              maxWidth: notebookWidth ? '100%' : '72rem', // max-w-6xl equivalent; 100% caps to parent when chat opens
             }}
           >
             {/* Left resize handle */}
@@ -2491,9 +2543,25 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           </div>
         </div>
 
-        {/* Chat panel - 30% width */}
+        {/* Chat panel with resize handle */}
         {showChat && (
-          <div className="w-[30%] min-w-[320px] flex-shrink-0">
+          <div
+            ref={chatPanelRef}
+            className={`flex-shrink-0 relative ${isChatResizing ? 'select-none' : ''}`}
+            style={{
+              width: chatWidth ? `${chatWidth}px` : '30%',
+              minWidth: '320px',
+              maxWidth: '900px',
+            }}
+          >
+            {/* Left resize handle */}
+            <div
+              className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize group hover:bg-blue-500/30 transition-colors z-10 -ml-0.5"
+              onMouseDown={handleChatResizeStart}
+              title="Drag to resize chat panel"
+            >
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-gray-500/30 rounded group-hover:bg-blue-500 transition-colors" />
+            </div>
             <ChatPanel
               messages={chatMessages}
               isLoading={chatLoading}
@@ -2657,6 +2725,5 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         </div>
       )}
     </div>
-    </ThemeProvider>
   )
 }

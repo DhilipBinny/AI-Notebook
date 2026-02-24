@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useTheme, themeOptions, densityOptions, NotebookTheme, DensityMode } from '@/contexts/ThemeContext'
+import { useTheme, densityOptions, DensityMode } from '@/contexts/ThemeContext'
 import {
   Code,
   FileText,
@@ -16,15 +16,11 @@ import {
   Check,
   Download,
   ChevronDown,
-  Sun,
-  Moon,
   MessageSquare,
   Terminal,
-  Settings,
   Sparkles,
   Bot,
   FileCode,
-  Palette,
   Type,
   FileDown,
   FolderOpen,
@@ -99,14 +95,12 @@ export default function NotebookToolbar({
   showFiles,
   onToggleFiles,
 }: NotebookToolbarProps) {
-  const { theme, setTheme, density, setDensity } = useTheme()
+  const { density, setDensity } = useTheme()
   const [justSaved, setJustSaved] = useState(false)
   const [prevIsDirty, setPrevIsDirty] = useState(isDirty)
   const [showAISettings, setShowAISettings] = useState(false)
-  const [showThemeDropdown, setShowThemeDropdown] = useState(false)
   const [showDensityDropdown, setShowDensityDropdown] = useState(false)
   const aiSettingsRef = useRef<HTMLDivElement>(null)
-  const themeDropdownRef = useRef<HTMLDivElement>(null)
   const densityDropdownRef = useRef<HTMLDivElement>(null)
 
   // Flash green when save completes (isDirty goes from true to false)
@@ -124,9 +118,6 @@ export default function NotebookToolbar({
     const handleClickOutside = (event: MouseEvent) => {
       if (aiSettingsRef.current && !aiSettingsRef.current.contains(event.target as Node)) {
         setShowAISettings(false)
-      }
-      if (themeDropdownRef.current && !themeDropdownRef.current.contains(event.target as Node)) {
-        setShowThemeDropdown(false)
       }
       if (densityDropdownRef.current && !densityDropdownRef.current.contains(event.target as Node)) {
         setShowDensityDropdown(false)
@@ -164,7 +155,7 @@ export default function NotebookToolbar({
         </button>
         <button
           onClick={onAddAI}
-          className="px-3 py-2 text-sm rounded-md transition-all flex items-center gap-2 hover:bg-violet-500/10 border border-transparent hover:border-violet-500/30"
+          className="px-3 py-2 text-sm rounded-md transition-all flex items-center gap-2 hover:bg-stone-500/10 border border-transparent hover:border-stone-400/30"
           style={{ color: 'var(--nb-accent-ai)' }}
         >
           <Lightbulb className="w-[18px] h-[18px]" />
@@ -320,8 +311,10 @@ export default function NotebookToolbar({
           <div
             className="absolute top-full left-0 mt-1 w-[520px] p-3 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50"
             style={{
-              backgroundColor: 'var(--nb-bg-secondary)',
-              border: '1px solid var(--nb-border-default)',
+              backgroundColor: 'var(--app-glass-bg)',
+              border: '1px solid var(--app-glass-border)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
             }}
           >
             <div className="grid grid-cols-2 gap-4">
@@ -478,95 +471,6 @@ export default function NotebookToolbar({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Theme dropdown - ghost style */}
-        <div className="relative" ref={themeDropdownRef}>
-          <button
-            onClick={() => setShowThemeDropdown(!showThemeDropdown)}
-            className={`px-2.5 py-2 rounded-md transition-all flex items-center gap-2 border ${showThemeDropdown ? 'border-amber-500/40 bg-amber-500/10' : 'border-transparent hover:border-amber-500/30 hover:bg-amber-500/10'}`}
-            style={{
-              color: theme === 'dark' || theme === 'obsidian' ? '#a5b4fc' : '#d97706',
-            }}
-            title="Change theme"
-          >
-            <div className="relative w-5 h-5">
-              {/* Sun icon for light themes */}
-              <Sun
-                className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${
-                  theme === 'light' || theme === 'latte'
-                    ? 'opacity-100 rotate-0 scale-100'
-                    : 'opacity-0 rotate-90 scale-50'
-                }`}
-              />
-              {/* Moon icon for dark themes */}
-              <Moon
-                className={`absolute inset-0 w-5 h-5 transition-all duration-300 ${
-                  theme === 'dark' || theme === 'obsidian'
-                    ? 'opacity-100 rotate-0 scale-100'
-                    : 'opacity-0 -rotate-90 scale-50'
-                }`}
-              />
-            </div>
-            <ChevronDown className={`w-4 h-4 transition-transform ${showThemeDropdown ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* Dropdown panel */}
-          {showThemeDropdown && (
-            <div
-              className="absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200"
-              style={{
-                backgroundColor: 'var(--nb-bg-secondary)',
-                border: '1px solid var(--nb-border-default)',
-              }}
-            >
-              {/* Header */}
-              <div
-                className="px-4 py-3 flex items-center gap-2"
-                style={{ borderBottom: '1px solid var(--nb-border-default)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.1))' }}
-              >
-                <Palette className="w-[18px] h-[18px]" style={{ color: 'var(--app-accent-warning)' }} />
-                <span className="text-sm font-medium" style={{ color: 'var(--nb-text-primary)' }}>Theme</span>
-              </div>
-
-              {/* Theme options */}
-              <div className="py-1">
-                {themeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => {
-                      setTheme(option.value)
-                      setShowThemeDropdown(false)
-                    }}
-                    className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                      theme === option.value
-                        ? 'bg-amber-500/15'
-                        : 'hover:bg-amber-500/10'
-                    }`}
-                  >
-                    <div className="flex-shrink-0">
-                      {option.value === 'dark' || option.value === 'obsidian' ? (
-                        <Moon className="w-4 h-4" style={{ color: theme === option.value ? 'var(--app-accent-warning)' : 'var(--nb-text-muted)' }} />
-                      ) : (
-                        <Sun className="w-4 h-4" style={{ color: theme === option.value ? 'var(--app-accent-warning)' : 'var(--nb-text-muted)' }} />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium" style={{ color: theme === option.value ? 'var(--app-accent-warning)' : 'var(--nb-text-primary)' }}>
-                        {option.label}
-                      </div>
-                      <div className="text-xs truncate" style={{ color: 'var(--nb-text-muted)' }}>
-                        {option.description}
-                      </div>
-                    </div>
-                    {theme === option.value && (
-                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--app-accent-warning)' }} />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Density dropdown - typography mode selector */}
         <div className="relative" ref={densityDropdownRef}>
           <button
@@ -682,7 +586,7 @@ export default function NotebookToolbar({
         <div className="relative" ref={aiSettingsRef}>
           <button
             onClick={() => setShowAISettings(!showAISettings)}
-            className={`px-2.5 py-2 rounded-md transition-all flex items-center gap-2 border ${showAISettings ? 'border-violet-500/40 bg-violet-500/10' : 'border-transparent hover:border-violet-500/30 hover:bg-violet-500/10'}`}
+            className={`px-2.5 py-2 rounded-md transition-all flex items-center gap-2 border ${showAISettings ? 'border-stone-400/40 bg-stone-500/10' : 'border-transparent hover:border-stone-400/30 hover:bg-stone-500/10'}`}
             style={{
               color: 'var(--nb-accent-ai)',
             }}
@@ -705,7 +609,7 @@ export default function NotebookToolbar({
               {/* Header */}
               <div
                 className="px-4 py-3 flex items-center gap-2"
-                style={{ borderBottom: '1px solid var(--nb-border-default)', background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1))' }}
+                style={{ borderBottom: '1px solid var(--nb-border-default)', background: 'linear-gradient(135deg, rgba(168, 162, 158, 0.12), rgba(120, 113, 108, 0.08))' }}
               >
                 <Sparkles className="w-[18px] h-[18px]" style={{ color: 'var(--nb-accent-ai)' }} />
                 <span className="text-sm font-medium" style={{ color: 'var(--nb-text-primary)' }}>AI Settings</span>
@@ -722,7 +626,7 @@ export default function NotebookToolbar({
                   <select
                     value={llmProvider}
                     onChange={(e) => onProviderChange(e.target.value)}
-                    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all cursor-pointer"
+                    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-stone-400/50 transition-all cursor-pointer"
                     style={{
                       backgroundColor: 'var(--nb-bg-primary)',
                       borderColor: 'var(--nb-border-default)',
@@ -753,7 +657,7 @@ export default function NotebookToolbar({
                   <select
                     value={contextFormat}
                     onChange={(e) => onContextFormatChange(e.target.value as 'xml' | 'json' | 'plain')}
-                    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all cursor-pointer"
+                    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-stone-400/50 transition-all cursor-pointer"
                     style={{
                       backgroundColor: 'var(--nb-bg-primary)',
                       borderColor: 'var(--nb-border-default)',
