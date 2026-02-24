@@ -772,7 +772,7 @@ export default function Cell({
     // Running state - animated blue pulse (highest priority)
     if (isRunning) {
       return {
-        borderLeft: '3px solid #3b82f6',
+        borderLeft: '3px solid var(--app-accent-primary)',
         boxShadow: '0 0 12px rgba(59, 130, 246, 0.4)',
         animation: 'gutter-pulse 1.5s ease-in-out infinite',
       }
@@ -787,14 +787,14 @@ export default function Cell({
     // Edit mode - green left stripe
     if (isEditMode) {
       return {
-        borderLeft: '3px solid #10b981',
+        borderLeft: '3px solid var(--app-accent-success)',
         boxShadow: '0 0 8px rgba(16, 185, 129, 0.15)',
       }
     }
 
     // Command mode - blue left stripe
     return {
-      borderLeft: '3px solid #3b82f6',
+      borderLeft: '3px solid var(--app-accent-primary)',
       boxShadow: '0 0 6px rgba(59, 130, 246, 0.1)',
     }
   }

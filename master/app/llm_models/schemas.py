@@ -62,6 +62,7 @@ class LLMModelCreate(BaseModel):
 
 class LLMModelUpdate(BaseModel):
     """Schema for updating a model (all fields optional)."""
+    model_id: Optional[str] = Field(None, max_length=100)
     display_name: Optional[str] = Field(None, max_length=150)
     context_window: Optional[int] = None
     max_output_tokens: Optional[int] = None

@@ -254,7 +254,7 @@ function RegisterPageContent() {
                         ].map((rule) => (
                           <div key={rule.label} className="flex items-center gap-1.5">
                             <span className="text-xs">{rule.met ? '\u2705' : '\u274C'}</span>
-                            <span className="text-xs" style={{ color: rule.met ? '#10b981' : 'var(--app-text-muted)' }}>
+                            <span className="text-xs" style={{ color: rule.met ? 'var(--app-accent-success)' : 'var(--app-text-muted)' }}>
                               {rule.label}
                             </span>
                           </div>

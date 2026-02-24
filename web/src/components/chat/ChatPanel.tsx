@@ -360,13 +360,13 @@ export default function ChatPanel({
             <div key={idx} style={{ color: 'var(--nb-text-muted)' }}>
               <span className="font-medium flex items-center gap-1.5" style={{ color: 'var(--nb-text-secondary)' }}>
                 {step.type === 'tool_call' && (
-                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(137, 180, 250, 0.2)', color: 'var(--nb-accent-code)' }}>⚡</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'color-mix(in srgb, var(--nb-accent-code) 20%, transparent)', color: 'var(--nb-accent-code)' }}>⚡</span>
                 )}
                 {step.type === 'tool_result' && (
-                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(166, 227, 161, 0.2)', color: 'var(--nb-accent-success)' }}>✓</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'color-mix(in srgb, var(--nb-accent-success) 20%, transparent)', color: 'var(--nb-accent-success)' }}>✓</span>
                 )}
                 {step.type === 'text' && (
-                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(203, 166, 247, 0.2)', color: 'var(--nb-accent-markdown)' }}>💭</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'color-mix(in srgb, var(--nb-accent-markdown) 20%, transparent)', color: 'var(--nb-accent-markdown)' }}>💭</span>
                 )}
                 {step.name || step.type}
               </span>
@@ -530,7 +530,7 @@ export default function ChatPanel({
         {/* Main header row - Clean */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-lg" style={{ background: 'linear-gradient(to bottom right, var(--app-accent-primary), var(--nb-accent-context))', boxShadow: '0 10px 15px -3px color-mix(in srgb, var(--app-accent-primary) 20%, transparent)' }}>
               <MessageSquare className="w-4 h-4 text-white" />
             </div>
             <h2 className="text-base font-semibold" style={{ color: textPrimary }}>AI Assistant</h2>
@@ -542,7 +542,7 @@ export default function ChatPanel({
               <select
                 value={toolMode}
                 onChange={(e) => onToolModeChange(e.target.value as 'auto' | 'manual' | 'ai_decide')}
-                className="text-xs rounded-md px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all cursor-pointer"
+                className="text-xs rounded-md px-2 py-1 border focus:outline-none transition-all cursor-pointer"
                 style={{
                   backgroundColor: colors.inputBg,
                   borderColor: colors.border,
@@ -560,7 +560,7 @@ export default function ChatPanel({
               onClick={onSummarize}
               disabled={isSummarizing}
               className="p-1.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80"
-              style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: 'rgb(192, 132, 252)' }}
+              style={{ backgroundColor: 'color-mix(in srgb, var(--nb-accent-ai) 20%, transparent)', color: 'var(--nb-accent-ai)' }}
               title="Generate AI summary of notebook"
             >
               {isSummarizing ? (
@@ -572,7 +572,7 @@ export default function ChatPanel({
             {/* Clear button */}
             <button
               onClick={onClearHistory}
-              className="p-1.5 rounded-lg transition-all hover:bg-red-500/20"
+              className="p-1.5 rounded-lg transition-all hover:opacity-80"
               style={{ color: textMuted }}
               title="Clear chat history"
             >
@@ -586,26 +586,26 @@ export default function ChatPanel({
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" style={{ backgroundColor: colors.messagesBg }}>
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500/20 to-teal-500/20 border border-blue-500/20 flex items-center justify-center">
-              <MessageSquare className="w-8 h-8 text-blue-400" strokeWidth={1.5} />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(to bottom right, color-mix(in srgb, var(--app-accent-primary) 20%, transparent), color-mix(in srgb, var(--nb-accent-context) 20%, transparent))', border: '1px solid color-mix(in srgb, var(--app-accent-primary) 20%, transparent)' }}>
+              <MessageSquare className="w-8 h-8" style={{ color: 'var(--app-accent-primary)' }} strokeWidth={1.5} />
             </div>
             <h3 className="text-lg font-medium mb-2" style={{ color: textPrimary }}>Welcome!</h3>
             <p className="mb-4" style={{ color: textSecondary }}>I can help with your notebook:</p>
             <div className="inline-flex flex-col items-start text-sm space-y-2 rounded-xl p-4" style={{ backgroundColor: theme === 'light' ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.05)', border: `1px solid ${colors.border}`, color: textSecondary }}>
               <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs">?</span>
+                <span className="w-5 h-5 rounded flex items-center justify-center text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-primary) 20%, transparent)', color: 'var(--app-accent-primary)' }}>?</span>
                 <span>Answer questions about selected cells</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded bg-green-500/20 text-green-400 flex items-center justify-center text-xs">⌘</span>
+                <span className="w-5 h-5 rounded flex items-center justify-center text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-success) 20%, transparent)', color: 'var(--app-accent-success)' }}>⌘</span>
                 <span>Write and edit code</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">▶</span>
+                <span className="w-5 h-5 rounded flex items-center justify-center text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-secondary) 20%, transparent)', color: 'var(--app-accent-secondary)' }}>▶</span>
                 <span>Execute cells automatically</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded bg-amber-500/20 text-amber-400 flex items-center justify-center text-xs">📝</span>
+                <span className="w-5 h-5 rounded flex items-center justify-center text-xs" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-warning) 20%, transparent)', color: 'var(--app-accent-warning)' }}>📝</span>
                 <span>Create documentation</span>
               </div>
             </div>
@@ -622,11 +622,10 @@ export default function ChatPanel({
           >
             <div className={`flex items-start gap-2.5 ${editingIndex === idx ? 'w-[85%]' : 'max-w-[85%]'} ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
               {/* Avatar */}
-              <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${
-                msg.role === 'user'
-                  ? 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-500/20'
-                  : 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/20'
-              }`}>
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-lg" style={msg.role === 'user'
+                ? { background: 'linear-gradient(to bottom right, var(--app-accent-primary), color-mix(in srgb, var(--app-accent-primary) 85%, black))', boxShadow: '0 10px 15px -3px color-mix(in srgb, var(--app-accent-primary) 20%, transparent)' }
+                : { background: 'linear-gradient(to bottom right, var(--app-accent-success), var(--nb-accent-context))', boxShadow: '0 10px 15px -3px color-mix(in srgb, var(--app-accent-success) 20%, transparent)' }
+              }>
                 {msg.role === 'user' ? (
                   <User className="w-4 h-4 text-white" />
                 ) : (
@@ -639,10 +638,12 @@ export default function ChatPanel({
                 <div
                   className={`rounded-2xl px-4 py-2.5 shadow-lg ${
                     msg.role === 'user'
-                      ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-tr-md'
+                      ? 'text-white rounded-tr-md'
                       : 'rounded-tl-md'
                   } ${editingIndex === idx ? 'w-full' : ''}`}
-                  style={msg.role === 'assistant' ? {
+                  style={msg.role === 'user' ? {
+                    background: 'linear-gradient(to bottom right, var(--app-accent-primary), color-mix(in srgb, var(--app-accent-primary) 85%, black))',
+                  } : msg.role === 'assistant' ? {
                     backgroundColor: colors.assistantBubble,
                     border: `1px solid ${colors.border}`,
                     color: textPrimary,
@@ -664,13 +665,15 @@ export default function ChatPanel({
                       <div className="flex gap-2 mt-2 pt-2 border-t border-white/10">
                         <button
                           onClick={saveEdit}
-                          className="text-xs px-3 py-1.5 bg-green-500 hover:bg-green-400 text-white rounded-lg transition-colors"
+                          className="text-xs px-3 py-1.5 text-white rounded-lg transition-colors hover:opacity-80"
+                          style={{ backgroundColor: 'var(--app-accent-success)' }}
                         >
                           Save
                         </button>
                         <button
                           onClick={cancelEditing}
-                          className="text-xs px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
+                          className="text-xs px-3 py-1.5 text-white rounded-lg transition-colors hover:opacity-80"
+                          style={{ backgroundColor: 'var(--app-bg-tertiary)' }}
                         >
                           Cancel
                         </button>
@@ -687,16 +690,16 @@ export default function ChatPanel({
                               <div
                                 className="rounded-lg overflow-hidden"
                                 style={{
-                                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  backgroundColor: 'color-mix(in srgb, var(--app-accent-error) 10%, transparent)',
+                                  border: '1px solid color-mix(in srgb, var(--app-accent-error) 30%, transparent)',
                                 }}
                               >
                                 {/* Error header */}
                                 <div
                                   className="flex items-center gap-2 px-3 py-2"
                                   style={{
-                                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                                    borderBottom: '1px solid rgba(239, 68, 68, 0.2)',
+                                    backgroundColor: 'color-mix(in srgb, var(--app-accent-error) 15%, transparent)',
+                                    borderBottom: '1px solid color-mix(in srgb, var(--app-accent-error) 20%, transparent)',
                                   }}
                                 >
                                   <AlertTriangle className="w-4 h-4" style={{ color: 'var(--nb-accent-error)' }} />
@@ -819,8 +822,8 @@ export default function ChatPanel({
 
         {/* Tool approval UI */}
         {pendingTools.length > 0 && (
-          <div className="rounded-xl p-4 bg-amber-500/10 border border-amber-500/30 shadow-lg shadow-amber-500/5 animate-fadeIn">
-            <div className="flex items-center gap-2 text-sm font-medium mb-3 text-amber-400">
+          <div className="rounded-xl p-4 shadow-lg animate-fadeIn" style={{ backgroundColor: 'color-mix(in srgb, var(--app-accent-warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--app-accent-warning) 30%, transparent)', boxShadow: '0 10px 15px -3px color-mix(in srgb, var(--app-accent-warning) 5%, transparent)' }}>
+            <div className="flex items-center gap-2 text-sm font-medium mb-3" style={{ color: 'var(--app-accent-warning)' }}>
               <AlertTriangle className="w-5 h-5" />
               The assistant wants to use these tools:
             </div>
@@ -838,13 +841,14 @@ export default function ChatPanel({
                     type="checkbox"
                     checked={selectedTools.has(tool.id)}
                     onChange={() => toggleTool(tool.id)}
-                    className="mt-0.5 w-4 h-4 rounded border-gray-500 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                    className="mt-0.5 w-4 h-4 rounded focus:ring-offset-0"
+                    style={{ borderColor: 'var(--app-text-muted)', accentColor: 'var(--app-accent-primary)' }}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-white text-sm">{tool.name}</div>
-                    <details className="text-xs text-gray-400 mt-1">
-                      <summary className="cursor-pointer hover:text-gray-300">View arguments</summary>
-                      <pre className="mt-2 rounded-lg p-2 whitespace-pre-wrap break-words overflow-hidden bg-black/30 text-gray-300 text-[11px] font-mono">
+                    <details className="text-xs mt-1" style={{ color: 'var(--app-text-muted)' }}>
+                      <summary className="cursor-pointer" style={{ color: 'var(--app-text-muted)' }}>View arguments</summary>
+                      <pre className="mt-2 rounded-lg p-2 whitespace-pre-wrap break-words overflow-hidden text-[11px] font-mono" style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)', color: 'var(--nb-text-secondary)' }}>
                         {JSON.stringify(tool.arguments, null, 2)}
                       </pre>
                     </details>
@@ -856,13 +860,15 @@ export default function ChatPanel({
               <button
                 onClick={handleApprove}
                 disabled={selectedTools.size === 0}
-                className="flex-1 px-4 py-2 text-sm bg-green-500 hover:bg-green-400 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium shadow-lg shadow-green-500/20"
+                className="flex-1 px-4 py-2 text-sm disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium hover:opacity-80"
+                style={{ backgroundColor: selectedTools.size === 0 ? 'var(--app-bg-tertiary)' : 'var(--app-accent-success)', boxShadow: selectedTools.size > 0 ? '0 10px 15px -3px color-mix(in srgb, var(--app-accent-success) 20%, transparent)' : 'none' }}
               >
                 Approve ({selectedTools.size})
               </button>
               <button
                 onClick={onRejectTools}
-                className="flex-1 px-4 py-2 text-sm bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-colors font-medium"
+                className="flex-1 px-4 py-2 text-sm text-white rounded-lg transition-colors font-medium hover:opacity-80"
+                style={{ backgroundColor: 'var(--app-accent-error)' }}
               >
                 Reject
               </button>
@@ -928,7 +934,8 @@ export default function ChatPanel({
                   <button
                     type="button"
                     onClick={() => removeImage(idx)}
-                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute -top-2 -right-2 w-5 h-5 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ backgroundColor: 'var(--app-accent-error)' }}
                   >
                     ×
                   </button>
@@ -940,8 +947,8 @@ export default function ChatPanel({
           <div className={`flex gap-2 relative ${isDragging ? 'opacity-50' : ''}`}>
             {/* Drag overlay */}
             {isDragging && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10 z-10">
-                <span className="text-blue-400 text-sm font-medium">Drop image here</span>
+              <div className="absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed z-10" style={{ borderColor: 'var(--app-accent-primary)', backgroundColor: 'color-mix(in srgb, var(--app-accent-primary) 10%, transparent)' }}>
+                <span className="text-sm font-medium" style={{ color: 'var(--app-accent-primary)' }}>Drop image here</span>
               </div>
             )}
 
@@ -953,13 +960,14 @@ export default function ChatPanel({
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder="Ask AI for help... (Enter to send, Shift+Enter for new line)"
-                className="w-full rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
+                className="w-full rounded-lg px-3 py-2 text-sm resize-none focus:outline-none transition-all"
                 style={{
                   minHeight: '56px',
                   maxHeight: '150px',
-                  backgroundColor: theme === 'light' ? '#fff' : 'rgba(17, 24, 39, 0.6)',
-                  border: `1px solid ${theme === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)'}`,
+                  backgroundColor: 'var(--nb-bg-primary)',
+                  border: `1px solid var(--nb-border-default)`,
                   color: textPrimary,
+                  outline: 'none',
                 }}
                 disabled={isLoading}
               />
@@ -977,7 +985,7 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="p-2 rounded-lg transition-all hover:bg-blue-500/10 border border-transparent hover:border-blue-500/30"
+                className="p-2 rounded-lg transition-all border border-transparent hover:opacity-80"
                 style={{ color: textMuted }}
                 title="Attach image (paste or drop also works)"
               >
@@ -986,7 +994,15 @@ export default function ChatPanel({
               <button
                 type="submit"
                 disabled={(!input.trim() && images.length === 0) || isLoading}
-                className="p-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md shadow-blue-500/20 hover:shadow-blue-500/30 disabled:shadow-none"
+                className="p-2.5 disabled:cursor-not-allowed text-white rounded-lg transition-all hover:opacity-80"
+                style={{
+                  background: (!input.trim() && images.length === 0) || isLoading
+                    ? 'var(--app-bg-tertiary)'
+                    : 'linear-gradient(to right, var(--app-accent-primary), color-mix(in srgb, var(--app-accent-primary) 85%, black))',
+                  boxShadow: (!input.trim() && images.length === 0) || isLoading
+                    ? 'none'
+                    : '0 4px 6px -1px color-mix(in srgb, var(--app-accent-primary) 20%, transparent)',
+                }}
                 title="Send message (Enter)"
               >
                 <Send className="w-5 h-5" />

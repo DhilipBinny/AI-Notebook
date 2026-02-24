@@ -27,6 +27,7 @@ import {
   Palette,
   Type,
   FileDown,
+  FolderOpen,
 } from 'lucide-react'
 
 interface NotebookToolbarProps {
@@ -60,6 +61,8 @@ interface NotebookToolbarProps {
   availableProviders?: { provider: string; display_name: string }[]
   contextFormat: 'xml' | 'json' | 'plain'
   onContextFormatChange: (format: 'xml' | 'json' | 'plain') => void
+  showFiles?: boolean
+  onToggleFiles?: () => void
 }
 
 
@@ -93,6 +96,8 @@ export default function NotebookToolbar({
   availableProviders,
   contextFormat,
   onContextFormatChange,
+  showFiles,
+  onToggleFiles,
 }: NotebookToolbarProps) {
   const { theme, setTheme, density, setDensity } = useTheme()
   const [justSaved, setJustSaved] = useState(false)
@@ -160,7 +165,7 @@ export default function NotebookToolbar({
         <button
           onClick={onAddAI}
           className="px-3 py-2 text-sm rounded-md transition-all flex items-center gap-2 hover:bg-violet-500/10 border border-transparent hover:border-violet-500/30"
-          style={{ color: 'rgb(167, 139, 250)' }}
+          style={{ color: 'var(--nb-accent-ai)' }}
         >
           <Lightbulb className="w-[18px] h-[18px]" />
           AI
@@ -180,7 +185,7 @@ export default function NotebookToolbar({
         <button
           onClick={onClearOutputs}
           className="px-3 py-2 text-sm rounded-md transition-all flex items-center gap-2 hover:bg-amber-500/10 border border-transparent hover:border-amber-500/30"
-          style={{ color: 'rgb(251, 191, 36)' }}
+          style={{ color: 'var(--app-accent-warning)' }}
           title="Clear all outputs"
         >
           <Eraser className="w-[18px] h-[18px]" />
@@ -457,7 +462,7 @@ export default function NotebookToolbar({
               : 'border-transparent'
           }`}
           style={{
-            color: isSaving ? 'var(--nb-text-muted)' : isDirty ? 'rgb(96, 165, 250)' : justSaved ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)',
+            color: isSaving ? 'var(--nb-text-muted)' : isDirty ? 'var(--app-accent-primary)' : justSaved ? 'var(--nb-accent-success)' : 'var(--nb-text-muted)',
           }}
           title={isSaving ? 'Saving...' : isDirty ? 'Save notebook (Ctrl+S)' : 'Notebook saved'}
         >
@@ -518,7 +523,7 @@ export default function NotebookToolbar({
                 className="px-4 py-3 flex items-center gap-2"
                 style={{ borderBottom: '1px solid var(--nb-border-default)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.1))' }}
               >
-                <Palette className="w-[18px] h-[18px]" style={{ color: '#f59e0b' }} />
+                <Palette className="w-[18px] h-[18px]" style={{ color: 'var(--app-accent-warning)' }} />
                 <span className="text-sm font-medium" style={{ color: 'var(--nb-text-primary)' }}>Theme</span>
               </div>
 
@@ -539,13 +544,13 @@ export default function NotebookToolbar({
                   >
                     <div className="flex-shrink-0">
                       {option.value === 'dark' || option.value === 'obsidian' ? (
-                        <Moon className="w-4 h-4" style={{ color: theme === option.value ? '#f59e0b' : 'var(--nb-text-muted)' }} />
+                        <Moon className="w-4 h-4" style={{ color: theme === option.value ? 'var(--app-accent-warning)' : 'var(--nb-text-muted)' }} />
                       ) : (
-                        <Sun className="w-4 h-4" style={{ color: theme === option.value ? '#f59e0b' : 'var(--nb-text-muted)' }} />
+                        <Sun className="w-4 h-4" style={{ color: theme === option.value ? 'var(--app-accent-warning)' : 'var(--nb-text-muted)' }} />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium" style={{ color: theme === option.value ? '#f59e0b' : 'var(--nb-text-primary)' }}>
+                      <div className="text-sm font-medium" style={{ color: theme === option.value ? 'var(--app-accent-warning)' : 'var(--nb-text-primary)' }}>
                         {option.label}
                       </div>
                       <div className="text-xs truncate" style={{ color: 'var(--nb-text-muted)' }}>
@@ -553,7 +558,7 @@ export default function NotebookToolbar({
                       </div>
                     </div>
                     {theme === option.value && (
-                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#f59e0b' }} />
+                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--app-accent-warning)' }} />
                     )}
                   </button>
                 ))}
@@ -588,7 +593,7 @@ export default function NotebookToolbar({
                 className="px-4 py-3 flex items-center gap-2"
                 style={{ borderBottom: '1px solid var(--nb-border-default)', background: 'linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(59, 130, 246, 0.1))' }}
               >
-                <Type className="w-[18px] h-[18px]" style={{ color: '#22d3ee' }} />
+                <Type className="w-[18px] h-[18px]" style={{ color: 'var(--app-accent-info)' }} />
                 <span className="text-sm font-medium" style={{ color: 'var(--nb-text-primary)' }}>Density</span>
               </div>
 
@@ -608,7 +613,7 @@ export default function NotebookToolbar({
                     }`}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium" style={{ color: density === option.value ? '#22d3ee' : 'var(--nb-text-primary)' }}>
+                      <div className="text-sm font-medium" style={{ color: density === option.value ? 'var(--app-accent-info)' : 'var(--nb-text-primary)' }}>
                         {option.label}
                       </div>
                       <div className="text-xs truncate" style={{ color: 'var(--nb-text-muted)' }}>
@@ -616,7 +621,7 @@ export default function NotebookToolbar({
                       </div>
                     </div>
                     {density === option.value && (
-                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#22d3ee' }} />
+                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--app-accent-info)' }} />
                     )}
                   </button>
                 ))}
@@ -630,7 +635,7 @@ export default function NotebookToolbar({
           onClick={onExport}
           disabled={isExporting}
           className="p-2 rounded-md transition-all flex items-center justify-center border border-transparent hover:border-cyan-500/30 hover:bg-cyan-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ color: 'rgb(34, 211, 238)' }}
+          style={{ color: 'var(--app-accent-info)' }}
           title="Export as .ipynb"
         >
           {isExporting ? (
@@ -643,7 +648,7 @@ export default function NotebookToolbar({
           onClick={onExportPDF}
           disabled={isExportingPDF}
           className="p-2 rounded-md transition-all flex items-center justify-center border border-transparent hover:border-rose-500/30 hover:bg-rose-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ color: 'rgb(244, 63, 94)' }}
+          style={{ color: 'var(--app-accent-error)' }}
           title="Export as PDF"
         >
           {isExportingPDF ? (
@@ -679,7 +684,7 @@ export default function NotebookToolbar({
             onClick={() => setShowAISettings(!showAISettings)}
             className={`px-2.5 py-2 rounded-md transition-all flex items-center gap-2 border ${showAISettings ? 'border-violet-500/40 bg-violet-500/10' : 'border-transparent hover:border-violet-500/30 hover:bg-violet-500/10'}`}
             style={{
-              color: 'rgb(167, 139, 250)',
+              color: 'var(--nb-accent-ai)',
             }}
             title="AI Settings"
           >
@@ -702,7 +707,7 @@ export default function NotebookToolbar({
                 className="px-4 py-3 flex items-center gap-2"
                 style={{ borderBottom: '1px solid var(--nb-border-default)', background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1))' }}
               >
-                <Sparkles className="w-[18px] h-[18px]" style={{ color: 'rgb(167, 139, 250)' }} />
+                <Sparkles className="w-[18px] h-[18px]" style={{ color: 'var(--nb-accent-ai)' }} />
                 <span className="text-sm font-medium" style={{ color: 'var(--nb-text-primary)' }}>AI Settings</span>
               </div>
 
@@ -765,12 +770,26 @@ export default function NotebookToolbar({
           )}
         </div>
 
+        {/* Files toggle button - ghost style */}
+        {onToggleFiles && (
+          <button
+            onClick={onToggleFiles}
+            className={`p-2 rounded-md transition-all flex items-center justify-center border ${showFiles ? 'border-amber-500/40 bg-amber-500/15' : 'border-transparent hover:border-amber-500/30 hover:bg-amber-500/10'}`}
+            style={{
+              color: showFiles ? 'var(--app-accent-warning)' : 'var(--nb-text-muted)',
+            }}
+            title={showFiles ? 'Hide Files' : 'Show Files'}
+          >
+            <FolderOpen className="w-5 h-5" />
+          </button>
+        )}
+
         {/* Chat toggle button - ghost style with primary accent when active */}
         <button
           onClick={onToggleChat}
           className={`p-2 rounded-md transition-all flex items-center justify-center border ${showChat ? 'border-blue-500/40 bg-blue-500/15' : 'border-transparent hover:border-blue-500/30 hover:bg-blue-500/10'}`}
           style={{
-            color: showChat ? 'rgb(96, 165, 250)' : 'var(--nb-text-muted)',
+            color: showChat ? 'var(--app-accent-primary)' : 'var(--nb-text-muted)',
           }}
           title={showChat ? 'Hide AI Chat' : 'Show AI Chat'}
         >

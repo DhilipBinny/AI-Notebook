@@ -1,17 +1,24 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { admin } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import type { Invitation } from '@/types'
 
 export default function InvitationsTab() {
   const [invitations, setInvitations] = useState<Invitation[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showBatch, setShowBatch] = useState(false)
+
+  // Search
+  const [search, setSearch] = useState('')
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Create form
   const [newEmail, setNewEmail] = useState('')
@@ -26,14 +33,25 @@ export default function InvitationsTab() {
   const fetchInvitations = useCallback(async () => {
     try {
       setIsLoading(true)
-      const data = await admin.invitations.list()
-      setInvitations(data)
+      const params: Record<string, string | number | boolean> = { page, page_size: pageSize }
+      if (search) params.search = search
+      const data = await admin.invitations.list(params as Parameters<typeof admin.invitations.list>[0])
+      setInvitations(data.invitations)
+      setTotal(data.total)
     } catch {
       setError('Failed to load invitations')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [page, pageSize, search])
+
+  const handleSearchChange = (value: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setSearch(value)
+      setPage(1)
+    }, 300)
+  }
 
   useEffect(() => {
     if (user?.is_admin) {
@@ -118,11 +136,16 @@ export default function InvitationsTab() {
 
   return (
     <div>
-      {/* Action bar */}
-      <div className="flex items-center justify-between mb-6">
-        <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
-          Create and manage invitation codes for user registration
-        </p>
+      {/* Search & Action bar */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <input
+          type="text"
+          onChange={(e) => handleSearchChange(e.target.value)}
+          placeholder="Search by email or note..."
+          autoComplete="off"
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-lg text-sm focus:outline-none"
+          style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+        />
         <div className="flex gap-3">
           <button
             onClick={() => { setShowBatch(true); setShowCreate(false) }}
@@ -153,7 +176,7 @@ export default function InvitationsTab() {
       )}
 
       {success && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
           {success}
         </div>
       )}
@@ -236,6 +259,7 @@ export default function InvitationsTab() {
         ) : invitations.length === 0 ? (
           <div className="p-8 text-center" style={{ color: 'var(--app-text-muted)' }}>No invitations yet</div>
         ) : (
+          <>
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--app-border-default)' }}>
@@ -248,10 +272,10 @@ export default function InvitationsTab() {
               </tr>
             </thead>
             <tbody>
-              {invitations.map((inv) => {
+              {invitations.map((inv, idx) => {
                 const isExpired = inv.expires_at && new Date(inv.expires_at) < new Date()
                 const statusLabel = !inv.is_active ? 'Deactivated' : isExpired ? 'Expired' : inv.is_used ? 'Registered' : 'Pending'
-                const statusColor = !inv.is_active ? 'var(--app-text-muted)' : isExpired ? 'var(--app-accent-error)' : inv.is_used ? '#10b981' : '#f59e0b'
+                const statusColor = !inv.is_active ? 'var(--app-text-muted)' : isExpired ? 'var(--app-accent-error)' : inv.is_used ? 'var(--app-accent-success)' : 'var(--app-accent-warning)'
                 const canReinvite = inv.email && !inv.is_used && (!inv.is_active || isExpired)
 
                 return (
@@ -280,6 +304,8 @@ export default function InvitationsTab() {
                             onClick={() => handleReinvite(inv.id)}
                             className="px-2 py-1 rounded text-xs transition-colors"
                             style={{ color: 'var(--app-accent-primary)' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             Re-Invite
                           </button>
@@ -288,7 +314,9 @@ export default function InvitationsTab() {
                           <button
                             onClick={() => handleDeactivate(inv.id)}
                             className="px-2 py-1 rounded text-xs transition-colors"
-                            style={{ color: '#f59e0b' }}
+                            style={{ color: 'var(--app-accent-warning)' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             Deactivate
                           </button>
@@ -297,6 +325,8 @@ export default function InvitationsTab() {
                           onClick={() => handleDelete(inv.id)}
                           className="px-2 py-1 rounded text-xs transition-colors"
                           style={{ color: 'var(--app-accent-error)' }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                           Delete
                         </button>
@@ -307,6 +337,50 @@ export default function InvitationsTab() {
               })}
             </tbody>
           </table>
+
+          {/* Pagination */}
+          {total > 0 && (() => {
+            const totalPages = Math.ceil(total / pageSize)
+            const startIdx = (page - 1) * pageSize + 1
+            const endIdx = Math.min(page * pageSize, total)
+            return (
+              <div className="px-4 py-3 flex items-center justify-between" style={{ borderTop: '1px solid var(--app-border-default)' }}>
+                <span className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
+                  Showing {startIdx}-{endIdx} of {total}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage(Math.max(1, page - 1))}
+                    disabled={page <= 1}
+                    className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-30"
+                    style={{
+                      backgroundColor: 'var(--app-bg-tertiary)',
+                      color: 'var(--app-text-secondary)',
+                      border: '1px solid var(--app-border-default)',
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <span className="px-3 py-1.5 text-xs" style={{ color: 'var(--app-text-secondary)' }}>
+                    Page {page} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage(Math.min(totalPages, page + 1))}
+                    disabled={page >= totalPages}
+                    className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-30"
+                    style={{
+                      backgroundColor: 'var(--app-bg-tertiary)',
+                      color: 'var(--app-text-secondary)',
+                      border: '1px solid var(--app-border-default)',
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+          </>
         )}
       </div>
     </div>

@@ -72,8 +72,15 @@ function LoginForm() {
       setUser(user)
       router.push('/dashboard')
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string } } }
-      setError(error.response?.data?.detail || 'Login failed')
+      const error = err as { response?: { data?: { detail?: string | Array<{ msg: string }> } } }
+      const detail = error.response?.data?.detail
+      if (typeof detail === 'string') {
+        setError(detail)
+      } else if (Array.isArray(detail)) {
+        setError(detail.map(d => d.msg).join(', '))
+      } else {
+        setError('Login failed')
+      }
     } finally {
       setIsLoading(false)
     }

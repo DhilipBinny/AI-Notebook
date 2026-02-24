@@ -39,6 +39,14 @@ class InvitationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvitationListResponse(BaseModel):
+    """Paginated invitation list response."""
+    invitations: List[InvitationResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class InvitationUseResponse(BaseModel):
     """Schema for invitation use record."""
     id: str

@@ -9,9 +9,13 @@ import { useAuthStore } from '@/lib/store'
 interface AppHeaderProps {
   title?: string
   subtitle?: string
+  subtitleColor?: string
+  leftActions?: React.ReactNode
+  rightActions?: React.ReactNode
+  onBeforeLogout?: () => Promise<void>
 }
 
-export default function AppHeader({ title, subtitle }: AppHeaderProps) {
+export default function AppHeader({ title, subtitle, subtitleColor, leftActions, rightActions, onBeforeLogout }: AppHeaderProps) {
   const router = useRouter()
   const { user, setUser } = useAuthStore()
   const [showMenu, setShowMenu] = useState(false)
@@ -35,6 +39,9 @@ export default function AppHeader({ title, subtitle }: AppHeaderProps) {
   }
 
   const handleLogout = async () => {
+    if (onBeforeLogout) {
+      try { await onBeforeLogout() } catch {}
+    }
     try { await auth.logout() } catch {}
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
@@ -52,11 +59,12 @@ export default function AppHeader({ title, subtitle }: AppHeaderProps) {
     >
       <div className="px-6 py-3">
         <div className="flex justify-between items-center">
-          {/* Left: Logo + Title */}
+          {/* Left: Actions + Logo + Title */}
           <div className="flex items-center gap-3">
+            {leftActions}
             <button
               onClick={() => router.push('/dashboard')}
-              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity text-left"
             >
               <Image
                 src="/a7ac5906-c5c1-4819-b60b-6141da54bf2f.png"
@@ -71,17 +79,21 @@ export default function AppHeader({ title, subtitle }: AppHeaderProps) {
                   {title || 'AI Notebook'}
                 </h1>
                 {subtitle && (
-                  <p className="text-xs" style={{ color: 'var(--app-accent-primary)' }}>{subtitle}</p>
+                  <p className="text-xs" style={{ color: subtitleColor || 'var(--app-accent-primary)' }}>{subtitle}</p>
                 )}
               </div>
             </button>
           </div>
 
-          {/* Right: Profile */}
+          {/* Right: Actions + Profile */}
+          <div className="flex items-center gap-3">
+          {rightActions}
           <div className="relative z-50" ref={menuRef}>
             <button
               onClick={() => setShowMenu(!showMenu)}
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all hover:bg-white/5"
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all"
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold"
@@ -193,6 +205,7 @@ export default function AppHeader({ title, subtitle }: AppHeaderProps) {
                 </div>
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>

@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import AppHeader from '@/components/AppHeader'
+import { Users, Key, Mail, Bot, FileText, LucideIcon } from 'lucide-react'
 
 const TABS = [
-  { key: 'users', label: 'Users' },
-  { key: 'platform-keys', label: 'Platform Keys' },
-  { key: 'invitations', label: 'Invitations' },
-  { key: 'models', label: 'Models' },
-  { key: 'templates', label: 'Templates' },
+  { key: 'users', label: 'Users', icon: Users },
+  { key: 'platform-keys', label: 'Platform Keys', icon: Key },
+  { key: 'invitations', label: 'Invitations', icon: Mail },
+  { key: 'models', label: 'Models', icon: Bot },
+  { key: 'templates', label: 'Templates', icon: FileText },
 ] as const
 
 export type AdminTabKey = (typeof TABS)[number]['key']
@@ -26,6 +27,7 @@ export default function AdminLayout({ activeTab, onTabChange, children }: AdminL
   const router = useRouter()
   const { user, setUser } = useAuthStore()
   const [authChecked, setAuthChecked] = useState(false)
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'dark')
@@ -82,27 +84,56 @@ export default function AdminLayout({ activeTab, onTabChange, children }: AdminL
     <div className="min-h-screen" style={{ backgroundColor: 'var(--app-bg-primary)' }}>
       <AppHeader title="Admin" subtitle="Manage users, keys, models & templates" />
 
-      <div className="px-6 py-6">
-        {/* Tab bar */}
-        <div className="flex gap-1 mb-6 rounded-lg p-1" style={{ backgroundColor: 'var(--app-bg-secondary)' }}>
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => onTabChange(tab.key)}
-              className="px-4 py-2 rounded-md text-sm font-medium transition-all"
-              style={{
-                backgroundColor: activeTab === tab.key ? 'var(--app-bg-card)' : 'transparent',
-                color: activeTab === tab.key ? 'var(--app-text-primary)' : 'var(--app-text-muted)',
-                boxShadow: activeTab === tab.key ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex" style={{ height: 'calc(100vh - 57px)' }}>
+        {/* Sidebar */}
+        <aside
+          className="w-[220px] flex-shrink-0 overflow-y-auto p-4"
+          style={{
+            backgroundColor: 'var(--app-bg-secondary)',
+            borderRight: '1px solid var(--app-border-primary)',
+          }}
+        >
+          <div
+            className="text-[11px] font-semibold tracking-wider uppercase mb-3 px-3"
+            style={{ color: 'var(--app-text-muted)' }}
+          >
+            Navigation
+          </div>
 
-        {/* Tab content */}
-        {children}
+          <nav className="flex flex-col gap-1">
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.key
+              const isHovered = hoveredTab === tab.key
+              const Icon: LucideIcon = tab.icon
+
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => onTabChange(tab.key)}
+                  onMouseEnter={() => setHoveredTab(tab.key)}
+                  onMouseLeave={() => setHoveredTab(null)}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left"
+                  style={{
+                    backgroundColor: isActive
+                      ? 'var(--app-bg-input)'
+                      : isHovered
+                        ? 'var(--app-bg-tertiary)'
+                        : 'transparent',
+                    color: isActive ? 'var(--app-text-primary)' : 'var(--app-text-muted)',
+                  }}
+                >
+                  <Icon size={18} />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </nav>
+        </aside>
+
+        {/* Content area */}
+        <main className="flex-1 overflow-y-auto p-6">
+          {children}
+        </main>
       </div>
     </div>
   )

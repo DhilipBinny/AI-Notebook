@@ -2,9 +2,9 @@
 Invitation admin API routes.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 
 from app.db.session import get_db
 from app.users.models import User
@@ -15,6 +15,7 @@ from .schemas import (
     InvitationCreate,
     InvitationBatchCreate,
     InvitationResponse,
+    InvitationListResponse,
     InvitationDetailResponse,
 )
 
@@ -107,16 +108,29 @@ async def reinvite(
     return new_invitation
 
 
-@router.get("/", response_model=List[InvitationResponse])
+@router.get("/", response_model=InvitationListResponse)
 async def list_invitations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
     active_only: bool = False,
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_current_admin_user),
 ):
-    """List all invitations."""
+    """List invitations with pagination and search."""
     service = InvitationService(db)
-    invitations = await service.list_all(active_only=active_only)
-    return invitations
+    invitations, total = await service.list_paginated(
+        page=page,
+        page_size=page_size,
+        search=search,
+        active_only=active_only,
+    )
+    return InvitationListResponse(
+        invitations=invitations,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/{invitation_id}", response_model=InvitationDetailResponse)

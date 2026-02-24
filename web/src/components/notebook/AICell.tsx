@@ -360,7 +360,7 @@ export default function AICell({
             <div key={idx} style={{ color: 'var(--nb-text-muted)' }}>
               <span className="font-medium flex items-center gap-1.5" style={{ color: 'var(--nb-text-secondary)' }}>
                 {step.type === 'tool_call' && (
-                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7' }}>⚡</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: 'var(--nb-accent-ai)' }}>⚡</span>
                 )}
                 {step.type === 'tool_result' && (
                   <span className="w-5 h-5 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(166, 227, 161, 0.2)', color: 'var(--nb-accent-success)' }}>✓</span>
@@ -393,7 +393,7 @@ export default function AICell({
     return (
       <details className="mt-3 text-xs">
         <summary className="cursor-pointer flex items-center gap-1.5 transition-colors" style={{ color: 'var(--nb-text-muted)' }}>
-          <span className="w-4 h-4 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: '#9333ea' }}>💭</span>
+          <span className="w-4 h-4 rounded flex items-center justify-center text-[10px]" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: 'var(--nb-accent-ai)' }}>💭</span>
           {summaryText}
         </summary>
         <div className="mt-2 space-y-3 ml-2 pl-3" style={{ borderLeft: '2px solid rgba(147, 51, 234, 0.3)' }}>
@@ -403,10 +403,10 @@ export default function AICell({
             return (
               <div key={iteration}>
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: '#9333ea', color: '#fff' }}>
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: 'var(--nb-accent-ai)', color: '#fff' }}>
                     {iteration}
                   </span>
-                  <span className="font-medium" style={{ color: '#9333ea' }}>Iteration {iteration}</span>
+                  <span className="font-medium" style={{ color: 'var(--nb-accent-ai)' }}>Iteration {iteration}</span>
                   <span style={{ color: 'var(--nb-text-muted)' }}>({Math.round(combinedContent.length / 1000)}k chars)</span>
                 </div>
                 <div
@@ -459,7 +459,7 @@ export default function AICell({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded hover:opacity-80 transition-opacity font-medium"
               style={{
                 backgroundColor: 'var(--nb-accent-code)',
-                color: '#11111b',
+                color: 'var(--nb-bg-primary)',
               }}
               title={codeBlocks.length > 1
                 ? `Insert all ${codeBlocks.length} code blocks as new cells`
@@ -490,7 +490,7 @@ export default function AICell({
       }
     }
     return {
-      borderLeft: '3px solid #a855f7', // purple for AI cells
+      borderLeft: '3px solid var(--nb-accent-ai)', // purple for AI cells
       boxShadow: '0 0 12px rgba(168, 85, 247, 0.3), inset 0 0 0 1px rgba(168, 85, 247, 0.1)',
     }
   }
@@ -517,10 +517,10 @@ export default function AICell({
           className="absolute inset-0 z-20 flex items-center justify-center rounded-lg"
           style={{
             backgroundColor: 'rgba(168, 85, 247, 0.2)',
-            border: '2px dashed #a855f7',
+            border: '2px dashed var(--nb-accent-ai)',
           }}
         >
-          <div className="text-sm font-medium" style={{ color: '#a855f7' }}>
+          <div className="text-sm font-medium" style={{ color: 'var(--nb-accent-ai)' }}>
             Drop images here
           </div>
         </div>
@@ -534,14 +534,14 @@ export default function AICell({
           {aiData.status === 'running' && (
             <div
               className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
-              style={{ borderColor: '#a855f7', borderTopColor: 'transparent' }}
+              style={{ borderColor: 'var(--nb-accent-ai)', borderTopColor: 'transparent' }}
             />
           )}
 
           {/* Minimal cell type icon */}
           <span
             className="opacity-50 group-hover:opacity-80 transition-opacity"
-            style={{ color: '#a855f7' }}
+            style={{ color: 'var(--nb-accent-ai)' }}
           >
             <Lightbulb className="w-3.5 h-3.5" />
           </span>
@@ -661,7 +661,7 @@ export default function AICell({
               style={{
                 color: 'var(--nb-text-primary)',
                 backgroundColor: 'rgba(168, 85, 247, 0.05)',
-                border: isDragging ? '2px dashed #a855f7' : '1px solid rgba(168, 85, 247, 0.2)',
+                border: isDragging ? '2px dashed var(--nb-accent-ai)' : '1px solid rgba(168, 85, 247, 0.2)',
               }}
             />
 
@@ -675,7 +675,7 @@ export default function AICell({
                       <span className="flex items-center gap-1 text-amber-400">
                         <div
                           className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin"
-                          style={{ borderColor: '#fbbf24', borderTopColor: 'transparent' }}
+                          style={{ borderColor: 'var(--app-accent-warning)', borderTopColor: 'transparent' }}
                         />
                         Loading {imagesLoading}...
                       </span>
@@ -730,7 +730,7 @@ export default function AICell({
                       {/* Image number badge */}
                       <div
                         className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                        style={{ backgroundColor: '#a855f7', color: '#fff' }}
+                        style={{ backgroundColor: 'var(--nb-accent-ai)', color: '#fff' }}
                       >
                         {idx + 1}
                       </div>
@@ -774,7 +774,7 @@ export default function AICell({
                     />
                     <div
                       className="absolute top-1 left-1 text-[9px] px-1 py-0.5 rounded-full font-medium"
-                      style={{ backgroundColor: '#a855f7', color: '#fff' }}
+                      style={{ backgroundColor: 'var(--nb-accent-ai)', color: '#fff' }}
                     >
                       {idx + 1}
                     </div>
@@ -818,7 +818,7 @@ export default function AICell({
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--nb-text-muted)' }}>
                   <div
                     className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
-                    style={{ borderColor: '#a855f7', borderTopColor: 'transparent' }}
+                    style={{ borderColor: 'var(--nb-accent-ai)', borderTopColor: 'transparent' }}
                   />
                   {aiData.streamState?.thinkingMessage || 'Thinking...'}
                 </div>
@@ -849,15 +849,15 @@ export default function AICell({
                       border: '1px solid rgba(147, 51, 234, 0.3)',
                     }}
                   >
-                    <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: '#9333ea' }}>💭</span>
-                    <span style={{ color: '#9333ea' }} className="font-medium">Thinking...</span>
+                    <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: 'var(--nb-accent-ai)' }}>💭</span>
+                    <span style={{ color: 'var(--nb-accent-ai)' }} className="font-medium">Thinking...</span>
                     {/* Iteration badges */}
                     <span className="flex items-center gap-1 ml-1">
                       {[...new Set(aiData.streamState.thinkingSteps.map(s => s.iteration))].sort((a, b) => a - b).map(iter => (
                         <span
                           key={iter}
                           className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
-                          style={{ backgroundColor: '#9333ea', color: '#fff' }}
+                          style={{ backgroundColor: 'var(--nb-accent-ai)', color: '#fff' }}
                         >
                           {iter}
                         </span>
@@ -879,10 +879,10 @@ export default function AICell({
                       return (
                         <div key={iteration}>
                           <div className="flex items-center gap-1.5 mb-1">
-                            <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: '#9333ea', color: '#fff' }}>
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: 'var(--nb-accent-ai)', color: '#fff' }}>
                               {iteration}
                             </span>
-                            <span className="font-medium" style={{ color: '#9333ea' }}>Iteration {iteration}</span>
+                            <span className="font-medium" style={{ color: 'var(--nb-accent-ai)' }}>Iteration {iteration}</span>
                             <span style={{ color: 'var(--nb-text-muted)' }}>({Math.round(combinedContent.length / 1000)}k chars)</span>
                           </div>
                           <div
@@ -905,8 +905,8 @@ export default function AICell({
                   className="flex items-center gap-2 px-3 py-2 rounded-md text-xs animate-pulse"
                   style={{ backgroundColor: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)' }}
                 >
-                  <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7' }}>⚡</span>
-                  <span style={{ color: '#a855f7' }} className="font-medium">{aiData.streamState.currentToolCall.name}</span>
+                  <span className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: 'var(--nb-accent-ai)' }}>⚡</span>
+                  <span style={{ color: 'var(--nb-accent-ai)' }} className="font-medium">{aiData.streamState.currentToolCall.name}</span>
                   <span style={{ color: 'var(--nb-text-muted)' }} className="truncate max-w-[300px]">
                     {JSON.stringify(aiData.streamState.currentToolCall.args).slice(0, 100)}
                     {JSON.stringify(aiData.streamState.currentToolCall.args).length > 100 && '...'}
@@ -921,7 +921,7 @@ export default function AICell({
                     <div key={idx} className="text-xs" style={{ color: 'var(--nb-text-muted)' }}>
                       <span className="flex items-center gap-1.5" style={{ color: 'var(--nb-text-secondary)' }}>
                         {step.type === 'tool_call' && (
-                          <span className="w-4 h-4 rounded flex items-center justify-center text-[9px]" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#a855f7' }}>⚡</span>
+                          <span className="w-4 h-4 rounded flex items-center justify-center text-[9px]" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: 'var(--nb-accent-ai)' }}>⚡</span>
                         )}
                         {step.type === 'tool_result' && (
                           <span className="w-4 h-4 rounded flex items-center justify-center text-[9px]" style={{ backgroundColor: 'rgba(166, 227, 161, 0.2)', color: 'var(--nb-accent-success)' }}>✓</span>

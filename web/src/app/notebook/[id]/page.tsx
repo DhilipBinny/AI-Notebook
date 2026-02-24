@@ -10,6 +10,7 @@ import NotebookToolbar from '@/components/notebook/NotebookToolbar'
 import CellInsertButtons from '@/components/notebook/CellInsertButtons'
 import ChatPanel from '@/components/chat/ChatPanel'
 import FilePanel from '@/components/files/FilePanel'
+import AppHeader from '@/components/AppHeader'
 import { useKernel } from '@/hooks/useKernel'
 import { useNotebookUpdates } from '@/hooks/useNotebookUpdates'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -22,7 +23,6 @@ import {
   RefreshCw,
   Plus,
   AlertTriangle,
-  FolderOpen,
   LogOut,
 } from 'lucide-react'
 
@@ -2233,46 +2233,44 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         color: 'var(--nb-text-primary)',
       }}
     >
-      {/* Header - Fixed dark styling, not affected by theme */}
-      <header className="flex items-center justify-between px-4 py-2 backdrop-blur-xl bg-slate-900/95 border-b border-white/10">
-        <div className="flex items-center gap-4">
+      {/* Header */}
+      <AppHeader
+        title={currentProject?.name || 'Notebook'}
+        subtitle={isDirty ? 'Unsaved changes' : undefined}
+        subtitleColor={isDirty ? 'var(--app-accent-warning)' : undefined}
+        leftActions={
           <button
             onClick={() => router.push('/dashboard')}
-            className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+            className="p-2 rounded-lg transition-all"
+            style={{ color: 'var(--app-text-muted)' }}
+            title="Back to dashboard"
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-teal-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <h1 className="text-lg font-semibold text-white">{currentProject?.name || 'Notebook'}</h1>
-          </div>
-          {isDirty && <span className="text-amber-400 text-sm flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 rounded-full" /> Unsaved</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowFiles(!showFiles)}
-            className={`p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm ${
-              showFiles
-                ? 'bg-blue-500/20 text-blue-400'
-                : 'text-gray-400 hover:text-white hover:bg-white/10'
-            }`}
-            title="Toggle file browser"
-          >
-            <FolderOpen className="w-4 h-4" />
-            <span className="hidden sm:inline">Files</span>
-          </button>
+        }
+        rightActions={
           <button
             onClick={handleCloseSession}
-            className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+            className="p-2 rounded-lg transition-all flex items-center gap-1.5 text-sm"
+            style={{ color: 'var(--app-text-muted)' }}
             title="Stop playground and return to dashboard"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--app-accent-error)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--app-text-muted)' }}
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Close Session</span>
           </button>
-        </div>
-      </header>
+        }
+        onBeforeLogout={async () => {
+          try {
+            if (isDirty) await saveNotebookCore()
+            if (chatMessages.length > 0) await chat.saveHistory(projectId, chatMessages)
+            await playgrounds.stop()
+          } catch {}
+        }}
+      />
 
       {/* Toolbar */}
       <NotebookToolbar
@@ -2305,6 +2303,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         availableProviders={availableProviders}
         contextFormat={contextFormat}
         onContextFormatChange={setContextFormat}
+        showFiles={showFiles}
+        onToggleFiles={() => setShowFiles(!showFiles)}
       />
 
       {/* Main content */}

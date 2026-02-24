@@ -9,7 +9,7 @@ Even if the database is compromised, tokens cannot be recovered.
 import hashlib
 import secrets
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Tuple
 
@@ -149,6 +149,37 @@ class InvitationService:
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def list_paginated(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        search: Optional[str] = None,
+        active_only: bool = False,
+    ) -> Tuple[List[Invitation], int]:
+        """List invitations with pagination and search."""
+        query = select(Invitation).order_by(Invitation.created_at.desc())
+        count_query = select(func.count(Invitation.id))
+
+        if active_only:
+            query = query.where(Invitation.is_active == True)
+            count_query = count_query.where(Invitation.is_active == True)
+
+        if search:
+            search_filter = or_(
+                Invitation.email.ilike(f"%{search}%"),
+                Invitation.note.ilike(f"%{search}%"),
+            )
+            query = query.where(search_filter)
+            count_query = count_query.where(search_filter)
+
+        total = (await self.db.execute(count_query)).scalar() or 0
+
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all()), total
 
     async def get_by_id(self, invitation_id: str) -> Optional[Invitation]:
         """Get invitation by ID."""

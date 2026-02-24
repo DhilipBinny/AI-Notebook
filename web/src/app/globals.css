@@ -75,7 +75,7 @@
   --app-bg-tertiary: #181825;
   --app-bg-card: rgba(255, 255, 255, 0.05);
   --app-bg-card-hover: rgba(255, 255, 255, 0.1);
-  --app-bg-input: rgba(255, 255, 255, 0.05);
+  --app-bg-input: #252736;
   --app-bg-overlay: rgba(0, 0, 0, 0.6);
 
   /* App-wide borders */
@@ -96,6 +96,7 @@
   --app-accent-error: #f38ba8;
   --app-accent-warning: #fab387;
   --app-accent-info: #89dceb;
+  --app-accent-indigo: #b4befe;
 
   /* Gradients - Blue to Teal */
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
@@ -199,6 +200,7 @@
   --app-accent-error: #ef4444;     /* Red 500 */
   --app-accent-warning: #f59e0b;   /* Amber 500 */
   --app-accent-info: #0ea5e9;      /* Sky 500 */
+  --app-accent-indigo: #818cf8;    /* Indigo 400 */
 
   /* Gradients - Same blue-teal style as dark theme */
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
@@ -284,7 +286,7 @@
   --app-bg-tertiary: #27272a;
   --app-bg-card: rgba(255, 255, 255, 0.03);
   --app-bg-card-hover: rgba(255, 255, 255, 0.06);
-  --app-bg-input: rgba(255, 255, 255, 0.03);
+  --app-bg-input: #111114;
   --app-bg-overlay: rgba(0, 0, 0, 0.8);
 
   /* App-wide borders - Subtle zinc */
@@ -305,6 +307,7 @@
   --app-accent-error: #f87171;
   --app-accent-warning: #fbbf24;
   --app-accent-info: #38bdf8;
+  --app-accent-indigo: #a5b4fc;
 
   /* Gradients - Monochrome */
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
@@ -411,6 +414,7 @@
   --app-accent-error: #be123c;     /* Rose */
   --app-accent-warning: #d97706;   /* Amber */
   --app-accent-info: #0891b2;      /* Cyan */
+  --app-accent-indigo: #6366f1;    /* Indigo 600 */
 
   /* Gradients - Warm earth */
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
@@ -1350,6 +1354,84 @@ body {
 /* ============================================
    UTILITY CLASSES FOR THEMING
    ============================================ */
+
+/* ============================================
+   SELECT / DROPDOWN STYLING
+   Force option elements to use theme colors
+   (browsers ignore CSS variables on <option>)
+   ============================================ */
+
+[data-theme="dark"] select,
+[data-theme="dark"] select option {
+  background-color: #282a36;
+  color: #cdd6f4;
+}
+[data-theme="dark"] input,
+[data-theme="dark"] textarea {
+  background-color: #252736;
+  color: #cdd6f4;
+}
+[data-theme="dark"] input:-webkit-autofill,
+[data-theme="dark"] input:-webkit-autofill:hover,
+[data-theme="dark"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #252736 inset !important;
+  -webkit-text-fill-color: #cdd6f4 !important;
+  caret-color: #cdd6f4;
+}
+
+[data-theme="light"] select,
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+[data-theme="light"] input,
+[data-theme="light"] textarea {
+  background-color: #ffffff;
+  color: #1e293b;
+}
+[data-theme="light"] input:-webkit-autofill,
+[data-theme="light"] input:-webkit-autofill:hover,
+[data-theme="light"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #1e293b !important;
+  caret-color: #1e293b;
+}
+
+[data-theme="obsidian"] select,
+[data-theme="obsidian"] select option {
+  background-color: #18181b;
+  color: #fafafa;
+}
+[data-theme="obsidian"] input,
+[data-theme="obsidian"] textarea {
+  background-color: #111114;
+  color: #fafafa;
+}
+[data-theme="obsidian"] input:-webkit-autofill,
+[data-theme="obsidian"] input:-webkit-autofill:hover,
+[data-theme="obsidian"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #111114 inset !important;
+  -webkit-text-fill-color: #fafafa !important;
+  caret-color: #fafafa;
+}
+
+[data-theme="latte"] select,
+[data-theme="latte"] select option {
+  background-color: #ffffff;
+  color: #44403c;
+}
+[data-theme="latte"] input,
+[data-theme="latte"] textarea {
+  background-color: #ffffff;
+  color: #44403c;
+}
+[data-theme="latte"] input:-webkit-autofill,
+[data-theme="latte"] input:-webkit-autofill:hover,
+[data-theme="latte"] input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #44403c !important;
+  caret-color: #44403c;
+}
 
 .theme-bg-primary { background-color: var(--app-bg-primary); }
 .theme-bg-secondary { background-color: var(--app-bg-secondary); }

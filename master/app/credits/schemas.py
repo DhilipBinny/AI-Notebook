@@ -46,7 +46,7 @@ class AdminCreditAdjust(BaseModel):
     """Admin credit adjustment request."""
     user_id: str
     amount_cents: int = Field(..., description="Positive to add, negative to deduct")
-    reason: str = Field(..., max_length=500)
+    reason: Optional[str] = Field(None, max_length=500)
 
 
 class UsageReport(BaseModel):

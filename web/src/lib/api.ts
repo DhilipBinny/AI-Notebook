@@ -929,8 +929,8 @@ export const admin = {
   },
 
   invitations: {
-    list: async (activeOnly = false): Promise<Invitation[]> => {
-      const { data } = await api.get('/admin/invitations/', { params: { active_only: activeOnly } })
+    list: async (params?: { page?: number; page_size?: number; search?: string; active_only?: boolean }): Promise<{ invitations: Invitation[]; total: number; page: number; page_size: number }> => {
+      const { data } = await api.get('/admin/invitations/', { params })
       return data
     },
 
@@ -965,7 +965,7 @@ export const admin = {
   },
 
   credits: {
-    adjust: async (params: { user_id: string; amount_cents: number; reason: string }): Promise<CreditBalance> => {
+    adjust: async (params: { user_id: string; amount_cents: number; reason?: string }): Promise<CreditBalance> => {
       const { data } = await api.post('/admin/credits/adjust', params)
       return data
     },
@@ -982,7 +982,7 @@ export const admin = {
       return data
     },
 
-    update: async (id: number, params: { display_name?: string; context_window?: number; max_output_tokens?: number; supports_vision?: boolean; supports_function_calling?: boolean; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean; sort_order?: number }): Promise<LLMModel> => {
+    update: async (id: number, params: { model_id?: string; display_name?: string; context_window?: number; max_output_tokens?: number; supports_vision?: boolean; supports_function_calling?: boolean; input_cost_per_1m_cents?: number; output_cost_per_1m_cents?: number; margin_multiplier?: number; is_active?: boolean; sort_order?: number }): Promise<LLMModel> => {
       const { data } = await api.put(`/admin/models/${id}`, params)
       return data
     },

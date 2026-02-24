@@ -184,6 +184,8 @@ export interface AdminUser {
   created_at: string
   last_login_at?: string
   credit_balance_cents?: number
+  total_deposited_cents?: number
+  total_consumed_cents?: number
   project_count?: number
 }
 
