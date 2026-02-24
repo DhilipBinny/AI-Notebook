@@ -8,6 +8,7 @@ import PlatformKeysTab from './components/PlatformKeysTab'
 import InvitationsTab from './components/InvitationsTab'
 import CreditsTab from './components/CreditsTab'
 import TemplatesTab from './components/TemplatesTab'
+import SystemPromptsTab from './components/SystemPromptsTab'
 
 function AdminPageContent() {
   const searchParams = useSearchParams()
@@ -26,6 +27,7 @@ function AdminPageContent() {
       {tab === 'invitations' && <InvitationsTab />}
       {tab === 'models' && <CreditsTab />}
       {tab === 'templates' && <TemplatesTab />}
+      {tab === 'system-prompts' && <SystemPromptsTab />}
     </AdminLayout>
   )
 }

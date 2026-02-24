@@ -464,6 +464,10 @@ async def chat_with_llm_stream(
                 yield format_sse_event("error", {"error": str(e)})
                 return
 
+            # Override system prompt if provided by master (admin DB)
+            if request.system_prompt:
+                client.SYSTEM_PROMPT = request.system_prompt
+
             # Track client for potential cancellation
             _active_chat_clients[session_id] = client
 

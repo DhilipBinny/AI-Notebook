@@ -26,6 +26,7 @@ from app.credits.models import UserCredit, UsageRecord
 from app.llm_models.models import LLMModel
 from app.templates.models import NotebookTemplate
 from app.platform_keys.models import PlatformApiKey
+from app.system_prompts.models import SystemPrompt
 # Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
 
 # Import routers
@@ -46,6 +47,7 @@ from app.templates.routes import router as templates_router
 from app.platform_keys.routes import router as platform_keys_router
 from app.llm_models.routes import router as llm_models_router
 from app.users.admin_routes import router as admin_users_router
+from app.system_prompts.routes import router as system_prompts_router
 
 # Import playground service for cleanup
 from app.playgrounds.service import PlaygroundService
@@ -167,6 +169,7 @@ app.include_router(templates_router, prefix="/api")  # Notebook templates
 app.include_router(platform_keys_router, prefix="/api")  # Platform API key management
 app.include_router(llm_models_router, prefix="/api")  # LLM model registry
 app.include_router(admin_users_router, prefix="/api")  # Admin user management
+app.include_router(system_prompts_router, prefix="/api")  # System prompt management
 
 
 @app.get("/health")

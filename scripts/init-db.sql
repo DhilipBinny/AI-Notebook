@@ -495,6 +495,30 @@ CREATE TABLE IF NOT EXISTS platform_api_keys (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
+-- =====================================================
+-- 15. SYSTEM PROMPTS (admin-editable LLM system prompts)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS system_prompts (
+    id CHAR(36) NOT NULL,
+
+    prompt_type ENUM('chat_panel','ai_cell') NOT NULL,
+    label VARCHAR(100) NOT NULL,
+    content MEDIUMTEXT NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+
+    created_by CHAR(36) NULL,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+
+    PRIMARY KEY (id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_system_prompts_type_active (prompt_type, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 -- Re-enable FK checks
 SET FOREIGN_KEY_CHECKS = 1;
 

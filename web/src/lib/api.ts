@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMModel, LLMModelBrief, LLMModelGrouped, NotebookTemplate, PlatformKey, AdminUser, AdminUserDetail, AdminUserListResponse } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMModel, LLMModelBrief, LLMModelGrouped, NotebookTemplate, PlatformKey, SystemPrompt, AdminUser, AdminUserDetail, AdminUserListResponse } from '@/types'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
 
@@ -1060,6 +1060,37 @@ export const admin = {
 
     toggleProviderVisibility: async (provider: string, visible: boolean): Promise<{ provider: string; user_visible: boolean }> => {
       const { data } = await api.post(`/admin/platform-keys/provider/${provider}/visibility`, null, { params: { visible } })
+      return data
+    },
+  },
+
+  systemPrompts: {
+    list: async (promptType?: string): Promise<SystemPrompt[]> => {
+      const { data } = await api.get('/admin/system-prompts/', { params: promptType ? { prompt_type: promptType } : {} })
+      return data
+    },
+
+    create: async (params: { prompt_type: string; label: string; content: string }): Promise<SystemPrompt> => {
+      const { data } = await api.post('/admin/system-prompts/', params)
+      return data
+    },
+
+    update: async (id: string, params: { label?: string; content?: string }): Promise<SystemPrompt> => {
+      const { data } = await api.put(`/admin/system-prompts/${id}`, params)
+      return data
+    },
+
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/admin/system-prompts/${id}`)
+    },
+
+    activate: async (id: string): Promise<SystemPrompt> => {
+      const { data } = await api.post(`/admin/system-prompts/${id}/activate`)
+      return data
+    },
+
+    deactivate: async (id: string): Promise<SystemPrompt> => {
+      const { data } = await api.post(`/admin/system-prompts/${id}/deactivate`)
       return data
     },
   },

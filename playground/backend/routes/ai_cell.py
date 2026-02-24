@@ -81,6 +81,11 @@ async def run_ai_cell(
             base_url_override=base_url_override,
             auth_type=auth_type,
         )
+
+        # Override system prompt if provided by master (admin DB)
+        if request.system_prompt:
+            client.AI_CELL_SYSTEM_PROMPT = request.system_prompt
+
         _active_ai_cell_clients[session_id] = client
 
         streaming_enabled = cfg.AI_CELL_STREAMING_ENABLED

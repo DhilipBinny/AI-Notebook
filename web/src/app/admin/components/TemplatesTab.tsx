@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { admin, templates } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { Pencil, Trash2 } from 'lucide-react'
 import type { NotebookTemplate } from '@/types'
 
 const DIFFICULTY_OPTIONS = ['beginner', 'intermediate', 'advanced'] as const
@@ -587,21 +588,23 @@ export default function TemplatesTab() {
                       <div className="flex gap-2 justify-end">
                         <button
                           onClick={() => handleEditClick(template)}
-                          className="px-2.5 py-1 rounded text-xs transition-colors"
-                          style={{
-                            backgroundColor: 'var(--app-bg-tertiary)',
-                            color: 'var(--app-text-secondary)',
-                            border: '1px solid var(--app-border-default)',
-                          }}
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ color: 'var(--app-text-muted)' }}
+                          title="Edit template"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
-                          Edit
+                          <Pencil size={14} />
                         </button>
                         <button
                           onClick={() => setDeleteConfirm(template)}
-                          className="px-2.5 py-1 rounded text-xs transition-colors"
-                          style={{ color: 'var(--app-accent-error)', border: '1px solid rgba(239, 68, 68, 0.3)' }}
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ color: 'var(--app-text-muted)' }}
+                          title="Delete template"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-error)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
-                          Delete
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>

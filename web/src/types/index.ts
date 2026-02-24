@@ -220,6 +220,17 @@ export interface PlatformKey {
   updated_at: string
 }
 
+export interface SystemPrompt {
+  id: string
+  prompt_type: 'chat_panel' | 'ai_cell'
+  label: string
+  content: string
+  is_active: boolean
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
 // Image input for AI Cell (pasted or uploaded images)
 export interface ImageInput {
   data: string  // Base64 encoded image data

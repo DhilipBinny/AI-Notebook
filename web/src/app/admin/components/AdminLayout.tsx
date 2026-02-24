@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import AppHeader from '@/components/AppHeader'
-import { Users, Key, Mail, Bot, FileText, LucideIcon } from 'lucide-react'
+import { Users, Key, Mail, Bot, FileText, MessageSquare, LucideIcon } from 'lucide-react'
 
 const TABS = [
-  { key: 'users', label: 'Users', icon: Users },
-  { key: 'platform-keys', label: 'Platform Keys', icon: Key },
-  { key: 'invitations', label: 'Invitations', icon: Mail },
   { key: 'models', label: 'Models', icon: Bot },
+  { key: 'platform-keys', label: 'Platform Keys', icon: Key },
+  { key: 'system-prompts', label: 'Prompts', icon: MessageSquare, dividerAfter: true },
+  { key: 'users', label: 'Users', icon: Users },
+  { key: 'invitations', label: 'Invitations', icon: Mail, dividerAfter: true },
   { key: 'templates', label: 'Templates', icon: FileText },
 ] as const
 
@@ -103,24 +104,28 @@ export default function AdminLayout({ activeTab, onTabChange, children }: AdminL
               const Icon: LucideIcon = tab.icon
 
               return (
-                <button
-                  key={tab.key}
-                  onClick={() => onTabChange(tab.key)}
-                  onMouseEnter={() => setHoveredTab(tab.key)}
-                  onMouseLeave={() => setHoveredTab(null)}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left"
-                  style={{
-                    backgroundColor: isActive
-                      ? 'var(--app-bg-input)'
-                      : isHovered
-                        ? 'var(--app-bg-tertiary)'
-                        : 'transparent',
-                    color: isActive ? 'var(--app-text-primary)' : 'var(--app-text-muted)',
-                  }}
-                >
-                  <Icon size={18} />
-                  {tab.label}
-                </button>
+                <div key={tab.key}>
+                  <button
+                    onClick={() => onTabChange(tab.key)}
+                    onMouseEnter={() => setHoveredTab(tab.key)}
+                    onMouseLeave={() => setHoveredTab(null)}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left"
+                    style={{
+                      backgroundColor: isActive
+                        ? 'var(--app-bg-input)'
+                        : isHovered
+                          ? 'var(--app-bg-tertiary)'
+                          : 'transparent',
+                      color: isActive ? 'var(--app-text-primary)' : 'var(--app-text-muted)',
+                    }}
+                  >
+                    <Icon size={18} />
+                    {tab.label}
+                  </button>
+                  {'dividerAfter' in tab && tab.dividerAfter && (
+                    <div className="my-2 mx-3 h-px" style={{ backgroundColor: 'var(--app-border-default)' }} />
+                  )}
+                </div>
               )
             })}
           </nav>

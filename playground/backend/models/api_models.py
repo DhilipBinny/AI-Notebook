@@ -71,6 +71,7 @@ class ChatRequest(BaseModel):
     images: Optional[List[ImageInput]] = None
     llm_provider: Optional[str] = None  # Override LLM provider
     tool_mode: Optional[str] = None  # "auto", "manual", "ai_decide"
+    system_prompt: Optional[str] = None  # Override system prompt from admin DB
 
 
 class ChatResponse(BaseModel):
@@ -103,6 +104,7 @@ class AICellRequest(BaseModel):
     session_id: Optional[str] = None
     context_format: str = "xml"
     llm_provider: Optional[str] = None
+    system_prompt: Optional[str] = None  # Override system prompt from admin DB
 
 
 class AICellResponse(BaseModel):

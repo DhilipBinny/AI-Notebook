@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { admin, models as modelsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { MoreHorizontal, FlaskConical, Star, Trash2 } from 'lucide-react'
+import { MoreHorizontal, FlaskConical, Star, Trash2, Pencil } from 'lucide-react'
 import type { PlatformKey, LLMModelBrief } from '@/types'
 
 const PROVIDERS = ['openai', 'anthropic', 'gemini', 'openai_compatible'] as const
@@ -546,10 +546,13 @@ export default function PlatformKeysTab() {
                   {!drawerEditing && (
                     <button
                       onClick={startDrawerEditing}
-                      className="text-xs px-2 py-1 rounded-lg transition-colors hover:opacity-80"
-                      style={{ color: 'var(--app-accent-primary)' }}
+                      className="p-1.5 rounded-md transition-colors"
+                      style={{ color: 'var(--app-text-muted)' }}
+                      title="Edit key"
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                     >
-                      Edit
+                      <Pencil size={14} />
                     </button>
                   )}
                 </div>
@@ -767,9 +770,9 @@ export default function PlatformKeysTab() {
                                 handleToggleVisibility(provider, providerKeys[0]?.user_visible ?? true)
                               }}
                               className="flex items-center gap-2 text-xs"
-                              title={providerKeys[0]?.user_visible !== false ? 'Visible to users — click to hide' : 'Hidden from users — click to show'}
+                              title={providerKeys[0]?.user_visible !== false ? 'Available to users — click to hide' : 'Hidden from users — click to show'}
                             >
-                              <span style={{ color: 'var(--app-text-muted)' }}>Users</span>
+                              <span style={{ color: 'var(--app-text-muted)' }}>Available to users</span>
                               <div
                                 className="relative w-8 h-4 rounded-full transition-colors cursor-pointer"
                                 style={{

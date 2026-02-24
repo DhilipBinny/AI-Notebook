@@ -22,6 +22,7 @@ from app.notebooks.s3_client import s3_client as notebook_s3_client
 from app.api_keys.service import ApiKeyService
 from app.credits.service import CreditService
 from app.platform_keys.service import PlatformKeyService
+from app.system_prompts.service import SystemPromptService
 from .service import ChatService
 from .schemas import (
     ChatMessageCreate,
@@ -491,6 +492,13 @@ async def send_message_stream(
         if not images_data:
             images_data = None
 
+    # Fetch active system prompt for chat panel (fallback to hardcoded if DB fails)
+    try:
+        sp_service = SystemPromptService(db)
+        chat_system_prompt = await sp_service.get_active("chat_panel")
+    except Exception:
+        chat_system_prompt = None
+
     # Capture variables for post-flight usage recording
     user_id = current_user.id
 
@@ -498,19 +506,22 @@ async def send_message_stream(
     async def stream_sse():
         try:
             async with httpx.AsyncClient() as client:
+                payload = {
+                    "message": request.message,
+                    "context": context_list,
+                    "session_id": project_id,
+                    "context_format": context_format,
+                    "llm_provider": llm_provider,
+                    "tool_mode": tool_mode,
+                    "images": images_data,
+                }
+                if chat_system_prompt:
+                    payload["system_prompt"] = chat_system_prompt
                 async with client.stream(
                     "POST",
                     f"{playground.internal_url}/chat/stream",
                     headers=proxy_headers,
-                    json={
-                        "message": request.message,
-                        "context": context_list,
-                        "session_id": project_id,
-                        "context_format": context_format,
-                        "llm_provider": llm_provider,
-                        "tool_mode": tool_mode,
-                        "images": images_data,
-                    },
+                    json=payload,
                     timeout=300,
                 ) as response:
                     if response.status_code != 200:
@@ -849,6 +860,13 @@ async def run_ai_cell(
                 yield f"event: error\ndata: {json.dumps({'error': 'Insufficient credits. Please add credits or use your own API key.'})}\n\n"
             return StreamingResponse(no_credits_stream(), media_type="text/event-stream")
 
+    # Fetch active system prompt for AI cell (fallback to hardcoded if DB fails)
+    try:
+        sp_service_ai = SystemPromptService(db)
+        ai_cell_system_prompt = await sp_service_ai.get_active("ai_cell")
+    except Exception:
+        ai_cell_system_prompt = None
+
     # Capture for post-flight
     ai_user_id = current_user.id
 
@@ -856,20 +874,23 @@ async def run_ai_cell(
     async def stream_sse():
         try:
             async with httpx.AsyncClient() as client:
+                ai_payload = {
+                    "prompt": request.prompt,
+                    "context": context_list,
+                    "ai_cell_id": request.ai_cell_id,
+                    "ai_cell_index": request.ai_cell_index,
+                    "session_id": project_id,
+                    "context_format": context_format,
+                    "images": images_data,
+                    "llm_provider": llm_provider,
+                }
+                if ai_cell_system_prompt:
+                    ai_payload["system_prompt"] = ai_cell_system_prompt
                 async with client.stream(
                     "POST",
                     f"{playground.internal_url}/ai-cell/run",
                     headers=ai_proxy_headers,
-                    json={
-                        "prompt": request.prompt,
-                        "context": context_list,
-                        "ai_cell_id": request.ai_cell_id,
-                        "ai_cell_index": request.ai_cell_index,
-                        "session_id": project_id,
-                        "context_format": context_format,
-                        "images": images_data,
-                        "llm_provider": llm_provider,
-                    },
+                    json=ai_payload,
                     timeout=120,
                 ) as response:
                     if response.status_code != 200:

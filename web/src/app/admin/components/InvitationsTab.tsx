@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { admin } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { Trash2 } from 'lucide-react'
 import type { Invitation } from '@/types'
 
 export default function InvitationsTab() {
@@ -323,12 +324,13 @@ export default function InvitationsTab() {
                         )}
                         <button
                           onClick={() => handleDelete(inv.id)}
-                          className="px-2 py-1 rounded text-xs transition-colors"
-                          style={{ color: 'var(--app-accent-error)' }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ color: 'var(--app-text-muted)' }}
+                          title="Delete invitation"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-error)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
-                          Delete
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
