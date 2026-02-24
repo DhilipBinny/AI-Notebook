@@ -66,14 +66,12 @@ async def _build_proxy_headers(
         if header:
             headers[header] = key
 
-    # User base_url for openai_compatible
-    user_all_keys = await api_key_service.get_for_user(user_id)
-    for uk in user_all_keys:
-        if uk.provider.value == "openai_compatible" and uk.is_active and uk.base_url:
-            headers["X-User-OpenaiCompatible-BaseUrl"] = uk.base_url
-            break
+    # User base_url for openai_compatible (query active key directly)
+    active_oc_key = await api_key_service._get_active_by_provider(user_id, "openai_compatible")
+    if active_oc_key and active_oc_key.base_url:
+        headers["X-User-OpenaiCompatible-BaseUrl"] = active_oc_key.base_url
 
-    # Platform keys
+    # Platform keys (only for providers where user has no active key)
     pk_service = PlatformKeyService(db)
     platform_keys = await pk_service.get_all_active_keys()
     platform_models = await pk_service.get_active_models()
@@ -86,18 +84,20 @@ async def _build_proxy_headers(
         "openai_compatible": ("X-Platform-OpenaiCompatible-Key", "X-Platform-OpenaiCompatible-Model"),
     }
     for provider, key in platform_keys.items():
+        if provider in user_keys:
+            continue  # User has own active key, skip platform key
         hdr = platform_key_headers.get(provider)
         if hdr:
             headers[hdr[0]] = key
             if provider in platform_models:
                 headers[hdr[1]] = platform_models[provider]
 
-    # Platform auth_type for anthropic (OAuth token support)
-    if "anthropic" in platform_auth_types:
+    # Platform auth_type for anthropic (only if using platform key)
+    if "anthropic" in platform_auth_types and "anthropic" not in user_keys:
         headers["X-Platform-Anthropic-AuthType"] = platform_auth_types["anthropic"]
 
-    # Platform base_url for openai_compatible
-    if "openai_compatible" in platform_base_urls:
+    # Platform base_url for openai_compatible (only if using platform key)
+    if "openai_compatible" in platform_base_urls and "openai_compatible" not in user_keys:
         headers["X-Platform-OpenaiCompatible-BaseUrl"] = platform_base_urls["openai_compatible"]
 
     is_own_key = llm_provider in user_keys

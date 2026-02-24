@@ -302,13 +302,14 @@ CREATE TABLE IF NOT EXISTS invitation_uses (
 -- TABLE: user_api_keys
 -- =====================================================
 -- User-owned LLM API keys (Fernet encrypted)
--- One key per provider per user
+-- Multiple keys per provider per user (max 5), one active at a time
 -- =====================================================
 CREATE TABLE IF NOT EXISTS user_api_keys (
     id CHAR(36) NOT NULL,
 
     user_id CHAR(36) NOT NULL,
     provider ENUM('openai', 'anthropic', 'gemini', 'openai_compatible') NOT NULL,
+    label VARCHAR(100) NULL,
 
     api_key_encrypted TEXT NOT NULL,
     api_key_hint VARCHAR(20) NOT NULL,
@@ -325,8 +326,8 @@ CREATE TABLE IF NOT EXISTS user_api_keys (
 
     PRIMARY KEY (id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_user_api_keys_provider (user_id, provider),
-    INDEX idx_user_api_keys_user (user_id)
+    INDEX idx_user_api_keys_user (user_id),
+    INDEX idx_user_api_keys_user_provider (user_id, provider)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 

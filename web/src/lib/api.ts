@@ -820,8 +820,18 @@ export const apiKeys = {
     return data
   },
 
-  create: async (params: { provider: string; api_key: string; model_override?: string; base_url?: string }): Promise<ApiKey> => {
+  create: async (params: { provider: string; api_key: string; label?: string; model_override?: string; base_url?: string }): Promise<ApiKey> => {
     const { data } = await api.post('/users/me/api-keys/', params)
+    return data
+  },
+
+  activate: async (keyId: string): Promise<ApiKey> => {
+    const { data } = await api.post(`/users/me/api-keys/${keyId}/activate`)
+    return data
+  },
+
+  deactivate: async (keyId: string): Promise<ApiKey> => {
+    const { data } = await api.post(`/users/me/api-keys/${keyId}/deactivate`)
     return data
   },
 

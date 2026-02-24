@@ -79,6 +79,7 @@ export interface Playground {
 export interface ApiKey {
   id: string
   provider: string
+  label?: string
   api_key_hint: string
   model_override?: string
   base_url?: string

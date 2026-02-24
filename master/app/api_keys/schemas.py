@@ -8,9 +8,10 @@ from datetime import datetime
 
 
 class ApiKeyCreate(BaseModel):
-    """Schema for creating/updating an API key."""
+    """Schema for creating an API key."""
     provider: str = Field(..., pattern="^(openai|anthropic|gemini|openai_compatible)$")
     api_key: str = Field(default="", max_length=500)
+    label: Optional[str] = Field(None, max_length=100)
     model_override: Optional[str] = Field(None, max_length=100)
     base_url: Optional[str] = Field(None, max_length=500)
 
@@ -27,6 +28,7 @@ class ApiKeyResponse(BaseModel):
     """Schema for API key response (masked)."""
     id: str
     provider: str
+    label: Optional[str] = None
     api_key_hint: str
     model_override: Optional[str] = None
     base_url: Optional[str] = None

@@ -21,9 +21,9 @@ async def create_api_key(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create or update an API key for a provider."""
+    """Create a new API key for a provider (max 5 per provider)."""
     service = ApiKeyService(db)
-    api_key = await service.create_or_update(current_user.id, data)
+    api_key = await service.create(current_user.id, data)
     return api_key
 
 
@@ -65,6 +65,34 @@ async def delete_api_key(
     if not deleted:
         raise HTTPException(status_code=404, detail="API key not found")
     return {"message": "API key deleted"}
+
+
+@router.post("/{key_id}/activate", response_model=ApiKeyResponse)
+async def activate_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Activate an API key, deactivating others for the same provider."""
+    service = ApiKeyService(db)
+    api_key = await service.activate(key_id, current_user.id)
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+    return api_key
+
+
+@router.post("/{key_id}/deactivate", response_model=ApiKeyResponse)
+async def deactivate_api_key(
+    key_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deactivate an API key (no key active for this provider)."""
+    service = ApiKeyService(db)
+    api_key = await service.deactivate(key_id, current_user.id)
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+    return api_key
 
 
 @router.post("/{key_id}/validate")

@@ -2,7 +2,7 @@
 User API key database model.
 """
 
-from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Enum as SQLEnum, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, Enum as SQLEnum, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import enum
@@ -24,7 +24,7 @@ class UserApiKey(Base):
 
     __tablename__ = "user_api_keys"
     __table_args__ = (
-        UniqueConstraint("user_id", "provider", name="uk_user_api_keys_provider"),
+        Index("idx_user_api_keys_user_provider", "user_id", "provider"),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -33,6 +33,7 @@ class UserApiKey(Base):
         SQLEnum(LLMProviderKey, values_callable=lambda obj: [e.value for e in obj]),
         nullable=False
     )
+    label = Column(String(100), nullable=True)
     api_key_encrypted = Column(Text, nullable=False)
     api_key_hint = Column(String(20), nullable=False)
     model_override = Column(String(100), nullable=True)

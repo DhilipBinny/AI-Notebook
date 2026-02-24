@@ -1,9 +1,17 @@
 """
 API key service - manages user-owned LLM API keys.
+
+Constraints:
+  - Max 5 keys per provider per user (application-level, not DB-enforced)
+  - One active key per provider at a time — activate() deactivates siblings
+  - First key added for a provider is auto-activated
+  - Deleting the active key does NOT auto-promote; user must manually activate another
+  - Only admin-enabled providers are shown to users (filtered by platform key visibility)
+  - Label is optional (max 100 chars), for user's own organization
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func as sql_func
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
 import logging
@@ -14,6 +22,8 @@ from .schemas import ApiKeyCreate, ApiKeyUpdate
 
 logger = logging.getLogger(__name__)
 
+MAX_KEYS_PER_PROVIDER = 5
+
 
 class ApiKeyService:
     """Service class for API key operations."""
@@ -21,35 +31,72 @@ class ApiKeyService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_or_update(self, user_id: str, data: ApiKeyCreate) -> UserApiKey:
-        """Create or update an API key for a provider (upsert)."""
-        existing = await self._get_by_provider(user_id, data.provider)
+    async def create(self, user_id: str, data: ApiKeyCreate) -> UserApiKey:
+        """Create a new API key for a provider. Max 5 per provider."""
+        # Check count limit
+        count_result = await self.db.execute(
+            select(sql_func.count()).select_from(UserApiKey).where(
+                UserApiKey.user_id == user_id,
+                UserApiKey.provider == data.provider,
+            )
+        )
+        count = count_result.scalar()
+        if count >= MAX_KEYS_PER_PROVIDER:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum {MAX_KEYS_PER_PROVIDER} keys per provider reached"
+            )
 
-        if existing:
-            # Update existing key
-            existing.api_key_encrypted = encrypt_key(data.api_key) if data.api_key else encrypt_key("")
-            existing.api_key_hint = mask_key(data.api_key) if data.api_key else "(none)"
-            existing.model_override = data.model_override
-            if hasattr(data, 'base_url'):
-                existing.base_url = data.base_url
-            existing.is_validated = False
-            existing.is_active = True
-            await self.db.flush()
-            await self.db.refresh(existing)
-            return existing
+        # First key for this provider? Auto-activate it
+        is_first = count == 0
 
-        # Create new
         encrypted = encrypt_key(data.api_key) if data.api_key else encrypt_key("")
         hint = mask_key(data.api_key) if data.api_key else "(none)"
         api_key = UserApiKey(
             user_id=user_id,
             provider=LLMProviderKey(data.provider),
+            label=data.label,
             api_key_encrypted=encrypted,
             api_key_hint=hint,
             model_override=data.model_override,
             base_url=getattr(data, 'base_url', None),
+            is_active=is_first,
         )
         self.db.add(api_key)
+        await self.db.flush()
+        await self.db.refresh(api_key)
+        return api_key
+
+    async def activate(self, key_id: str, user_id: str) -> Optional[UserApiKey]:
+        """Activate a key, deactivating others for the same provider."""
+        api_key = await self._get_by_id(key_id, user_id)
+        if not api_key:
+            return None
+
+        # Deactivate all keys for this user+provider
+        all_keys = await self.db.execute(
+            select(UserApiKey).where(
+                UserApiKey.user_id == user_id,
+                UserApiKey.provider == api_key.provider,
+            )
+        )
+        for k in all_keys.scalars().all():
+            k.is_active = False
+
+        # Activate the selected one
+        api_key.is_active = True
+        await self.db.flush()
+        await self.db.refresh(api_key)
+        return api_key
+
+    async def deactivate(self, key_id: str, user_id: str) -> Optional[UserApiKey]:
+        """Deactivate a key (no key active for this provider)."""
+        api_key = await self._get_by_id(key_id, user_id)
+        if not api_key:
+            return None
+
+        api_key.is_active = False
         await self.db.flush()
         await self.db.refresh(api_key)
         return api_key
@@ -76,27 +123,28 @@ class ApiKeyService:
         return api_key
 
     async def delete(self, key_id: str, user_id: str) -> bool:
-        """Delete an API key."""
+        """Delete an API key. Remaining keys stay as-is (no auto-promote)."""
         api_key = await self._get_by_id(key_id, user_id)
         if not api_key:
             return False
+
         await self.db.delete(api_key)
         await self.db.flush()
         return True
 
     async def get_for_user(self, user_id: str) -> List[UserApiKey]:
-        """List all API keys for a user."""
+        """List all API keys for a user, ordered by provider then active first."""
         result = await self.db.execute(
             select(UserApiKey)
             .where(UserApiKey.user_id == user_id)
-            .order_by(UserApiKey.provider)
+            .order_by(UserApiKey.provider, UserApiKey.is_active.desc(), UserApiKey.created_at)
         )
         return list(result.scalars().all())
 
     async def get_decrypted_key(self, user_id: str, provider: str) -> Optional[str]:
-        """Get decrypted API key for a specific provider."""
-        api_key = await self._get_by_provider(user_id, provider)
-        if not api_key or not api_key.is_active:
+        """Get decrypted API key for a specific provider (active key only)."""
+        api_key = await self._get_active_by_provider(user_id, provider)
+        if not api_key:
             return None
         try:
             return decrypt_key(api_key.api_key_encrypted)
@@ -192,15 +240,16 @@ class ApiKeyService:
         )
         return result.scalar_one_or_none()
 
-    async def _get_by_provider(self, user_id: str, provider: str) -> Optional[UserApiKey]:
-        """Get API key by provider for a specific user."""
+    async def _get_active_by_provider(self, user_id: str, provider: str) -> Optional[UserApiKey]:
+        """Get the active API key for a provider for a specific user."""
         result = await self.db.execute(
             select(UserApiKey).where(
                 UserApiKey.user_id == user_id,
                 UserApiKey.provider == provider,
+                UserApiKey.is_active == True,
             )
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def _test_key(self, provider: str, api_key: str) -> bool:
         """Test if an API key is valid with a lightweight request."""
