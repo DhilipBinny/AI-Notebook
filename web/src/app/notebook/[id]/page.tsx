@@ -704,14 +704,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     // Save notebook first to ensure context is up to date
     await saveNotebook()
 
-    // Get all cell IDs for context (excluding the AI cell itself, but including other AI cells)
-    // Other AI cells' user_ask_ai and ai_response will be included in context by the backend
-    const contextCellIds = cells
-      .filter(c => c.id !== cellId)
-      .map(c => c.id)
-
     // Get AI cell's position for positional awareness
     const aiCellIndex = cells.findIndex(c => c.id === cellId)
+
+    // Only send cells ABOVE the AI cell as context (top-to-bottom execution model)
+    const contextCellIds = cells
+      .slice(0, aiCellIndex)
+      .map(c => c.id)
 
     // Initialize streaming state - clear previous response, steps, thinking, and errors
     updateCell(cellId, {
