@@ -80,7 +80,7 @@ class GeminiClient(BaseLLMClient):
         tool_names = [func.__name__ for func in TOOL_FUNCTIONS_NO_SEARCH]
         log(f"Gemini client initialized with tools: {tool_names}")
         log(f"Config: tool_mode={cfg.TOOL_EXECUTION_MODE}, auto_func={self.auto_function_calling} (request may override)")
-        log(f"Web search enabled (two-phase): {self.enable_web_search}")
+        log(f"Web search: {'enabled (two-phase for chat, grounding for AI cell)' if self.enable_web_search else 'disabled'}")
 
         # Initialize chat history
         self.history: List[Dict[str, Any]] = []
@@ -236,9 +236,9 @@ class GeminiClient(BaseLLMClient):
             else:
                 message = user_prompt
 
-            # Phase 1: Check if web search is needed (use user_prompt for keyword detection)
+            # Phase 1: Check if web search is needed (Gemini uses two-phase: search then complete)
             search_context = ""
-            if self._needs_web_search(message, user_prompt):
+            if self._needs_web_search(user_prompt):
                 self._emit_progress("thinking", {"message": "Searching the web..."})
                 search_context = self._gemini_do_google_search(user_prompt)
 
@@ -578,7 +578,7 @@ class GeminiClient(BaseLLMClient):
             # Check if web search might help (only for text, not image analysis)
             # Pass full_prompt for search query, user_prompt for keyword detection
             search_context = ""
-            if not images and self._needs_web_search(full_prompt, user_prompt):
+            if not images and self._needs_web_search(user_prompt):
                 search_context = self._gemini_do_google_search(user_prompt)
 
             # Build the final prompt with search context if available
@@ -873,7 +873,7 @@ class GeminiClient(BaseLLMClient):
     # =========================================================================
     # SECTION 7: UTILITIES & HELPERS
     # =========================================================================
-    # Note: _needs_web_search() is inherited from BaseLLMClient
+    # _needs_web_search() is inherited from BaseLLMClient (Gemini uses it for two-phase search)
 
     def _gemini_do_google_search(self, query: str) -> str:
         """

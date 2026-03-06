@@ -104,21 +104,13 @@ class OpenAIClient(BaseLLMClient):
 
     def _get_tools_for_request(self, message: str, user_message: str = None) -> List[Dict[str, Any]]:
         """
-        Get tools list for this request, conditionally adding web search.
-
-        Args:
-            message: The full message
-            user_message: Optional - just the user's question (for keyword detection)
-
-        Returns:
-            List of tools, including web search tool if needed
+        Get tools list for this request, always including web search.
+        The model decides when to actually call web search.
         """
         tools = self.tools.copy()
 
-        # Add web search tool only if keywords suggest it's needed
-        if self._needs_web_search(message, user_message):
+        if self.enable_web_search:
             tools.append(self.adapter.get_web_search_tool())
-            log("🌐 Web search tool added to this request")
 
         return tools
 

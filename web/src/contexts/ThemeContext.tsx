@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 
 export type NotebookTheme = 'dark' | 'light'
 export type DensityMode = 'standard' | 'cozy' | 'compact'
@@ -33,6 +34,10 @@ const validDensities: DensityMode[] = ['standard', 'cozy', 'compact']
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<NotebookTheme>('dark')
   const [density, setDensity] = useState<DensityMode>('standard')
+  const pathname = usePathname()
+
+  // Auth pages always use dark theme
+  const isAuthPage = pathname?.startsWith('/auth')
 
   // Load theme and density from localStorage on mount
   useEffect(() => {
@@ -46,11 +51,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Save theme to localStorage and apply to document
+  // Apply theme to document — force dark on auth pages
   useEffect(() => {
-    localStorage.setItem('notebook-theme', theme)
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [theme])
+    const effectiveTheme = isAuthPage ? 'dark' : theme
+    document.documentElement.setAttribute('data-theme', effectiveTheme)
+    if (!isAuthPage) {
+      localStorage.setItem('notebook-theme', theme)
+    }
+  }, [theme, isAuthPage])
 
   // Save density to localStorage and apply to document
   useEffect(() => {

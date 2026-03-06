@@ -80,10 +80,10 @@ class AnthropicClient(BaseLLMClient):
         # Initialize the adapter for format translation
         self.adapter = AnthropicAdapter()
 
-        # Build base tools list (without web search - added dynamically per request)
+        # Build base tools list (web search added per-request if enabled)
         self.tools = build_anthropic_tools(TOOL_FUNCTIONS)
 
-        log(f"Anthropic web search: {'enabled' if enable_web_search else 'disabled'} (added dynamically when needed)")
+        log(f"Anthropic web search: {'enabled (always included, model decides)' if enable_web_search else 'disabled'}")
 
         self.history: List[Dict[str, Any]] = []
 
@@ -91,7 +91,7 @@ class AnthropicClient(BaseLLMClient):
         self.auto_function_calling = auto_function_calling if auto_function_calling is not None else cfg.AUTO_FUNCTION_CALLING
         log("Anthropic client initialized")
         log(f"Config: tool_mode={cfg.TOOL_EXECUTION_MODE}, auto_func={self.auto_function_calling} (request may override)")
-        log(f"Web search enabled: {self.enable_web_search}")
+        log(f"Web search: {self.enable_web_search}")
 
         # Store pending state for manual mode
         self._pending_messages: List[Dict[str, Any]] = []
@@ -103,21 +103,13 @@ class AnthropicClient(BaseLLMClient):
 
     def _get_tools_for_request(self, message: str, user_message: str = None) -> List[Dict[str, Any]]:
         """
-        Get tools list for this request, conditionally adding web search.
-
-        Args:
-            message: The full message
-            user_message: Optional - just the user's question (for keyword detection)
-
-        Returns:
-            List of tools, including web search tool if needed
+        Get tools list for this request, always including web search.
+        Claude decides when to actually call web search.
         """
         tools = self.tools.copy()
 
-        # Add web search tool only if keywords suggest it's needed
-        if self._needs_web_search(message, user_message):
+        if self.enable_web_search:
             tools.append(self.adapter.get_web_search_tool(max_uses=5))
-            log("🌐 Web search tool added to this request")
 
         return tools
 
@@ -339,11 +331,10 @@ class AnthropicClient(BaseLLMClient):
             if images:
                 log(f"📷 Including {len(images)} image(s)")
 
-            # Anthropic has web search via tool - use adapter for consistent definition
+            # Always include web search — Claude decides when to use it
             tools = []
-            if self._needs_web_search(user_prompt, user_prompt):
+            if self.enable_web_search:
                 tools.append(self.adapter.get_web_search_tool(max_uses=3))
-                log("🌐 Web search tool added to AI Cell request")
 
             # Build content with proper caching layers (clean approach - no splitting)
             content = self._build_cached_message_content(notebook_context, user_prompt, images)

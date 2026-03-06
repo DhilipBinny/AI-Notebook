@@ -37,55 +37,43 @@ from backend.config import MAX_TOOL_ITERATIONS
 
 
 # =============================================================================
-# WEB SEARCH CONFIGURATION (Weighted Scoring System)
+# WEB SEARCH CONFIGURATION
 # =============================================================================
-# Uses weighted scoring instead of binary keyword matching.
-# This handles nuances like "Write code for stock prices" correctly.
+# Strategy per provider:
+#   - Anthropic/OpenAI: Always include native web search tool. The model
+#     decides when to call it. No pre-filtering needed.
+#   - Gemini: Two-phase approach (separate search API call + inject results).
+#     Uses weighted scoring to decide IF search is needed before making
+#     the extra API call.
+#   - Ollama: No web search (local models).
 #
-# Scoring:
-#   - Explicit commands (google, search for): +100 (almost always search)
+# Gemini Scoring (used only by Gemini's two-phase search):
+#   - Explicit commands (google, search for): +100
 #   - Dynamic/time-sensitive (latest, weather, stock): +15
 #   - Informational/docs (who is, what is, docs): +5
 #   - Local context (my code, this cell, fix this): -20
 #   - Coding intent (write a function, import, def): -10
-#
-# Threshold: Score >= 10 triggers search
-#
-# Examples:
-#   - "weather in Tokyo" (+15) -> SEARCH
-#   - "write code for stock price" (+15 - 10) = 5 -> NO SEARCH (correct!)
-#   - "google how to fix my code" (+100 - 20) = 80 -> SEARCH (explicit override)
-#   - "who is ceo" (+5) -> NO SEARCH (LLM knows general knowledge)
-#   - "who is ceo now" (+5 + 15) = 20 -> SEARCH
+#   Threshold: Score >= 10 triggers search
 
 import re
 
-# Score threshold for triggering web search
 WEB_SEARCH_SCORE_THRESHOLD = 10
 
-# 1. EXPLICIT COMMANDS (Score: +100)
-# If these exist, we almost certainly want to search.
 REGEX_EXPLICIT_SEARCH = re.compile(
     r'\b(google|bing|search for|look up|lookup|search the web|web search)\b',
     re.IGNORECASE
 )
 
-# 2. DYNAMIC/TIME-SENSITIVE (Score: +15)
-# Topics that LLMs (trained on old data) typically fail at.
 REGEX_DYNAMIC_DATA = re.compile(
-    r'\b(latest|current|today|now|news|weather|stock|price|release date|202[4-9]|exchange rate|score)\b',
+    r'\b(latest|current|today|now|news|weather|stock price|release date|20\d{2}|exchange rate)\b',
     re.IGNORECASE
 )
 
-# 3. INFORMATIONAL/DOCS (Score: +5)
-# Softer signals that suggest looking up facts.
 REGEX_INFO_LOOKUP = re.compile(
-    r'\b(who is|what is|when is|docs|documentation|api reference|tutorial|how to)\b',
+    r'\b(who is|what is|when is|when did|docs for|documentation for|api reference|official docs)\b',
     re.IGNORECASE
 )
 
-# 4. LOCAL CONTEXT (Score: -20)
-# User refers to existing content in the notebook.
 REGEX_LOCAL_CONTEXT = re.compile(
     r'\b(my code|my notebook|this cell|my dataframe|my data|my variable|this variable|'
     r'fix this|debug this|this function|this error|in the notebook|in this notebook|'
@@ -93,8 +81,6 @@ REGEX_LOCAL_CONTEXT = re.compile(
     re.IGNORECASE
 )
 
-# 5. CODING INTENT (Score: -10)
-# User wants you to WRITE code, not READ about it.
 REGEX_CODING_INTENT = re.compile(
     r'\b(def |class |import |return |print\(|write a function|write a script|'
     r'create a function|create a script|implement|write code|generate code)\b',
@@ -244,129 +230,47 @@ class BaseLLMClient(ABC):
     # Web Search Detection (shared implementation)
     # =========================================================================
 
-    def _needs_web_search(self, message: str, user_message_only: str = None) -> bool:
+    def _needs_web_search(self, user_message: str) -> bool:
         """
-        Determine if the message needs web search using weighted scoring.
+        Weighted scoring to decide if web search is needed.
 
-        Uses a scoring system instead of binary keyword matching:
-        - Explicit commands (google, search for): +100
-        - Dynamic/time-sensitive (latest, weather, stock): +15
-        - Informational/docs (who is, what is, docs): +5
-        - Local context (my code, this cell, fix this): -20
-        - Coding intent (write a function, import, def): -10
-
-        Threshold: Score >= 10 triggers search
+        Used by Gemini's two-phase search (separate API call).
+        Anthropic/OpenAI skip this — they always include web search as a
+        tool and let the model decide whether to call it.
 
         Args:
-            message: The full message (used for search query if triggered)
-            user_message_only: Optional - just the user's question (used for scoring)
-                               If not provided, uses the full message.
-                               This avoids false triggers from notebook context.
+            user_message: The user's question (not full context)
 
         Returns:
-            True if web search should be triggered, False otherwise
+            True if web search should be triggered
         """
         if not self.enable_web_search:
-            log("🔍 Web search: DISABLED")
             return False
 
-        # Use user_message_only for scoring if provided
-        # This prevents false triggers from notebook context
-        text = (user_message_only if user_message_only else message).strip()
-
+        text = user_message.strip()
         score = 0
-        score_breakdown = []
+        parts = []
 
-        # --- ADD POINTS ---
         if REGEX_EXPLICIT_SEARCH.search(text):
             score += 100
-            score_breakdown.append("+100 explicit")
-
+            parts.append("+100 explicit")
         if REGEX_DYNAMIC_DATA.search(text):
             score += 15
-            score_breakdown.append("+15 dynamic")
-
+            parts.append("+15 dynamic")
         if REGEX_INFO_LOOKUP.search(text):
             score += 5
-            score_breakdown.append("+5 info")
-
-        # --- SUBTRACT POINTS ---
+            parts.append("+5 info")
         if REGEX_LOCAL_CONTEXT.search(text):
             score -= 20
-            score_breakdown.append("-20 local")
-
+            parts.append("-20 local")
         if REGEX_CODING_INTENT.search(text):
             score -= 10
-            score_breakdown.append("-10 coding")
+            parts.append("-10 coding")
 
-        # --- DECISION ---
-        weighted_result = score >= WEB_SEARCH_SCORE_THRESHOLD
-        breakdown_str = " | ".join(score_breakdown) if score_breakdown else "no matches"
-
-        # Log weighted scoring result
-        if weighted_result:
-            log(f"🔍 Weighted: TRIGGERED (score={score} [{breakdown_str}])")
-        else:
-            log(f"🔍 Weighted: NOT NEEDED (score={score} [{breakdown_str}])")
-
-        # NOTE: Previously called _needs_web_search_llm() here for comparison logging,
-        # but that wasted API tokens on every message. Removed — use weighted scoring only.
-        return weighted_result
-
-    def _needs_web_search_llm(self, user_query: str) -> bool:
-        """
-        Uses a fast LLM call to decide if external search is truly needed.
-
-        This is an alternative to the weighted scoring approach that uses
-        AI to make the decision. More accurate but adds latency.
-
-        Args:
-            user_query: The user's question/request
-
-        Returns:
-            True if web search should be triggered, False otherwise
-        """
-        if not self.enable_web_search:
-            log("🔍 LLM Web search check: DISABLED")
-            return False
-
-        prompt = f"""You are a Router for a Jupyter Notebook AI Assistant.
-                Your specific job is to decide: Does this user query require LIVE EXTERNAL WEB SEARCH?
-
-                CONTEXT:
-                - The Assistant has direct access to the notebook code, cells, and runtime variables.
-                - It can inspect dataframes, list variables, and read errors internally.
-                - It can write and debug code using its own internal knowledge.
-
-                RULES - RETURN "NO" (Do NOT Search) for:
-                - Questions about "my code", "this cell", "my data", "variable x".
-                - Requests to write, fix, or debug Python code (unless asking for external docs).
-                - Questions about the notebook structure ("how many cells?").
-                - "What is the value of...", "Show me the dataframe...".
-
-                RULES - RETURN "YES" (MUST Search) for:
-                - Explicit requests ("google this", "search for").
-                - Real-time data ("weather", "stock price", "current date").
-                - Up-to-date API documentation or library reference ("latest pandas docs").
-                - Facts outside the notebook ("who is the CEO of...", "release date of...").
-
-                User Query: "{user_query}"
-
-                Reply with exactly one word: YES or NO."""
-
-        try:
-            # Use simple_completion for a fast, low-token response
-            result = self.simple_completion(prompt, max_tokens=5)
-            result = result.strip().upper()
-
-            should_search = "YES" in result
-            log(f"🔍 LLM Web search check: {'TRIGGERED' if should_search else 'NOT NEEDED'} (LLM said: {result})")
-            return should_search
-
-        except Exception as e:
-            log(f"🔍 LLM Web search check: ERROR ({e}), returning False")
-            # Return False on error (don't trigger search if LLM check fails)
-            return False
+        result = score >= WEB_SEARCH_SCORE_THRESHOLD
+        breakdown = " | ".join(parts) if parts else "no matches"
+        log(f"🔍 Web search scoring: {'TRIGGERED' if result else 'skip'} (score={score} [{breakdown}])")
+        return result
 
     def cancel(self) -> None:
         """Request cancellation of the current operation."""
@@ -1148,14 +1052,11 @@ class BaseLLMClient(ABC):
             tools = self._get_ai_cell_tools(allowed_tools=allowed_tools)
             tool_map = self._get_ai_cell_tool_map(allowed_tools=allowed_tools)
 
-            # Check if web search is needed based on user prompt
-            # _needs_web_search now logs both weighted scoring AND LLM classifier comparison
-            if self._needs_web_search(user_prompt, user_prompt):
-                # Add web search tool - provider-specific implementation
-                web_search_tool = self._get_web_search_tool()
-                if web_search_tool:
-                    tools = tools + [web_search_tool]
-                    log("🌐 Web search tool added to AI Cell request")
+            # Add web search tool — model decides when to use it
+            web_search_tool = self._get_web_search_tool()
+            if web_search_tool:
+                tools = tools + [web_search_tool]
+                log("🌐 Web search tool included for AI Cell")
 
             log(f"🔧 Available tools ({len(tool_map)}): {list(tool_map.keys())}")
 
