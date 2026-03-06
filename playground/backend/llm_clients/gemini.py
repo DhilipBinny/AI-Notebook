@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Optional, Union, Callable
 from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult, CancelledException
 from backend.llm_adapters.tool_schemas import build_gemini_tool_schema
 from backend.utils.util_func import log
-from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
+from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS, ALL_AI_CELL_TOOLS, ALL_AI_CELL_TOOL_MAP
 import backend.config as cfg
 
 # Import the adapter for gradual migration
@@ -618,22 +618,29 @@ class GeminiClient(BaseLLMClient):
     # These methods implement the unified tool execution interface for AI Cells
     # Used for notebook inspection and code execution tools
 
-    def _get_ai_cell_tools(self) -> List[types.Tool]:
+    def _get_ai_cell_tools(self, allowed_tools: Optional[List[str]] = None) -> List[types.Tool]:
         """
         Get AI Cell tools in Gemini format (FunctionDeclarations for manual execution).
-        Uses cached tools to avoid rebuilding on each call.
+        Uses cached full set, then filters by allowed_tools if provided.
         """
         if self._ai_cell_tools_cache is None:
-            # Build FunctionDeclarations for manual tool execution
-            declarations = [self._gemini_func_to_declaration(func) for func in AI_CELL_TOOLS]
-            self._ai_cell_tools_cache = [types.Tool(function_declarations=declarations)]
-        return self._ai_cell_tools_cache
+            declarations = [self._gemini_func_to_declaration(func) for func in ALL_AI_CELL_TOOLS]
+            self._ai_cell_tools_cache = declarations
+        declarations = self._ai_cell_tools_cache
+        if allowed_tools is not None:
+            allowed_set = set(allowed_tools)
+            declarations = [d for d in declarations if d.name in allowed_set]
+        return [types.Tool(function_declarations=declarations)]
 
-    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+    def _get_ai_cell_tool_map(self, allowed_tools: Optional[List[str]] = None) -> Dict[str, Callable]:
         """Get mapping of tool names to callable functions for AI Cell."""
         if self._ai_cell_tool_map_cache is None:
-            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
-        return self._ai_cell_tool_map_cache
+            self._ai_cell_tool_map_cache = dict(ALL_AI_CELL_TOOL_MAP)
+        tool_map = self._ai_cell_tool_map_cache
+        if allowed_tools is not None:
+            allowed_set = set(allowed_tools)
+            return {k: v for k, v in tool_map.items() if k in allowed_set}
+        return tool_map
 
     def _get_web_search_tool(self) -> Optional[Any]:
         """Get Gemini web search tool (Google Search) via adapter."""

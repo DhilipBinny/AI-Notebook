@@ -226,10 +226,17 @@ export interface SystemPrompt {
   prompt_type: 'chat_panel' | 'ai_cell'
   label: string
   content: string
+  mode_name?: string
+  tools?: string[]
   is_active: boolean
   created_by?: string
   created_at: string
   updated_at: string
+}
+
+export interface AICellMode {
+  mode_name: string
+  label: string
 }
 
 // Image input for AI Cell (pasted or uploaded images)

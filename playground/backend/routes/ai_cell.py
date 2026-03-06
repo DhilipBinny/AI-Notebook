@@ -132,6 +132,9 @@ async def run_ai_cell(
             set_current_session(session_id)
             log(f"Session ID set: {session_id} (kernel will be created lazily if needed)")
 
+            # Pass allowed_tools from mode if provided
+            allowed_tools = request.allowed_tools
+
             if streaming_enabled:
                 # === STREAMING MODE: Send real-time progress events ===
                 client.set_progress_callback(progress_callback)
@@ -142,7 +145,7 @@ async def run_ai_cell(
                 # Run LLM in thread pool (allows progress events to be sent)
                 ctx = contextvars.copy_context()
                 def run_llm():
-                    return ctx.run(client.ai_cell_execute, notebook_context, user_prompt, images=llm_images)
+                    return ctx.run(client.ai_cell_execute, notebook_context, user_prompt, images=llm_images, allowed_tools=allowed_tools)
 
                 loop = asyncio.get_event_loop()
                 llm_future = loop.run_in_executor(None, run_llm)
@@ -180,7 +183,7 @@ async def run_ai_cell(
             else:
                 # === NON-STREAMING MODE: Just run and return final result ===
                 log("AI Cell running in non-streaming mode")
-                result = await asyncio.to_thread(client.ai_cell_execute, notebook_context, user_prompt, images=llm_images)
+                result = await asyncio.to_thread(client.ai_cell_execute, notebook_context, user_prompt, images=llm_images, allowed_tools=allowed_tools)
 
             # Send final 'done' event (both modes)
             response_text = result.get("response", "")

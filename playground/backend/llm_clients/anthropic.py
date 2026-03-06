@@ -21,7 +21,7 @@ from anthropic import Anthropic
 from backend.llm_clients.base import BaseLLMClient, ImageData, prepare_image, LLMResponse, ToolCall, ToolResult
 from backend.llm_adapters.tool_schemas import build_anthropic_tools
 from backend.utils.util_func import log
-from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS
+from backend.llm_tools import TOOL_FUNCTIONS, AI_CELL_TOOLS, ALL_AI_CELL_TOOLS, ALL_AI_CELL_TOOL_MAP
 import backend.config as cfg
 
 # Import the new adapter for gradual migration
@@ -374,20 +374,28 @@ class AnthropicClient(BaseLLMClient):
     # These methods implement the unified tool execution interface for AI Cells
     # Used for notebook inspection and code execution tools
 
-    def _get_ai_cell_tools(self) -> List[Dict[str, Any]]:
+    def _get_ai_cell_tools(self, allowed_tools: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
         Get AI Cell tools in Anthropic format.
-        Uses cached tools to avoid rebuilding on each call.
+        Uses cached full set, then filters by allowed_tools if provided.
         """
         if self._ai_cell_tools_cache is None:
-            self._ai_cell_tools_cache = build_anthropic_tools(AI_CELL_TOOLS)
-        return self._ai_cell_tools_cache
+            self._ai_cell_tools_cache = build_anthropic_tools(ALL_AI_CELL_TOOLS)
+        tools = self._ai_cell_tools_cache
+        if allowed_tools is not None:
+            allowed_set = set(allowed_tools)
+            tools = [t for t in tools if t.get("name") in allowed_set]
+        return tools
 
-    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+    def _get_ai_cell_tool_map(self, allowed_tools: Optional[List[str]] = None) -> Dict[str, Callable]:
         """Get mapping of tool names to callable functions for AI Cell."""
         if self._ai_cell_tool_map_cache is None:
-            self._ai_cell_tool_map_cache = {func.__name__: func for func in AI_CELL_TOOLS}
-        return self._ai_cell_tool_map_cache
+            self._ai_cell_tool_map_cache = dict(ALL_AI_CELL_TOOL_MAP)
+        tool_map = self._ai_cell_tool_map_cache
+        if allowed_tools is not None:
+            allowed_set = set(allowed_tools)
+            return {k: v for k, v in tool_map.items() if k in allowed_set}
+        return tool_map
 
     def _get_web_search_tool(self) -> Optional[Dict[str, Any]]:
         """Get Anthropic web search tool definition via adapter."""

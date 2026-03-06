@@ -118,6 +118,7 @@ TOOL_FUNCTIONS = [
 ]
 
 # AI Cell tools - subset for inline AI cell (read-only + sandbox)
+# This is the "Standard" mode tool set (14 tools)
 AI_CELL_TOOLS = [
     # Runtime Inspection (live kernel state - requires running kernel)
     runtime_list_variables,
@@ -139,3 +140,19 @@ AI_CELL_TOOLS = [
     sandbox_sync_from_main,
     sandbox_status,
 ]
+
+# All AI Cell tools superset (Standard 14 + Power 5 = 19 tools)
+# Used when mode-based filtering is active — providers build from this list
+ALL_AI_CELL_TOOLS = AI_CELL_TOOLS + [
+    # File utilities (Power mode only)
+    list_files,
+    search_files,
+    read_text_file,
+    get_workspace_context,
+
+    # Web fetching (Power mode only)
+    web_fetch,
+]
+
+# Name-to-function map for all AI Cell tools (for mode-based filtering)
+ALL_AI_CELL_TOOL_MAP = {func.__name__: func for func in ALL_AI_CELL_TOOLS}

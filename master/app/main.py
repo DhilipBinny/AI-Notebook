@@ -48,7 +48,7 @@ from app.templates.routes import router as templates_router
 from app.platform_keys.routes import router as platform_keys_router
 from app.llm_models.routes import router as llm_models_router
 from app.users.admin_routes import router as admin_users_router
-from app.system_prompts.routes import router as system_prompts_router
+from app.system_prompts.routes import router as system_prompts_router, public_router as system_prompts_public_router
 
 # Import playground service for cleanup
 from app.playgrounds.service import PlaygroundService
@@ -171,6 +171,7 @@ app.include_router(platform_keys_router, prefix="/api")  # Platform API key mana
 app.include_router(llm_models_router, prefix="/api")  # LLM model registry
 app.include_router(admin_users_router, prefix="/api")  # Admin user management
 app.include_router(system_prompts_router, prefix="/api")  # System prompt management
+app.include_router(system_prompts_public_router, prefix="/api")  # Public AI cell modes endpoint
 
 
 @app.get("/health")

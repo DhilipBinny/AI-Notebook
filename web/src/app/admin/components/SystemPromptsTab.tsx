@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { admin } from '@/lib/api'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, AlertTriangle, Sparkles } from 'lucide-react'
 import type { SystemPrompt } from '@/types'
 
 const PROMPT_TYPES = [
@@ -11,6 +11,25 @@ const PROMPT_TYPES = [
 ] as const
 
 type PromptTypeKey = typeof PROMPT_TYPES[number]['key']
+
+const MODE_OPTIONS = [
+  { value: '', label: '— None —' },
+  { value: 'crisp', label: 'Crisp' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'power', label: 'Power' },
+] as const
+
+interface ToolItem {
+  name: string
+  category: string
+  description?: string
+  is_active: boolean
+}
+
+interface ToolGroup {
+  category: string
+  tools: ToolItem[]
+}
 
 export default function SystemPromptsTab() {
   const [prompts, setPrompts] = useState<SystemPrompt[]>([])
@@ -24,16 +43,40 @@ export default function SystemPromptsTab() {
     prompt_type: 'chat_panel' as PromptTypeKey,
     label: '',
     content: '',
+    mode_name: '',
+    tools: [] as string[],
   })
   const [isCreating, setIsCreating] = useState(false)
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ label: '', content: '' })
+  const [editingPromptType, setEditingPromptType] = useState<PromptTypeKey | null>(null)
+  const [editForm, setEditForm] = useState({ label: '', content: '', mode_name: '', tools: [] as string[] })
   const [isSaving, setIsSaving] = useState(false)
 
   // Action loading
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
+
+  // Tool catalog from backend (DB-backed)
+  const [toolGroups, setToolGroups] = useState<ToolGroup[]>([])
+  const allToolNames = useMemo(() => toolGroups.flatMap(g => g.tools.map(t => t.name)), [toolGroups])
+  const catalogToolSet = useMemo(() => new Set(allToolNames), [allToolNames])
+
+  // Tools assigned to any active ai_cell mode
+  const assignedTools = useMemo(() => {
+    const set = new Set<string>()
+    prompts.filter(p => p.prompt_type === 'ai_cell' && p.is_active && p.tools).forEach(p => p.tools!.forEach(t => set.add(t)))
+    return set
+  }, [prompts])
+
+  // Tools in catalog but not in ANY active mode
+  const unassignedTools = useMemo(() => allToolNames.filter(t => !assignedTools.has(t)), [allToolNames, assignedTools])
+
+  // For a given prompt's tools array, find tools no longer in catalog
+  const getRemovedTools = useCallback((tools: string[] | undefined) => {
+    if (!tools || catalogToolSet.size === 0) return []
+    return tools.filter(t => !catalogToolSet.has(t))
+  }, [catalogToolSet])
 
   const fetchPrompts = useCallback(async () => {
     try {
@@ -47,17 +90,36 @@ export default function SystemPromptsTab() {
     }
   }, [])
 
+  const fetchToolCatalog = useCallback(async () => {
+    try {
+      const data = await admin.systemPrompts.getToolCatalog()
+      setToolGroups(data)
+    } catch {
+      setToolGroups([])
+    }
+  }, [])
+
   useEffect(() => {
     fetchPrompts()
-  }, [fetchPrompts])
+    fetchToolCatalog()
+  }, [fetchPrompts, fetchToolCatalog])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     try {
       setIsCreating(true)
-      await admin.systemPrompts.create(createForm)
-      setCreateForm({ prompt_type: 'chat_panel', label: '', content: '' })
+      const payload: Record<string, unknown> = {
+        prompt_type: createForm.prompt_type,
+        label: createForm.label,
+        content: createForm.content,
+      }
+      if (createForm.mode_name) payload.mode_name = createForm.mode_name
+      if (createForm.tools.length > 0) {
+        payload.tools = createForm.tools
+      }
+      await admin.systemPrompts.create(payload as Parameters<typeof admin.systemPrompts.create>[0])
+      setCreateForm({ prompt_type: 'chat_panel', label: '', content: '', mode_name: '', tools: [] })
       setShowCreate(false)
       setSuccessMsg('Prompt created')
       fetchPrompts()
@@ -72,19 +134,37 @@ export default function SystemPromptsTab() {
 
   const startEditing = (prompt: SystemPrompt) => {
     setEditingId(prompt.id)
-    setEditForm({ label: prompt.label, content: prompt.content })
+    setEditingPromptType(prompt.prompt_type)
+    setEditForm({
+      label: prompt.label,
+      content: prompt.content,
+      mode_name: prompt.mode_name || '',
+      tools: prompt.tools ? [...prompt.tools] : [],
+    })
   }
 
   const cancelEditing = () => {
     setEditingId(null)
-    setEditForm({ label: '', content: '' })
+    setEditingPromptType(null)
+    setEditForm({ label: '', content: '', mode_name: '', tools: [] })
   }
 
   const handleSave = async (id: string) => {
     try {
       setIsSaving(true)
-      await admin.systemPrompts.update(id, editForm)
+      const payload: Record<string, unknown> = {
+        label: editForm.label,
+        content: editForm.content,
+      }
+      if (editingPromptType === 'ai_cell') {
+        payload.mode_name = editForm.mode_name || undefined
+        if (editForm.tools.length > 0) {
+          payload.tools = editForm.tools
+        }
+      }
+      await admin.systemPrompts.update(id, payload as Parameters<typeof admin.systemPrompts.update>[1])
       setEditingId(null)
+      setEditingPromptType(null)
       setSuccessMsg('Prompt updated')
       fetchPrompts()
       setTimeout(() => setSuccessMsg(''), 3000)
@@ -159,7 +239,7 @@ export default function SystemPromptsTab() {
       {/* Action bar */}
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
-          Manage system prompts for Chat Panel and AI Cell. One active prompt per type — falls back to hardcoded default if none active.
+          Manage system prompts for Chat Panel and AI Cell modes. AI Cell modes (with a mode name) can be independently active — users select them from a notebook dropdown.
         </p>
         <button
           onClick={() => setShowCreate(!showCreate)}
@@ -217,6 +297,67 @@ export default function SystemPromptsTab() {
                 />
               </div>
             </div>
+            {createForm.prompt_type === 'ai_cell' && (
+              <>
+                <div>
+                  <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Mode Name <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>(optional)</span></label>
+                  <select
+                    value={createForm.mode_name}
+                    onChange={(e) => setCreateForm({ ...createForm, mode_name: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+                  >
+                    {MODE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm" style={{ color: 'var(--app-text-secondary)' }}>
+                      Tools <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>({createForm.tools.length}/{allToolNames.length} selected)</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setCreateForm({ ...createForm, tools: [...allToolNames] })}
+                        className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Select All</button>
+                      <button type="button" onClick={() => setCreateForm({ ...createForm, tools: [] })}
+                        className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Clear</button>
+                    </div>
+                  </div>
+                  {toolGroups.length === 0 ? (
+                    <div className="p-3 rounded-lg text-xs text-center" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-muted)' }}>
+                      No tools in catalog. Add tools via the tool catalog management.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)' }}>
+                      {toolGroups.map(group => (
+                        <div key={group.category}>
+                          <div className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--app-text-muted)' }}>{group.category}</div>
+                          <div className="space-y-1">
+                            {group.tools.map(tool => (
+                              <label key={tool.name} className="flex items-center gap-2 cursor-pointer" title={tool.description || tool.name}>
+                                <input
+                                  type="checkbox"
+                                  checked={createForm.tools.includes(tool.name)}
+                                  onChange={(e) => {
+                                    const next = e.target.checked
+                                      ? [...createForm.tools, tool.name]
+                                      : createForm.tools.filter(t => t !== tool.name)
+                                    setCreateForm({ ...createForm, tools: next })
+                                  }}
+                                  className="rounded"
+                                />
+                                <span className="text-xs font-mono" style={{ color: tool.is_active ? 'var(--app-text-primary)' : 'var(--app-text-muted)', textDecoration: tool.is_active ? 'none' : 'line-through' }}>{tool.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
             <div>
               <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Content</label>
               <textarea
@@ -270,6 +411,29 @@ export default function SystemPromptsTab() {
               </span>
             </div>
 
+            {/* Unassigned tools banner for AI Cell */}
+            {type.key === 'ai_cell' && unassignedTools.length > 0 && (
+              <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-start gap-2" style={{
+                backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                border: '1px solid rgba(251, 191, 36, 0.25)',
+                color: '#fbbf24',
+              }}>
+                <Sparkles size={14} className="mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-medium">New tools available:</span>{' '}
+                  <span style={{ color: 'var(--app-text-secondary)' }}>
+                    {unassignedTools.map((t, i) => (
+                      <span key={t}>
+                        <code className="font-mono" style={{ color: '#fbbf24' }}>{t}</code>
+                        {i < unassignedTools.length - 1 && ', '}
+                      </span>
+                    ))}
+                    {' '}— not yet assigned to any active mode.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {typePrompts.length === 0 ? (
               <div className="py-6 text-center text-sm rounded-xl" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-muted)' }}>
                 No custom prompts. The hardcoded default is in use.
@@ -288,12 +452,37 @@ export default function SystemPromptsTab() {
                         <span className="text-sm font-medium" style={{ color: 'var(--app-text-primary)' }}>
                           {prompt.label}
                         </span>
+                        {prompt.mode_name && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
+                            backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                            color: '#a78bfa',
+                          }}>
+                            mode: {prompt.mode_name}
+                          </span>
+                        )}
                         {prompt.is_active && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
                             backgroundColor: 'rgba(16, 185, 129, 0.15)',
                             color: 'var(--app-accent-success)',
                           }}>
                             Active
+                          </span>
+                        )}
+                        {prompt.tools && prompt.tools.length > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
+                            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                            color: '#60a5fa',
+                          }}>
+                            {prompt.tools.length} tools
+                          </span>
+                        )}
+                        {getRemovedTools(prompt.tools).length > 0 && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1" style={{
+                            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                            color: '#f87171',
+                          }}>
+                            <AlertTriangle size={10} />
+                            {getRemovedTools(prompt.tools).length} removed
                           </span>
                         )}
                         <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>
@@ -366,6 +555,84 @@ export default function SystemPromptsTab() {
                             style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                           />
                         </div>
+                        {prompt.prompt_type === 'ai_cell' && (
+                          <>
+                            <div>
+                              <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Mode Name</label>
+                              <select
+                                value={editForm.mode_name}
+                                onChange={(e) => setEditForm({ ...editForm, mode_name: e.target.value })}
+                                className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                                style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+                              >
+                                {MODE_OPTIONS.map(o => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="text-sm" style={{ color: 'var(--app-text-secondary)' }}>
+                                  Tools <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>({editForm.tools.length}/{allToolNames.length} selected)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => setEditForm({ ...editForm, tools: [...allToolNames] })}
+                                    className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Select All</button>
+                                  <button type="button" onClick={() => setEditForm({ ...editForm, tools: [] })}
+                                    className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Clear</button>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)' }}>
+                                {toolGroups.map(group => (
+                                  <div key={group.category}>
+                                    <div className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--app-text-muted)' }}>{group.category}</div>
+                                    <div className="space-y-1">
+                                      {group.tools.map(tool => (
+                                        <label key={tool.name} className="flex items-center gap-2 cursor-pointer" title={tool.description || tool.name}>
+                                          <input
+                                            type="checkbox"
+                                            checked={editForm.tools.includes(tool.name)}
+                                            onChange={(e) => {
+                                              const next = e.target.checked
+                                                ? [...editForm.tools, tool.name]
+                                                : editForm.tools.filter(t => t !== tool.name)
+                                              setEditForm({ ...editForm, tools: next })
+                                            }}
+                                            className="rounded"
+                                          />
+                                          <span className="text-xs font-mono" style={{ color: tool.is_active ? 'var(--app-text-primary)' : 'var(--app-text-muted)', textDecoration: tool.is_active ? 'none' : 'line-through' }}>{tool.name}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                                {/* Show removed tools (in prompt but no longer in catalog DB) */}
+                                {editForm.tools.filter(t => !catalogToolSet.has(t)).length > 0 && (
+                                  <div>
+                                    <div className="text-[11px] font-semibold mb-1.5 flex items-center gap-1" style={{ color: '#f87171' }}>
+                                      <AlertTriangle size={10} /> Not in Catalog
+                                    </div>
+                                    <div className="space-y-1">
+                                      {editForm.tools.filter(t => !catalogToolSet.has(t)).map(tool => (
+                                        <label key={tool} className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={true}
+                                            onChange={() => {
+                                              setEditForm({ ...editForm, tools: editForm.tools.filter(t => t !== tool) })
+                                            }}
+                                            className="rounded"
+                                          />
+                                          <span className="text-xs font-mono line-through" style={{ color: '#f87171' }}>{tool}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
                         <div>
                           <label className="block text-sm mb-1" style={{ color: 'var(--app-text-secondary)' }}>Content</label>
                           <textarea
@@ -415,6 +682,7 @@ export default function SystemPromptsTab() {
           </div>
         )
       })}
+
     </div>
   )
 }

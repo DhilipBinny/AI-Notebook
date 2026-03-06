@@ -505,6 +505,8 @@ CREATE TABLE IF NOT EXISTS system_prompts (
     prompt_type ENUM('chat_panel','ai_cell') NOT NULL,
     label VARCHAR(100) NOT NULL,
     content MEDIUMTEXT NOT NULL,
+    mode_name VARCHAR(50) NULL,
+    tools JSON NULL,
 
     is_active BOOLEAN NOT NULL DEFAULT FALSE,
 
@@ -541,6 +543,27 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE KEY uk_prt_token_hash (token_hash),
     INDEX idx_prt_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- 17. AI CELL TOOL CATALOG (available tools for AI cell modes)
+-- =====================================================
+-- Master list of tools that can be assigned to AI Cell modes.
+-- Playground has the actual implementations; this table controls
+-- which tools are visible/assignable in the admin UI.
+-- Admin manually adds new tools here when playground adds them.
+-- =====================================================
+CREATE TABLE IF NOT EXISTS ai_cell_tool_catalog (
+    name VARCHAR(100) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    description VARCHAR(255) NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (name),
+    INDEX idx_tool_catalog_category (category),
+    INDEX idx_tool_catalog_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -607,3 +630,40 @@ ON DUPLICATE KEY UPDATE
     supports_function_calling = VALUES(supports_function_calling),
     input_cost_per_1m_cents = VALUES(input_cost_per_1m_cents),
     output_cost_per_1m_cents = VALUES(output_cost_per_1m_cents);
+
+
+-- =====================================================
+-- SEED DATA: AI Cell Tool Catalog
+-- =====================================================
+-- All 19 tools currently implemented in the playground.
+-- Add new rows here when new tools are added to playground code.
+-- =====================================================
+
+INSERT INTO ai_cell_tool_catalog (name, category, description, is_active) VALUES
+-- Runtime Inspection
+('runtime_list_variables',  'Runtime Inspection', 'List all variables in the running kernel',    TRUE),
+('runtime_get_variable',    'Runtime Inspection', 'Get the value of a specific variable',        TRUE),
+('runtime_get_dataframe',   'Runtime Inspection', 'Get DataFrame info and preview',              TRUE),
+('runtime_list_functions',  'Runtime Inspection', 'List user-defined functions in the kernel',    TRUE),
+('runtime_list_imports',    'Runtime Inspection', 'List imported modules in the kernel',          TRUE),
+('runtime_kernel_status',   'Runtime Inspection', 'Get kernel status and resource usage',         TRUE),
+('runtime_get_last_error',  'Runtime Inspection', 'Get the last error/exception from the kernel', TRUE),
+-- Notebook
+('get_notebook_overview',   'Notebook',           'Get overview of all cells in the notebook',    TRUE),
+('get_cell_content',        'Notebook',           'Get the source content of a specific cell',    TRUE),
+-- Sandbox
+('sandbox_execute',         'Sandbox',            'Execute code in an isolated sandbox kernel',   TRUE),
+('sandbox_reset',           'Sandbox',            'Reset the sandbox kernel to a clean state',    TRUE),
+('sandbox_pip_install',     'Sandbox',            'Install packages in the sandbox environment',  TRUE),
+('sandbox_sync_from_main',  'Sandbox',            'Sync variables from main kernel to sandbox',   TRUE),
+('sandbox_status',          'Sandbox',            'Get sandbox kernel status',                    TRUE),
+-- File Utilities
+('list_files',              'File Utilities',     'List files matching a glob pattern',           TRUE),
+('search_files',            'File Utilities',     'Search file contents with regex',              TRUE),
+('read_text_file',          'File Utilities',     'Read contents of a text file',                 TRUE),
+('get_workspace_context',   'File Utilities',     'Get workspace structure and file contents',    TRUE),
+-- Web
+('web_fetch',               'Web',                'Fetch content from a URL',                     TRUE)
+ON DUPLICATE KEY UPDATE
+    category = VALUES(category),
+    description = VALUES(description);

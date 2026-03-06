@@ -611,9 +611,12 @@ class BaseLLMClient(ABC):
         pass
 
     @abstractmethod
-    def _get_ai_cell_tools(self) -> List[Any]:
+    def _get_ai_cell_tools(self, allowed_tools: Optional[List[str]] = None) -> List[Any]:
         """
         Get AI Cell tools in provider-specific format.
+
+        Args:
+            allowed_tools: If provided, only include tools with these names.
 
         Returns:
             List of tool definitions in provider format
@@ -621,9 +624,12 @@ class BaseLLMClient(ABC):
         pass
 
     @abstractmethod
-    def _get_ai_cell_tool_map(self) -> Dict[str, Callable]:
+    def _get_ai_cell_tool_map(self, allowed_tools: Optional[List[str]] = None) -> Dict[str, Callable]:
         """
         Get mapping of tool names to callable functions for AI Cell.
+
+        Args:
+            allowed_tools: If provided, only include tools with these names.
 
         Returns:
             Dict mapping tool name to function
@@ -1090,7 +1096,8 @@ class BaseLLMClient(ABC):
         notebook_context: str,
         user_prompt: str,
         images: Optional[List[ImageData]] = None,
-        max_iterations: int = None
+        max_iterations: int = None,
+        allowed_tools: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         AI Cell completion with tool calling support.
@@ -1138,8 +1145,8 @@ class BaseLLMClient(ABC):
             )
 
             # Get provider-specific tools and tool map
-            tools = self._get_ai_cell_tools()
-            tool_map = self._get_ai_cell_tool_map()
+            tools = self._get_ai_cell_tools(allowed_tools=allowed_tools)
+            tool_map = self._get_ai_cell_tool_map(allowed_tools=allowed_tools)
 
             # Check if web search is needed based on user prompt
             # _needs_web_search now logs both weighted scoring AND LLM classifier comparison
@@ -1150,7 +1157,7 @@ class BaseLLMClient(ABC):
                     tools = tools + [web_search_tool]
                     log("🌐 Web search tool added to AI Cell request")
 
-            log(f"🔧 Available tools: {list(tool_map.keys())}")
+            log(f"🔧 Available tools ({len(tool_map)}): {list(tool_map.keys())}")
 
             # Prepare initial messages
             messages = self._prepare_ai_cell_messages(notebook_context, user_prompt, images)

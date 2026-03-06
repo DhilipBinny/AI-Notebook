@@ -60,6 +60,9 @@ interface NotebookToolbarProps {
   availableProviders?: { provider: string; display_name: string }[]
   contextFormat: 'xml' | 'json' | 'plain'
   onContextFormatChange: (format: 'xml' | 'json' | 'plain') => void
+  aiCellMode: string
+  onAICellModeChange: (mode: string) => void
+  availableModes?: { mode_name: string; label: string }[]
   showFiles?: boolean
   onToggleFiles?: () => void
 }
@@ -96,6 +99,9 @@ export default function NotebookToolbar({
   availableProviders,
   contextFormat,
   onContextFormatChange,
+  aiCellMode,
+  onAICellModeChange,
+  availableModes,
   showFiles,
   onToggleFiles,
 }: NotebookToolbarProps) {
@@ -716,6 +722,36 @@ export default function NotebookToolbar({
                     <option value="xml">XML (Claude)</option>
                     <option value="json">JSON (OpenAI, Gemini)</option>
                     <option value="plain">Plain text (Ollama)</option>
+                  </select>
+                </div>
+
+                {/* AI Cell Mode */}
+                <div className="space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--nb-text-muted)' }}>
+                    <Lightbulb className="w-4 h-4" />
+                    AI Cell Mode
+                  </label>
+                  <select
+                    value={aiCellMode}
+                    onChange={(e) => onAICellModeChange(e.target.value)}
+                    className="w-full text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-stone-400/50 transition-all cursor-pointer"
+                    style={{
+                      backgroundColor: 'var(--nb-bg-primary)',
+                      borderColor: 'var(--nb-border-default)',
+                      color: 'var(--nb-text-primary)',
+                    }}
+                  >
+                    {availableModes && availableModes.length > 0 ? (
+                      availableModes.map(m => (
+                        <option key={m.mode_name} value={m.mode_name}>{m.label}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="crisp">Crisp Mode</option>
+                        <option value="standard">Standard Mode</option>
+                        <option value="power">Power Mode</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>

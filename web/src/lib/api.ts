@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMModel, LLMModelBrief, LLMModelGrouped, NotebookTemplate, PlatformKey, SystemPrompt, AdminUser, AdminUserDetail, AdminUserListResponse } from '@/types'
+import type { User, Project, Workspace, Playground, AuthTokens, ChatMessage, ImageInput, Invitation, InvitationDetail, ApiKey, ProviderInfo, CreditBalance, UsageRecord, LLMModel, LLMModelBrief, LLMModelGrouped, NotebookTemplate, PlatformKey, SystemPrompt, AdminUser, AdminUserDetail, AdminUserListResponse, AICellMode } from '@/types'
 import { hashPassword } from '@/lib/crypto'
 
 // Types for chat API - now just cell IDs (backend loads content from S3)
@@ -586,7 +586,8 @@ export const chat = {
     images?: { data: string; mime_type: string; filename?: string }[],
     onEvent?: (event: { type: string; data: Record<string, unknown> }) => void,
     onDone?: (result: { success: boolean; response: string; model: string; steps: LLMStep[]; cancelled?: boolean; thinking?: string }) => void,
-    onError?: (error: string) => void
+    onError?: (error: string) => void,
+    mode?: string
   ): AbortController => {
     const controller = new AbortController()
     const token = localStorage.getItem('access_token')
@@ -601,7 +602,8 @@ export const chat = {
     })
 
     // Use fetch with streaming response (unified endpoint - always returns SSE)
-    fetch(`/api/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}`, {
+    const modeParam = mode ? `&mode=${encodeURIComponent(mode)}` : ''
+    fetch(`/api/projects/${projectId}/chat/ai-cell/run?llm_provider=${llmProvider}&context_format=${contextFormat}${modeParam}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -682,6 +684,11 @@ export const chat = {
 
   cancelAICell: async (projectId: string): Promise<{ success: boolean; message: string }> => {
     const { data } = await api.post(`/projects/${projectId}/chat/ai-cell/cancel`)
+    return data
+  },
+
+  getAICellModes: async (): Promise<AICellMode[]> => {
+    const { data } = await api.get('/ai-cell-modes')
     return data
   },
 }
@@ -1099,12 +1106,12 @@ export const admin = {
       return data
     },
 
-    create: async (params: { prompt_type: string; label: string; content: string }): Promise<SystemPrompt> => {
+    create: async (params: { prompt_type: string; label: string; content: string; mode_name?: string; tools?: string[] }): Promise<SystemPrompt> => {
       const { data } = await api.post('/admin/system-prompts/', params)
       return data
     },
 
-    update: async (id: string, params: { label?: string; content?: string }): Promise<SystemPrompt> => {
+    update: async (id: string, params: { label?: string; content?: string; mode_name?: string; tools?: string[] }): Promise<SystemPrompt> => {
       const { data } = await api.put(`/admin/system-prompts/${id}`, params)
       return data
     },
@@ -1121,6 +1128,23 @@ export const admin = {
     deactivate: async (id: string): Promise<SystemPrompt> => {
       const { data } = await api.post(`/admin/system-prompts/${id}/deactivate`)
       return data
+    },
+
+    getToolCatalog: async (): Promise<{ category: string; tools: { name: string; category: string; description?: string; is_active: boolean }[] }[]> => {
+      const { data } = await api.get('/admin/system-prompts/tool-catalog')
+      return data
+    },
+
+    addTool: async (params: { name: string; category: string; description?: string }): Promise<void> => {
+      await api.post('/admin/system-prompts/tool-catalog', params)
+    },
+
+    updateTool: async (name: string, params: { category?: string; description?: string; is_active?: boolean }): Promise<void> => {
+      await api.put(`/admin/system-prompts/tool-catalog/${name}`, params)
+    },
+
+    deleteTool: async (name: string): Promise<void> => {
+      await api.delete(`/admin/system-prompts/tool-catalog/${name}`)
     },
   },
 }

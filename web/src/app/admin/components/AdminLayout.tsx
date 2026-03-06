@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import AppHeader from '@/components/AppHeader'
-import { Users, Key, Mail, Bot, FileText, MessageSquare, LucideIcon } from 'lucide-react'
+import { Users, Key, Mail, Bot, FileText, MessageSquare, Wrench, LucideIcon } from 'lucide-react'
 
 const TABS = [
-  { key: 'models', label: 'Models', icon: Bot },
   { key: 'platform-keys', label: 'Platform Keys', icon: Key },
-  { key: 'system-prompts', label: 'Prompts', icon: MessageSquare, dividerAfter: true },
+  { key: 'models', label: 'Models', icon: Bot },
+  { key: 'system-prompts', label: 'Prompts', icon: MessageSquare },
+  { key: 'tool-catalog', label: 'Tool Catalog', icon: Wrench, dividerAfter: true },
   { key: 'users', label: 'Users', icon: Users },
   { key: 'invitations', label: 'Invitations', icon: Mail, dividerAfter: true },
   { key: 'templates', label: 'Templates', icon: FileText },

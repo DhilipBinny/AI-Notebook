@@ -9,12 +9,13 @@ import InvitationsTab from './components/InvitationsTab'
 import CreditsTab from './components/CreditsTab'
 import TemplatesTab from './components/TemplatesTab'
 import SystemPromptsTab from './components/SystemPromptsTab'
+import ToolCatalogTab from './components/ToolCatalogTab'
 
 function AdminPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const tab = (searchParams.get('tab') || 'users') as AdminTabKey
+  const tab = (searchParams.get('tab') || 'platform-keys') as AdminTabKey
 
   const handleTabChange = (newTab: AdminTabKey) => {
     router.push(`/admin?tab=${newTab}`, { scroll: false })
@@ -28,6 +29,7 @@ function AdminPageContent() {
       {tab === 'models' && <CreditsTab />}
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'system-prompts' && <SystemPromptsTab />}
+      {tab === 'tool-catalog' && <ToolCatalogTab />}
     </AdminLayout>
   )
 }

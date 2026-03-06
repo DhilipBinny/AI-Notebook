@@ -10,8 +10,8 @@ from typing import Optional, List
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.system_prompts.models import SystemPrompt, PromptType
-from app.system_prompts.schemas import SystemPromptCreate, SystemPromptUpdate
+from app.system_prompts.models import SystemPrompt, PromptType, AICellToolCatalog
+from app.system_prompts.schemas import SystemPromptCreate, SystemPromptUpdate, ToolCatalogCreate, ToolCatalogUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,8 @@ class SystemPromptService:
             prompt_type=PromptType(data.prompt_type),
             label=data.label,
             content=data.content,
+            mode_name=data.mode_name,
+            tools=data.tools,
             created_by=admin_id,
         )
         self.db.add(prompt)
@@ -45,6 +47,10 @@ class SystemPromptService:
             prompt.label = data.label
         if data.content is not None:
             prompt.content = data.content
+        if data.mode_name is not None:
+            prompt.mode_name = data.mode_name
+        if data.tools is not None:
+            prompt.tools = data.tools
 
         await self.db.flush()
         await self.db.refresh(prompt)
@@ -73,17 +79,18 @@ class SystemPromptService:
         return list(result.scalars().all())
 
     async def activate(self, prompt_id: str) -> Optional[SystemPrompt]:
-        """Activate a prompt and deactivate all others of the same type."""
+        """Activate a prompt. Mode prompts toggle independently; non-mode prompts deactivate siblings."""
         prompt = await self._get_by_id(prompt_id)
         if not prompt:
             return None
 
-        # Deactivate all prompts of the same type
-        await self.db.execute(
-            update(SystemPrompt)
-            .where(SystemPrompt.prompt_type == prompt.prompt_type)
-            .values(is_active=False)
-        )
+        if prompt.mode_name is None:
+            # Non-mode prompt: deactivate all others of the same type
+            await self.db.execute(
+                update(SystemPrompt)
+                .where(SystemPrompt.prompt_type == prompt.prompt_type)
+                .values(is_active=False)
+            )
         # Activate the selected one
         prompt.is_active = True
         await self.db.flush()
@@ -115,6 +122,38 @@ class SystemPromptService:
         prompt = result.scalar_one_or_none()
         return prompt.content if prompt else None
 
+    async def get_mode(self, mode_name: str) -> Optional[dict]:
+        """Get an active AI cell mode by name. Returns {"content": ..., "tools": [...]}."""
+        result = await self.db.execute(
+            select(SystemPrompt)
+            .where(
+                SystemPrompt.prompt_type == "ai_cell",
+                SystemPrompt.mode_name == mode_name,
+                SystemPrompt.is_active == True,
+                SystemPrompt.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        prompt = result.scalar_one_or_none()
+        if not prompt:
+            return None
+        return {"content": prompt.content, "tools": prompt.tools or []}
+
+    async def list_active_modes(self) -> List[dict]:
+        """List all active AI cell modes for the frontend dropdown."""
+        result = await self.db.execute(
+            select(SystemPrompt)
+            .where(
+                SystemPrompt.prompt_type == "ai_cell",
+                SystemPrompt.mode_name.isnot(None),
+                SystemPrompt.is_active == True,
+                SystemPrompt.deleted_at.is_(None),
+            )
+            .order_by(SystemPrompt.created_at)
+        )
+        prompts = result.scalars().all()
+        return [{"mode_name": p.mode_name, "label": p.label} for p in prompts]
+
     async def _get_by_id(self, prompt_id: str) -> Optional[SystemPrompt]:
         result = await self.db.execute(
             select(SystemPrompt).where(
@@ -123,3 +162,55 @@ class SystemPromptService:
             )
         )
         return result.scalar_one_or_none()
+
+    # --- Tool Catalog ---
+
+    async def list_tool_catalog(self, active_only: bool = False) -> List[AICellToolCatalog]:
+        """List all tools in the catalog, ordered by category and name."""
+        stmt = select(AICellToolCatalog).order_by(AICellToolCatalog.category, AICellToolCatalog.name)
+        if active_only:
+            stmt = stmt.where(AICellToolCatalog.is_active == True)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def add_tool(self, data: ToolCatalogCreate) -> AICellToolCatalog:
+        """Add a new tool to the catalog."""
+        tool = AICellToolCatalog(
+            name=data.name,
+            category=data.category,
+            description=data.description,
+        )
+        self.db.add(tool)
+        await self.db.flush()
+        await self.db.refresh(tool)
+        return tool
+
+    async def update_tool(self, tool_name: str, data: ToolCatalogUpdate) -> Optional[AICellToolCatalog]:
+        """Update an existing tool in the catalog."""
+        result = await self.db.execute(
+            select(AICellToolCatalog).where(AICellToolCatalog.name == tool_name)
+        )
+        tool = result.scalar_one_or_none()
+        if not tool:
+            return None
+        if data.category is not None:
+            tool.category = data.category
+        if data.description is not None:
+            tool.description = data.description
+        if data.is_active is not None:
+            tool.is_active = data.is_active
+        await self.db.flush()
+        await self.db.refresh(tool)
+        return tool
+
+    async def delete_tool(self, tool_name: str) -> bool:
+        """Delete a tool from the catalog."""
+        result = await self.db.execute(
+            select(AICellToolCatalog).where(AICellToolCatalog.name == tool_name)
+        )
+        tool = result.scalar_one_or_none()
+        if not tool:
+            return False
+        await self.db.delete(tool)
+        await self.db.flush()
+        return True

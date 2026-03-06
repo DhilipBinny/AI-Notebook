@@ -105,6 +105,7 @@ class AICellRequest(BaseModel):
     context_format: str = "xml"
     llm_provider: Optional[str] = None
     system_prompt: Optional[str] = None  # Override system prompt from admin DB
+    allowed_tools: Optional[List[str]] = None  # Mode-specific tool allowlist
 
 
 class AICellResponse(BaseModel):

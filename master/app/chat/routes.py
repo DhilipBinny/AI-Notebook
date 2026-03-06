@@ -733,6 +733,7 @@ async def run_ai_cell(
     request: AICellRunRequest,
     llm_provider: str = "gemini",
     context_format: str = "xml",
+    mode: str = "standard",
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -860,10 +861,18 @@ async def run_ai_cell(
                 yield f"event: error\ndata: {json.dumps({'error': 'Insufficient credits. Please add credits or use your own API key.'})}\n\n"
             return StreamingResponse(no_credits_stream(), media_type="text/event-stream")
 
-    # Fetch active system prompt for AI cell (fallback to hardcoded if DB fails)
+    # Fetch mode-specific system prompt and allowed tools for AI cell
+    ai_cell_system_prompt = None
+    ai_cell_allowed_tools = None
     try:
         sp_service_ai = SystemPromptService(db)
-        ai_cell_system_prompt = await sp_service_ai.get_active("ai_cell")
+        mode_data = await sp_service_ai.get_mode(mode)
+        if mode_data:
+            ai_cell_system_prompt = mode_data["content"]
+            ai_cell_allowed_tools = mode_data["tools"] or None
+        else:
+            # Fallback: try legacy get_active if mode not found
+            ai_cell_system_prompt = await sp_service_ai.get_active("ai_cell")
     except Exception:
         ai_cell_system_prompt = None
 
@@ -886,6 +895,8 @@ async def run_ai_cell(
                 }
                 if ai_cell_system_prompt:
                     ai_payload["system_prompt"] = ai_cell_system_prompt
+                if ai_cell_allowed_tools:
+                    ai_payload["allowed_tools"] = ai_cell_allowed_tools
                 async with client.stream(
                     "POST",
                     f"{playground.internal_url}/ai-cell/run",

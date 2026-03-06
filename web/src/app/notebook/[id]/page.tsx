@@ -197,6 +197,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [availableProviders, setAvailableProviders] = useState<{ provider: string; display_name: string }[]>([])
   const [toolMode, setToolMode] = useState<'auto' | 'manual' | 'ai_decide'>('auto')
   const [contextFormat, setContextFormat] = useState<'xml' | 'json' | 'plain'>('xml')
+  const [aiCellMode, setAICellMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ai_cell_mode') || 'standard'
+    }
+    return 'standard'
+  })
+  const [availableModes, setAvailableModes] = useState<{ mode_name: string; label: string }[]>([])
   const [rightPanel, setRightPanel] = useState<'chat' | 'logs' | null>(null)
   const [showFiles, setShowFiles] = useState(false)  // File panel visibility
   const [chatStreamStatus, setChatStreamStatus] = useState<string | null>(null)  // Real-time SSE status
@@ -444,6 +451,16 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           }
         } catch {
           // Fallback to defaults
+        }
+
+        // Load available AI Cell modes
+        try {
+          const modes = await chat.getAICellModes()
+          if (modes.length > 0) {
+            setAvailableModes(modes)
+          }
+        } catch {
+          // Fallback to hardcoded defaults
         }
 
         // Show playground not running popup after everything is loaded
@@ -886,9 +903,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           images: images,
           streamState: undefined,
         }))
-      }
+      },
+      aiCellMode
     )
-  }, [playground, projectId, llmProvider, contextFormat, updateCellAiData, saveNotebook])
+  }, [playground, projectId, llmProvider, contextFormat, aiCellMode, updateCellAiData, saveNotebook])
 
   // Cancel running AI cell
   const handleCancelAICell = useCallback(async (cellId: string) => {
@@ -1910,6 +1928,12 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     setLlmProvider(provider)
   }, [])
 
+  // Handle AI Cell mode change (persisted to localStorage)
+  const handleAICellModeChange = useCallback((mode: string) => {
+    setAICellMode(mode)
+    localStorage.setItem('ai_cell_mode', mode)
+  }, [])
+
   // Chat handlers
   const handleSendMessage = useCallback(async (message: string, images?: ImageInput[]) => {
     // Check if playground is running
@@ -2356,6 +2380,9 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         availableProviders={availableProviders}
         contextFormat={contextFormat}
         onContextFormatChange={setContextFormat}
+        aiCellMode={aiCellMode}
+        onAICellModeChange={handleAICellModeChange}
+        availableModes={availableModes}
         showFiles={showFiles}
         onToggleFiles={() => setShowFiles(!showFiles)}
       />
