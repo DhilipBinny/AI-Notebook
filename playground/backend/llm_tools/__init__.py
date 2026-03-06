@@ -48,6 +48,14 @@ from backend.llm_tools.tool_kernel_utils import (
     runtime_get_last_error,
     runtime_get_dataframe
 )
+from backend.llm_tools.tool_terminal import execute_terminal_command
+from backend.llm_tools.tool_file_utils import (
+    edit_file,
+    list_files,
+    search_files,
+    get_workspace_context,
+)
+from backend.llm_tools.tool_web_fetch import web_fetch
 
 # List of all tool functions to pass to LLM (Chat Panel - full access)
 TOOL_FUNCTIONS = [
@@ -95,6 +103,18 @@ TOOL_FUNCTIONS = [
     sandbox_reset,
     sandbox_sync_from_main,
     sandbox_status,
+
+    # Terminal (shell command execution)
+    execute_terminal_command,
+
+    # Advanced file utilities (edit, find, grep, context)
+    edit_file,
+    list_files,
+    search_files,
+    get_workspace_context,
+
+    # Web
+    web_fetch,
 ]
 
 # AI Cell tools - subset for inline AI cell (read-only + sandbox)
