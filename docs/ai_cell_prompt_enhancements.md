@@ -1,7 +1,7 @@
 # AI Cell System Prompt Enhancements
 
 Date: 2026-03-07
-Status: Planned
+Status: Implemented (2026-03-07)
 Applies to: Crisp, Standard, Power mode system prompts (stored in `system_prompts` table)
 
 ---
