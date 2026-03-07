@@ -175,7 +175,7 @@ export default function DashboardPage() {
         } else {
           setSelectedWorkspaceId('uncategorized')
         }
-        projectsData.forEach((p: Project) => fetchPlaygroundStatus(p.id))
+        fetchPlaygroundStatus()
       } catch {
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')

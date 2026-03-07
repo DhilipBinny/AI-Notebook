@@ -6,6 +6,7 @@ No frontend - pure API for Master backend to proxy.
 
 import os
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -22,6 +23,23 @@ import backend.config as cfg
 
 
 # =============================================================================
+# App Lifecycle
+# =============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup and shutdown."""
+    yield
+
+    # Shutdown: clean up all sessions and kernels
+    try:
+        from backend.session_manager import get_session_manager
+        get_session_manager().cleanup_all()
+    except Exception as e:
+        print(f"[Shutdown] Error cleaning up sessions: {e}")
+
+
+# =============================================================================
 # App Initialization
 # =============================================================================
 
@@ -29,6 +47,7 @@ app = FastAPI(
     title="AI Notebook Playground",
     version="0.1.0",
     description="Headless notebook execution container",
+    lifespan=lifespan,
 )
 
 

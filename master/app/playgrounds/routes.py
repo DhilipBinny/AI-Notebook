@@ -338,6 +338,7 @@ async def stream_playground_logs(
     stop_event = asyncio.Event()
 
     def stream_logs_sync():
+        log_stream = None
         try:
             container = docker_client.client.containers.get(container_id)
             log_stream = container.logs(stream=True, follow=True, tail=0, timestamps=False)
@@ -351,6 +352,12 @@ async def stream_playground_logs(
         except Exception as e:
             log_queue.put(f"Error: {e}")
         finally:
+            # Close the Docker log stream iterator
+            if log_stream is not None and hasattr(log_stream, 'close'):
+                try:
+                    log_stream.close()
+                except Exception:
+                    pass
             log_queue.put(None)
 
     loop = asyncio.get_event_loop()
@@ -383,7 +390,7 @@ async def stream_playground_logs(
             pass
     finally:
         stop_event.set()
-        executor.shutdown(wait=False)
+        executor.shutdown(wait=True)
         try:
             await websocket.close()
         except Exception:
@@ -517,6 +524,7 @@ async def terminal_websocket(
                 exec_socket.close()
             except Exception:
                 pass
+        executor.shutdown(wait=True)
         try:
             await websocket.close()
         except Exception:

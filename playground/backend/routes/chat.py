@@ -714,9 +714,13 @@ async def chat_with_llm_stream(
                 error_msg = "Request timed out. Please try again."
             yield format_sse_event("error", {"error": error_msg})
         finally:
-            # Clean up
-            if session_id in _active_chat_clients:
-                del _active_chat_clients[session_id]
+            # Clean up - close client connections and remove from active dict
+            client_ref = _active_chat_clients.pop(session_id, None)
+            if client_ref is not None:
+                try:
+                    client_ref.close()
+                except Exception:
+                    pass
             clear_current_session()
 
     return StreamingResponse(
@@ -915,8 +919,16 @@ async def execute_tools_stream(
             log(f"Execute tools SSE error: {e}\n{traceback.format_exc()}")
             yield format_sse_event("error", {"error": str(e)})
         finally:
-            if session_id in _active_chat_clients:
-                del _active_chat_clients[session_id]
+            # Close client if not kept for pending tools
+            client_ref = _active_chat_clients.pop(session_id, None)
+            if client_ref is not None:
+                # Only close if not stored as pending (session still needs it)
+                session = get_session_manager().get_session(session_id)
+                if not session or session.pending_client is not client_ref:
+                    try:
+                        client_ref.close()
+                    except Exception:
+                        pass
             clear_current_session()
 
     return StreamingResponse(

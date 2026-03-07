@@ -227,6 +227,13 @@ class DockerClient:
             logger.error(f"Failed to get container logs: {e}")
             return ""
 
+    def close(self):
+        """Close the Docker client connection."""
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
     def list_playground_containers(self) -> list:
         """
         List all playground containers.

@@ -226,6 +226,14 @@ class BaseLLMClient(ABC):
         self.enable_web_search = True  # Default: web search enabled
         self._last_usage: Optional[Dict[str, Any]] = None  # Usage stats from last call
 
+    def close(self):
+        """Close any underlying HTTP clients/connections. Override in subclasses."""
+        if hasattr(self, 'client') and hasattr(self.client, 'close'):
+            try:
+                self.client.close()
+            except Exception:
+                pass
+
     # =========================================================================
     # Web Search Detection (shared implementation)
     # =========================================================================

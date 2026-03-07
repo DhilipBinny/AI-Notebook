@@ -47,6 +47,7 @@ export function useNotebookUpdates(
   const [status, setStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const disposedRef = useRef(false)
   const optionsRef = useRef(options)
 
   // Keep options ref updated
@@ -99,6 +100,7 @@ export function useNotebookUpdates(
 
   // Connect to WebSocket
   const connect = useCallback(() => {
+    if (disposedRef.current) return
     if (!projectId) return
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
@@ -134,10 +136,12 @@ export function useNotebookUpdates(
         setStatus('disconnected')
         wsRef.current = null
 
-        // Reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect()
-        }, 3000)
+        // Reconnect after 3 seconds (only if not disposed)
+        if (!disposedRef.current) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect()
+          }, 3000)
+        }
       }
 
       ws.onerror = (error) => {
@@ -169,11 +173,13 @@ export function useNotebookUpdates(
 
   // Connect when project ID is available
   useEffect(() => {
+    disposedRef.current = false
     if (projectId) {
       connect()
     }
 
     return () => {
+      disposedRef.current = true
       disconnect()
     }
   }, [projectId, connect, disconnect])

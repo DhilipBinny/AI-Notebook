@@ -183,6 +183,10 @@ async def websocket_execute(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket execute error: {e}")
     finally:
-        # Cancel status polling on disconnect
+        # Cancel status polling on disconnect and await cancellation
         if status_task:
             status_task.cancel()
+            try:
+                await status_task
+            except (asyncio.CancelledError, Exception):
+                pass

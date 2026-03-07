@@ -125,6 +125,21 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
+    # Close Docker clients
+    try:
+        from app.playgrounds.docker_client import docker_client as _docker_client
+        _docker_client.close()
+        logger.info("Docker client closed")
+    except Exception as e:
+        logger.error(f"Error closing Docker client: {e}")
+
+    try:
+        from app.files.service import file_service
+        file_service.docker_client.close()
+        logger.info("FileService Docker client closed")
+    except Exception as e:
+        logger.error(f"Error closing FileService Docker client: {e}")
+
     await engine.dispose()
 
 

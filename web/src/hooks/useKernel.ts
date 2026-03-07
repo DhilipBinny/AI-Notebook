@@ -32,12 +32,15 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
   const sessionIdRef = useRef<string | null>(sessionId)
 
   const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const disposedRef = useRef(false)
   const outputCallbackRef = useRef<((cellId: string, output: CellOutput) => void) | null>(null)
   const executionCountCallbackRef = useRef<((cellId: string, count: number) => void) | null>(null)
   const completionCallbackRef = useRef<((cellId: string, success: boolean) => void) | null>(null)
 
   // Connect to WebSocket
   const connect = useCallback(() => {
+    if (disposedRef.current) return
     if (!playgroundUrl || wsRef.current?.readyState === WebSocket.OPEN) return
 
     setKernelState((prev) => ({ ...prev, status: 'connecting' }))
@@ -78,8 +81,10 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
         console.log('[Kernel] WebSocket disconnected')
         setKernelState((prev) => ({ ...prev, status: 'disconnected' }))
         wsRef.current = null
-        // Attempt reconnect after 3 seconds
-        setTimeout(() => connect(), 3000)
+        // Attempt reconnect after 3 seconds (only if not disposed)
+        if (!disposedRef.current) {
+          reconnectTimerRef.current = setTimeout(() => connect(), 3000)
+        }
       }
 
       ws.onerror = (error) => {
@@ -322,11 +327,18 @@ export function useKernel(playgroundUrl: string | null, sessionId: string | null
 
   // Connect when playground URL changes
   useEffect(() => {
+    disposedRef.current = false
     if (playgroundUrl) {
       connect()
     }
 
     return () => {
+      disposedRef.current = true
+      // Cancel any pending reconnect timer
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
       if (wsRef.current) {
         wsRef.current.close()
         wsRef.current = null
