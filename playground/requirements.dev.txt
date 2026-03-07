@@ -18,7 +18,7 @@ tiktoken>=0.5.0        # OpenAI token counting
 # In Docker: env vars passed from master-api
 # Locally: python-dotenv loads from .env file
 python-dotenv==1.0.1
-pydantic==2.10.1
+pydantic>=2.11.0
 pydantic-settings>=2.0.0
 
 # Async HTTP
