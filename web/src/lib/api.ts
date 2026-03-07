@@ -282,13 +282,13 @@ export const workspaces = {
 
 // Playground API (user-scoped - one container per user)
 export const playgrounds = {
-  // Get current user's playground status
-  getStatus: async (): Promise<Playground | null> => {
+  // Get all user's playgrounds
+  list: async (): Promise<{ playgrounds: Playground[]; running_count: number; max_containers: number }> => {
     try {
       const { data } = await api.get('/playground')
       return data
     } catch {
-      return null
+      return { playgrounds: [], running_count: 0, max_containers: 2 }
     }
   },
 
@@ -298,30 +298,30 @@ export const playgrounds = {
     return data
   },
 
-  // Stop playground
-  stop: async (): Promise<{ message: string }> => {
-    const { data } = await api.post('/playground/stop')
+  // Stop playground for a specific project
+  stop: async (projectId: string): Promise<{ message: string }> => {
+    const { data } = await api.post('/playground/stop', { project_id: projectId })
     return data
   },
 
-  // Switch active project (without restart)
-  switchProject: async (projectId: string): Promise<{ playground: Playground; message: string }> => {
-    const { data } = await api.post('/playground/switch', { project_id: projectId })
+  // Stop all running playgrounds
+  stopAll: async (): Promise<{ message: string }> => {
+    const { data } = await api.post('/playground/stop-all')
     return data
   },
 
-  // Get container logs
-  getLogs: async (tail = 100): Promise<{ logs: string }> => {
-    const { data } = await api.get(`/playground/logs?tail=${tail}`)
+  // Get container logs for a specific project
+  getLogs: async (projectId: string, tail = 100): Promise<{ logs: string }> => {
+    const { data } = await api.get(`/playground/logs?project_id=${projectId}&tail=${tail}`)
     return data
   },
 
-  // Update activity timestamp
-  updateActivity: async (): Promise<void> => {
-    await api.post('/playground/activity')
+  // Update activity timestamp for a specific project
+  updateActivity: async (projectId: string): Promise<void> => {
+    await api.post('/playground/activity', { project_id: projectId })
   },
 
-  // Legacy project-scoped endpoints (for backward compatibility)
+  // Get playground for a specific project
   get: async (projectId: string): Promise<Playground | null> => {
     const { data } = await api.get(`/projects/${projectId}/playground`)
     return data
@@ -962,6 +962,11 @@ export const admin = {
       const { data } = await api.patch(`/admin/users/${userId}/max-projects`, { max_projects: maxProjects })
       return data
     },
+
+    updateMaxContainers: async (userId: string, maxContainers: number): Promise<{ id: string; email: string; max_containers: number }> => {
+      const { data } = await api.patch(`/admin/users/${userId}/max-containers`, { max_containers: maxContainers })
+      return data
+    },
   },
 
   invitations: {
@@ -1154,6 +1159,33 @@ export const admin = {
 
     deleteTool: async (name: string): Promise<void> => {
       await api.delete(`/admin/system-prompts/tool-catalog/${name}`)
+    },
+  },
+
+  containerTypes: {
+    list: async (): Promise<import('@/types').ContainerType[]> => {
+      const { data } = await api.get('/admin/container-types/')
+      return data
+    },
+
+    create: async (params: {
+      name: string; label: string; description?: string; image: string;
+      network?: string; memory_limit?: string; cpu_limit?: number; idle_timeout?: number;
+    }): Promise<import('@/types').ContainerType> => {
+      const { data } = await api.post('/admin/container-types/', params)
+      return data
+    },
+
+    update: async (id: string, params: {
+      label?: string; description?: string; image?: string; network?: string;
+      memory_limit?: string; cpu_limit?: number; idle_timeout?: number; is_active?: boolean;
+    }): Promise<import('@/types').ContainerType> => {
+      const { data } = await api.put(`/admin/container-types/${id}`, params)
+      return data
+    },
+
+    delete: async (id: string): Promise<void> => {
+      await api.delete(`/admin/container-types/${id}`)
     },
   },
 }

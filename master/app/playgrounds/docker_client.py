@@ -51,6 +51,10 @@ class DockerClient:
         container_name: str,
         project_id: str,
         internal_secret: str,
+        image: Optional[str] = None,
+        memory_limit: Optional[str] = None,
+        cpu_limit: Optional[float] = None,
+        network: Optional[str] = None,
     ) -> tuple[str, str]:
         """
         Create and start a new playground container.
@@ -91,14 +95,20 @@ class DockerClient:
             if settings.ai_cell_streaming_enabled:
                 env["AI_CELL_STREAMING_ENABLED"] = settings.ai_cell_streaming_enabled
 
+            # Use provided values (from container_types DB) or fall back to env var settings
+            actual_image = image or settings.playground_image
+            actual_memory = memory_limit or settings.playground_memory_limit
+            actual_cpu = cpu_limit if cpu_limit is not None else settings.playground_cpu_limit
+            actual_network = network or settings.playground_network
+
             container = self.client.containers.run(
-                image=settings.playground_image,
+                image=actual_image,
                 name=container_name,
                 detach=True,
                 environment=env,
-                mem_limit=settings.playground_memory_limit,
-                cpu_quota=int(settings.playground_cpu_limit * 100000),
-                network=settings.playground_network,
+                mem_limit=actual_memory,
+                cpu_quota=int(actual_cpu * 100000),
+                network=actual_network,
                 labels={
                     "app": "ainotebook-playground",
                     "project_id": project_id,  # Active project at creation

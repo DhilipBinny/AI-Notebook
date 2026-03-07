@@ -195,15 +195,14 @@ async def logout(
     auth_service = AuthService(db)
     await auth_service.logout(request.refresh_token)
 
-    # Stop running playground on logout
+    # Stop all running playgrounds on logout
     try:
         playground_service = PlaygroundService(db)
-        playground = await playground_service.get_by_user_id(current_user.id)
-        if playground and playground.status.value == "running":
-            await playground_service.stop(playground)
-            logger.info(f"Stopped playground for user {current_user.id} on logout")
+        count = await playground_service.stop_all_for_user(current_user.id)
+        if count > 0:
+            logger.info(f"Stopped {count} playground(s) for user {current_user.id} on logout")
     except Exception as e:
-        logger.warning(f"Failed to stop playground on logout: {e}")
+        logger.warning(f"Failed to stop playgrounds on logout: {e}")
 
     # Audit log: logout
     await audit_log(

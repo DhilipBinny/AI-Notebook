@@ -427,7 +427,7 @@ async def send_message_stream(
 
     # Get playground
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if not playground or playground.status.value != "running":
         async def error_stream():
@@ -615,7 +615,7 @@ async def execute_tools_stream(
 
     # Get playground
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if not playground or playground.status.value != "running":
         async def error_stream():
@@ -769,7 +769,7 @@ async def run_ai_cell(
 
     # Get playground
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if not playground or playground.status.value != "running":
         return AICellResponse(
@@ -975,7 +975,7 @@ async def cancel_ai_cell(
         )
 
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if not playground or playground.status.value != "running":
         return {"success": False, "message": "Playground is not running"}

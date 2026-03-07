@@ -33,6 +33,8 @@ export default function UsersTab() {
   // Drawer inline edits
   const [editingMaxProjects, setEditingMaxProjects] = useState(false)
   const [newMaxProjects, setNewMaxProjects] = useState('')
+  const [editingMaxContainers, setEditingMaxContainers] = useState(false)
+  const [newMaxContainers, setNewMaxContainers] = useState('')
   const [editingCredits, setEditingCredits] = useState(false)
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
@@ -228,6 +230,28 @@ export default function UsersTab() {
       setDrawerDetail(data)
     } catch {
       setError('Failed to update max projects')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleUpdateMaxContainers = async (userId: string) => {
+    const val = parseInt(newMaxContainers, 10)
+    if (isNaN(val) || val < 1 || val > 20) {
+      setError('Max containers must be between 1 and 20')
+      return
+    }
+    try {
+      setActionLoading(userId)
+      await admin.users.updateMaxContainers(userId, val)
+      showSuccess('Max containers updated')
+      setEditingMaxContainers(false)
+      setNewMaxContainers('')
+      fetchUsers()
+      const data = await admin.users.get(userId)
+      setDrawerDetail(data)
+    } catch {
+      setError('Failed to update max containers')
     } finally {
       setActionLoading(null)
     }
@@ -574,6 +598,62 @@ export default function UsersTab() {
                       </button>
                       <button
                         onClick={() => { setEditingMaxProjects(false); setNewMaxProjects('') }}
+                        className="px-2 py-1.5 rounded-lg text-xs"
+                        style={{ color: 'var(--app-text-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Containers Section */}
+                <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--app-text-muted)' }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+                      </svg>
+                      <span className="text-sm font-medium" style={{ color: 'var(--app-text-primary)' }}>Max Containers</span>
+                    </div>
+                    {!editingMaxContainers && (
+                      <button
+                        onClick={() => { setEditingMaxContainers(true); setNewMaxContainers(String(drawerUser.max_containers)) }}
+                        className="text-xs px-2 py-1 rounded-lg transition-colors hover:opacity-80"
+                        style={{ color: 'var(--app-accent-primary)' }}
+                      >
+                        Edit Limit
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold" style={{ color: 'var(--app-text-primary)' }}>
+                      {drawerUser.max_containers}
+                    </span>
+                    <span className="text-sm" style={{ color: 'var(--app-text-muted)' }}>parallel containers allowed</span>
+                  </div>
+                  {editingMaxContainers && (
+                    <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--app-border-default)' }}>
+                      <label className="text-xs" style={{ color: 'var(--app-text-muted)' }}>New limit:</label>
+                      <input
+                        type="number"
+                        value={newMaxContainers}
+                        onChange={(e) => setNewMaxContainers(e.target.value)}
+                        min={1}
+                        max={20}
+                        className="px-2 py-1.5 rounded-lg text-sm w-20 focus:outline-none"
+                        style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+                      />
+                      <button
+                        onClick={() => handleUpdateMaxContainers(drawerUser.id)}
+                        disabled={actionLoading === drawerUser.id}
+                        className="px-3 py-1.5 rounded-lg text-xs text-white font-medium disabled:opacity-50"
+                        style={{ background: 'var(--app-gradient-primary)' }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setEditingMaxContainers(false); setNewMaxContainers('') }}
                         className="px-2 py-1.5 rounded-lg text-xs"
                         style={{ color: 'var(--app-text-muted)' }}
                       >

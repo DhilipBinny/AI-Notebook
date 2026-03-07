@@ -28,6 +28,7 @@ import {
   Terminal,
   LayoutTemplate,
   ArrowLeft,
+  AlertTriangle,
 } from 'lucide-react'
 
 
@@ -52,7 +53,10 @@ export default function DashboardPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [playgroundStatuses, setPlaygroundStatuses] = useState<PlaygroundStatus>({})
+  const [maxContainers, setMaxContainers] = useState(2)
+  const [stoppingAll, setStoppingAll] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null)
+  const [errorNotification, setErrorNotification] = useState<string | null>(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importProjectName, setImportProjectName] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -67,7 +71,7 @@ export default function DashboardPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [downloadingProject, setDownloadingProject] = useState<string | null>(null)
-  const [playgroundLoadingOverlay, setPlaygroundLoadingOverlay] = useState(false)
+  const [playgroundLoadingOverlay, setPlaygroundLoadingOverlay] = useState<false | 'starting' | 'stopping'>(false)
 
   // Template state
   const [templateList, setTemplateList] = useState<NotebookTemplate[]>([])
@@ -106,34 +110,27 @@ export default function DashboardPage() {
 
   const fetchPlaygroundStatus = useCallback(async (projectId?: string) => {
     try {
-      // User-scoped: get the user's single playground
-      const pg = await playgrounds.getStatus()
-      if (pg && pg.project_id) {
-        setPlaygroundStatuses(prev => {
-          const newStatuses: typeof prev = {}
-          // Mark all projects as stopped first
-          for (const key of Object.keys(prev)) {
-            newStatuses[key] = { status: 'stopped', loading: false }
+      const { playgrounds: pgList, max_containers: mc } = await playgrounds.list()
+      setMaxContainers(mc)
+      setPlaygroundStatuses(prev => {
+        const newStatuses: typeof prev = {}
+        // Keep existing stopped entries
+        for (const key of Object.keys(prev)) {
+          newStatuses[key] = { status: 'stopped', loading: false }
+        }
+        // Update with actual playground statuses
+        for (const pg of pgList) {
+          if (pg.project_id) {
+            newStatuses[pg.project_id] = {
+              status: pg.status || 'stopped',
+              loading: false,
+              memory_limit_mb: pg.memory_limit_mb,
+              cpu_limit: pg.cpu_limit,
+            }
           }
-          // Mark the active project with actual status
-          newStatuses[pg.project_id!] = {
-            status: pg.status || 'stopped',
-            loading: false,
-            memory_limit_mb: pg.memory_limit_mb,
-            cpu_limit: pg.cpu_limit,
-          }
-          return newStatuses
-        })
-      } else {
-        // No running playground - mark all as stopped
-        setPlaygroundStatuses(prev => {
-          const newStatuses: typeof prev = {}
-          for (const key of Object.keys(prev)) {
-            newStatuses[key] = { status: 'stopped', loading: false }
-          }
-          return newStatuses
-        })
-      }
+        }
+        return newStatuses
+      })
     } catch {
       if (projectId) {
         setPlaygroundStatuses(prev => ({
@@ -202,40 +199,26 @@ export default function DashboardPage() {
       if (!hasActivePlayground) return
 
       try {
-        const pg = await playgrounds.getStatus()
-        if (pg && pg.project_id) {
-          setPlaygroundStatuses(prev => {
-            const newStatuses: typeof prev = {}
-            for (const key of Object.keys(prev)) {
-              if (key === pg.project_id) {
-                newStatuses[key] = {
-                  status: pg.status || 'stopped',
-                  loading: false,
-                  memory_limit_mb: pg.memory_limit_mb,
-                  cpu_limit: pg.cpu_limit,
-                }
-              } else if (prev[key]?.status !== 'stopped') {
-                newStatuses[key] = { status: 'stopped', loading: false }
-              } else {
-                newStatuses[key] = prev[key]
+        const { playgrounds: pgList } = await playgrounds.list()
+        setPlaygroundStatuses(prev => {
+          const newStatuses: typeof prev = {}
+          // Reset all to stopped
+          for (const key of Object.keys(prev)) {
+            newStatuses[key] = prev[key]?.status === 'stopped' ? prev[key] : { status: 'stopped', loading: false }
+          }
+          // Update with actual statuses from backend
+          for (const pg of pgList) {
+            if (pg.project_id) {
+              newStatuses[pg.project_id] = {
+                status: pg.status || 'stopped',
+                loading: false,
+                memory_limit_mb: pg.memory_limit_mb,
+                cpu_limit: pg.cpu_limit,
               }
             }
-            return newStatuses
-          })
-        } else {
-          // No active playground - mark all as stopped
-          setPlaygroundStatuses(prev => {
-            const newStatuses: typeof prev = {}
-            for (const key of Object.keys(prev)) {
-              if (prev[key]?.status !== 'stopped') {
-                newStatuses[key] = { status: 'stopped', loading: false }
-              } else {
-                newStatuses[key] = prev[key]
-              }
-            }
-            return newStatuses
-          })
-        }
+          }
+          return newStatuses
+        })
       } catch {
         // Ignore polling errors
       }
@@ -246,7 +229,7 @@ export default function DashboardPage() {
   }, [projectList, playgroundStatuses])
 
   const handleStartPlayground = async (projectId: string) => {
-    setPlaygroundLoadingOverlay(true)
+    setPlaygroundLoadingOverlay('starting')
     setPlaygroundStatuses(prev => ({
       ...prev,
       [projectId]: { status: 'starting', loading: true }
@@ -262,12 +245,15 @@ export default function DashboardPage() {
           cpu_limit: pg.cpu_limit,
         }
       }))
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to start playground:', err)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setPlaygroundStatuses(prev => ({
         ...prev,
-        [projectId]: { status: 'error', loading: false, error: 'Failed to start' }
+        [projectId]: { status: 'error', loading: false, error: detail || 'Failed to start' }
       }))
+      setErrorNotification(detail || 'Failed to start playground')
+      setTimeout(() => setErrorNotification(null), 5000)
     } finally {
       setPlaygroundLoadingOverlay(false)
     }
@@ -279,7 +265,7 @@ export default function DashboardPage() {
       [projectId]: { status: 'stopping', loading: true }
     }))
     try {
-      await playgrounds.stop()
+      await playgrounds.stop(projectId)
       setPlaygroundStatuses(prev => ({
         ...prev,
         [projectId]: { status: 'stopped', loading: false }
@@ -294,13 +280,13 @@ export default function DashboardPage() {
   }
 
   const handleRestartPlayground = async (projectId: string) => {
-    setPlaygroundLoadingOverlay(true)
+    setPlaygroundLoadingOverlay('starting')
     setPlaygroundStatuses(prev => ({
       ...prev,
       [projectId]: { status: 'starting', loading: true }
     }))
     try {
-      await playgrounds.stop()
+      await playgrounds.stop(projectId)
       const { playground: pg } = await playgrounds.start(projectId)
       setPlaygroundStatuses(prev => ({
         ...prev,
@@ -311,13 +297,40 @@ export default function DashboardPage() {
           cpu_limit: pg.cpu_limit,
         }
       }))
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to restart playground:', err)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setPlaygroundStatuses(prev => ({
         ...prev,
-        [projectId]: { status: 'error', loading: false, error: 'Failed to restart' }
+        [projectId]: { status: 'error', loading: false, error: detail || 'Failed to restart' }
       }))
+      setErrorNotification(detail || 'Failed to restart playground')
+      setTimeout(() => setErrorNotification(null), 5000)
     } finally {
+      setPlaygroundLoadingOverlay(false)
+    }
+  }
+
+  const handleStopAllPlaygrounds = async () => {
+    setStoppingAll(true)
+    setPlaygroundLoadingOverlay('stopping')
+    try {
+      await playgrounds.stopAll()
+      setPlaygroundStatuses(prev => {
+        const newStatuses: typeof prev = {}
+        for (const key of Object.keys(prev)) {
+          newStatuses[key] = { status: 'stopped', loading: false }
+        }
+        return newStatuses
+      })
+      setNotificationMessage('All containers stopped')
+      setTimeout(() => setNotificationMessage(null), 3000)
+    } catch (err) {
+      console.error('Failed to stop all playgrounds:', err)
+      setErrorNotification('Failed to stop all containers')
+      setTimeout(() => setErrorNotification(null), 5000)
+    } finally {
+      setStoppingAll(false)
       setPlaygroundLoadingOverlay(false)
     }
   }
@@ -400,11 +413,16 @@ export default function DashboardPage() {
             cpu_limit: pg.cpu_limit,
           }
         }))
-      } catch {
+      } catch (pgErr: unknown) {
+        const detail = (pgErr as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         setPlaygroundStatuses(prev => ({
           ...prev,
-          [projectId]: { status: 'stopped', loading: false }
+          [projectId]: { status: 'error', loading: false, error: detail || 'Failed to start' }
         }))
+        if (detail) {
+          setErrorNotification(detail)
+          setTimeout(() => setErrorNotification(null), 5000)
+        }
       }
     } catch (err: unknown) {
       console.error('Failed to create project:', err)
@@ -427,7 +445,7 @@ export default function DashboardPage() {
     try {
       const status = playgroundStatuses[deleteConfirm.id]
       if (status?.status === 'running') {
-        await playgrounds.stop()
+        await playgrounds.stop(deleteConfirm.id)
       }
       await projects.delete(deleteConfirm.id)
       removeProject(deleteConfirm.id)
@@ -507,11 +525,16 @@ export default function DashboardPage() {
             cpu_limit: pg.cpu_limit,
           }
         }))
-      } catch {
+      } catch (pgErr: unknown) {
+        const detail = (pgErr as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         setPlaygroundStatuses(prev => ({
           ...prev,
-          [project.id]: { status: 'stopped', loading: false }
+          [project.id]: { status: 'error', loading: false, error: detail || 'Failed to start' }
         }))
+        if (detail) {
+          setErrorNotification(detail)
+          setTimeout(() => setErrorNotification(null), 5000)
+        }
       }
     } catch (err: unknown) {
       console.error('Failed to import notebook:', err)
@@ -753,6 +776,36 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Error notification toast */}
+      {errorNotification && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] max-w-lg w-full mx-4 animate-in slide-in-from-top duration-300">
+          <div
+            className="backdrop-blur-xl rounded-xl p-4 flex items-start gap-3 shadow-lg"
+            style={{
+              backgroundColor: 'var(--app-alert-error-bg)',
+              border: '1px solid var(--app-alert-error-border)'
+            }}
+          >
+            <div
+              className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: 'var(--app-alert-error-border)' }}
+            >
+              <AlertTriangle className="w-5 h-5" style={{ color: 'var(--app-accent-error)' }} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{errorNotification}</p>
+            </div>
+            <button
+              onClick={() => setErrorNotification(null)}
+              className="flex-shrink-0 transition-colors hover:opacity-80"
+              style={{ color: 'var(--app-accent-error)' }}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div
@@ -772,7 +825,7 @@ export default function DashboardPage() {
         onBeforeLogout={async () => {
           const hasRunning = Object.values(playgroundStatuses).some(s => s.status === 'running')
           if (hasRunning) {
-            try { await playgrounds.stop() } catch {}
+            try { await playgrounds.stopAll() } catch {}
           }
         }}
       />
@@ -1174,10 +1227,29 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Active Playgrounds</p>
-                  <p className="text-xl font-bold mt-0.5" style={{ color: 'var(--app-text-primary)' }}>{activePlaygrounds}</p>
+                  <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Active Containers</p>
+                  <p className="text-xl font-bold mt-0.5" style={{ color: 'var(--app-text-primary)' }}>
+                    {activePlaygrounds}
+                    <span className="text-sm font-normal" style={{ color: 'var(--app-text-muted)' }}> / {maxContainers}</span>
+                  </p>
                 </div>
-                <Sparkles className="w-8 h-8" style={{ color: 'var(--app-accent-success)' }} strokeWidth={1.5} />
+                {activePlaygrounds >= 2 ? (
+                  <button
+                    onClick={handleStopAllPlaygrounds}
+                    disabled={stoppingAll}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+                    style={{
+                      backgroundColor: 'var(--app-alert-error-bg)',
+                      color: 'var(--app-accent-error)',
+                      border: '1px solid var(--app-alert-error-border)',
+                    }}
+                    title="Stop all running containers"
+                  >
+                    {stoppingAll ? 'Stopping...' : 'Stop All'}
+                  </button>
+                ) : (
+                  <Sparkles className="w-8 h-8" style={{ color: 'var(--app-accent-success)' }} strokeWidth={1.5} />
+                )}
               </div>
             </div>
           </div>
@@ -1622,21 +1694,21 @@ export default function DashboardPage() {
           >
             <div className="relative w-16 h-16 mx-auto mb-4">
               {/* Outer spinning ring */}
-              <div className="absolute inset-0 border-4 rounded-full" style={{ borderColor: 'var(--app-alert-info-border)' }} />
-              <div className="absolute inset-0 border-4 border-transparent rounded-full animate-spin" style={{ borderTopColor: 'var(--app-accent-primary)' }} />
+              <div className="absolute inset-0 border-4 rounded-full" style={{ borderColor: playgroundLoadingOverlay === 'stopping' ? 'var(--app-alert-error-border)' : 'var(--app-alert-info-border)' }} />
+              <div className="absolute inset-0 border-4 border-transparent rounded-full animate-spin" style={{ borderTopColor: playgroundLoadingOverlay === 'stopping' ? 'var(--app-accent-error)' : 'var(--app-accent-primary)' }} />
               {/* Inner pulsing circle */}
-              <div className="absolute inset-3 rounded-full animate-pulse" style={{ background: 'linear-gradient(to bottom right, var(--app-accent-primary), var(--app-accent-secondary))' }} />
+              <div className="absolute inset-3 rounded-full animate-pulse" style={{ background: playgroundLoadingOverlay === 'stopping' ? 'linear-gradient(to bottom right, var(--app-accent-error), var(--app-accent-warning))' : 'linear-gradient(to bottom right, var(--app-accent-primary), var(--app-accent-secondary))' }} />
             </div>
             <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--app-text-primary)' }}>
-              Starting Playground
+              {playgroundLoadingOverlay === 'stopping' ? 'Stopping Containers' : 'Starting Playground'}
             </h3>
             <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
-              Setting up your Python environment...
+              {playgroundLoadingOverlay === 'stopping' ? 'Saving workspace and shutting down...' : 'Setting up your Python environment...'}
             </p>
             <div className="mt-4 flex justify-center gap-1">
-              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--app-accent-primary)', animationDelay: '0ms' }} />
-              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--app-accent-primary)', animationDelay: '150ms' }} />
-              <span className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: 'var(--app-accent-primary)', animationDelay: '300ms' }} />
+              {[0, 150, 300].map(delay => (
+                <span key={delay} className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: playgroundLoadingOverlay === 'stopping' ? 'var(--app-accent-error)' : 'var(--app-accent-primary)', animationDelay: `${delay}ms` }} />
+              ))}
             </div>
           </div>
         </div>

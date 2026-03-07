@@ -40,6 +40,7 @@ class UserResponse(UserBase):
     avatar_url: Optional[str]
     oauth_provider: OAuthProvider
     max_projects: int
+    max_containers: int
     is_active: bool
     is_verified: bool
     is_admin: bool = False

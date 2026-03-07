@@ -10,6 +10,7 @@ import CreditsTab from './components/CreditsTab'
 import TemplatesTab from './components/TemplatesTab'
 import SystemPromptsTab from './components/SystemPromptsTab'
 import ToolCatalogTab from './components/ToolCatalogTab'
+import ContainerTypesTab from './components/ContainerTypesTab'
 
 function AdminPageContent() {
   const searchParams = useSearchParams()
@@ -30,6 +31,7 @@ function AdminPageContent() {
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'system-prompts' && <SystemPromptsTab />}
       {tab === 'tool-catalog' && <ToolCatalogTab />}
+      {tab === 'container-types' && <ContainerTypesTab />}
     </AdminLayout>
   )
 }

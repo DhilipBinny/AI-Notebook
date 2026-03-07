@@ -1,12 +1,12 @@
 """
 Playground API routes.
-User-scoped (one container per user) with legacy project-scoped compatibility.
+User-scoped with multiple containers per user (up to max_containers), one per project.
 """
 
 import asyncio
 import json
 import queue
-from typing import Optional
+from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
@@ -18,7 +18,13 @@ from app.auth.jwt import verify_token
 from app.users.models import User
 from app.projects.service import ProjectService
 from .service import PlaygroundService
-from .schemas import PlaygroundResponse, PlaygroundStartResponse, PlaygroundStopResponse, PlaygroundSwitchRequest
+from .schemas import (
+    PlaygroundResponse,
+    PlaygroundStartResponse,
+    PlaygroundStopRequest,
+    PlaygroundStopResponse,
+    PlaygroundListResponse,
+)
 from .docker_client import docker_client
 
 router = APIRouter(tags=["Playgrounds"])
@@ -31,28 +37,36 @@ class PlaygroundStartRequest(BaseModel):
 
 # ===== User-Scoped Routes =====
 
-@router.get("/playground", response_model=Optional[PlaygroundResponse])
-async def get_user_playground(
+@router.get("/playground", response_model=PlaygroundListResponse)
+async def get_user_playgrounds(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the current user's playground status."""
+    """Get all playgrounds for the current user."""
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    all_playgrounds = await playground_service.get_by_user_id(current_user.id)
 
-    if playground is None:
-        return None
+    # Sync container status for running ones
+    for pg in all_playgrounds:
+        if pg.status.value == "running":
+            await playground_service.get_status(pg)
 
-    # Sync container status
-    if playground.status.value == "running":
-        await playground_service.get_status(playground)
-        await db.commit()
+    await db.commit()
 
-    response = PlaygroundResponse.model_validate(playground)
-    if playground.status.value == "running":
-        response.url = f"/playground/{playground.container_name}"
+    responses = []
+    for pg in all_playgrounds:
+        response = PlaygroundResponse.model_validate(pg)
+        if pg.status.value == "running":
+            response.url = f"/playground/{pg.container_name}"
+        responses.append(response)
 
-    return response
+    running_count = sum(1 for pg in all_playgrounds if pg.status.value in ("running", "starting"))
+
+    return PlaygroundListResponse(
+        playgrounds=responses,
+        running_count=running_count,
+        max_containers=current_user.max_containers,
+    )
 
 
 @router.post("/playground/start", response_model=PlaygroundStartResponse)
@@ -61,7 +75,7 @@ async def start_user_playground(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start the user's playground with a specific project."""
+    """Start a playground for a specific project."""
     # Verify project ownership
     project_service = ProjectService(db)
     project = await project_service.get_by_id_for_user(request.project_id, current_user.id)
@@ -90,68 +104,44 @@ async def start_user_playground(
 
 @router.post("/playground/stop", response_model=PlaygroundStopResponse)
 async def stop_user_playground(
+    request: PlaygroundStopRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Stop the user's playground."""
+    """Stop a specific playground by project ID."""
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    stopped = await playground_service.stop_by_user_and_project(current_user.id, request.project_id)
 
-    if playground is None:
-        raise HTTPException(status_code=404, detail="No playground running")
-
-    await playground_service.stop(playground)
+    if not stopped:
+        raise HTTPException(status_code=404, detail="No playground found for this project")
 
     return PlaygroundStopResponse(message="Playground stopped successfully")
 
 
-@router.post("/playground/switch", response_model=PlaygroundResponse)
-async def switch_playground_project(
-    request: PlaygroundSwitchRequest,
+@router.post("/playground/stop-all", response_model=PlaygroundStopResponse)
+async def stop_all_user_playgrounds(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Switch the active project in the user's running playground."""
-    # Verify project ownership
-    project_service = ProjectService(db)
-    project = await project_service.get_by_id_for_user(request.project_id, current_user.id)
-
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+    """Stop all running playgrounds for the current user."""
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    count = await playground_service.stop_all_for_user(current_user.id)
 
-    if playground is None or playground.status != "running":
-        raise HTTPException(status_code=400, detail="No running playground to switch")
-
-    try:
-        await playground_service.switch_project(playground, project)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # Update project last opened
-    await project_service.update_last_opened(project)
-
-    await db.refresh(playground)
-    response = PlaygroundResponse.model_validate(playground)
-    if playground.status.value == "running":
-        response.url = f"/playground/{playground.container_name}"
-
-    return response
+    return PlaygroundStopResponse(message=f"Stopped {count} playground(s)")
 
 
 @router.post("/playground/activity")
 async def update_user_playground_activity(
+    request: PlaygroundStopRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update playground activity timestamp to prevent idle timeout."""
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, request.project_id)
 
     if playground is None:
-        raise HTTPException(status_code=404, detail="No playground running")
+        raise HTTPException(status_code=404, detail="No playground found for this project")
 
     await playground_service.update_activity(playground)
 
@@ -160,22 +150,23 @@ async def update_user_playground_activity(
 
 @router.get("/playground/logs")
 async def get_user_playground_logs(
+    project_id: str = Query(...),
     tail: int = 100,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get container logs for the user's playground."""
+    """Get container logs for a specific playground."""
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if playground is None:
-        raise HTTPException(status_code=404, detail="No playground found")
+        raise HTTPException(status_code=404, detail="No playground found for this project")
 
     logs = await playground_service.get_logs(playground, tail=tail)
     return {"logs": logs}
 
 
-# ===== Legacy Project-Scoped Routes (delegate to user-scoped) =====
+# ===== Legacy Project-Scoped Routes =====
 
 @router.get("/projects/{project_id}/playground", response_model=Optional[PlaygroundResponse])
 async def get_playground(
@@ -183,14 +174,14 @@ async def get_playground(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get playground status for a project (legacy — checks user's playground)."""
+    """Get playground status for a project."""
     project_service = ProjectService(db)
     project = await project_service.get_by_id_for_user(project_id, current_user.id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if playground is None:
         return None
@@ -213,7 +204,7 @@ async def start_playground(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start playground for a project (legacy — starts user's playground with project)."""
+    """Start playground for a project (legacy route)."""
     project_service = ProjectService(db)
     project = await project_service.get_by_id_for_user(project_id, current_user.id, include_playground=True)
     if project is None:
@@ -243,19 +234,17 @@ async def stop_playground(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Stop playground (legacy — stops user's playground)."""
+    """Stop playground for a project (legacy route)."""
     project_service = ProjectService(db)
     project = await project_service.get_by_id_for_user(project_id, current_user.id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    stopped = await playground_service.stop_by_user_and_project(current_user.id, project_id)
 
-    if playground is None:
-        raise HTTPException(status_code=404, detail="No playground running")
-
-    await playground_service.stop(playground)
+    if not stopped:
+        raise HTTPException(status_code=404, detail="No playground running for this project")
 
     return PlaygroundStopResponse(message="Playground stopped successfully")
 
@@ -274,7 +263,7 @@ async def get_playground_logs(
         raise HTTPException(status_code=404, detail="Project not found")
 
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if playground is None:
         raise HTTPException(status_code=404, detail="No playground found")
@@ -296,7 +285,7 @@ async def update_playground_activity(
         raise HTTPException(status_code=404, detail="Project not found")
 
     playground_service = PlaygroundService(db)
-    playground = await playground_service.get_by_user_id(current_user.id)
+    playground = await playground_service.get_by_user_and_project(current_user.id, project_id)
 
     if playground is None:
         raise HTTPException(status_code=404, detail="No playground running")
@@ -338,7 +327,7 @@ async def stream_playground_logs(
             return
 
         playground_service = PlaygroundService(db)
-        playground = await playground_service.get_by_user_id(user_id)
+        playground = await playground_service.get_by_user_and_project(user_id, project_id)
         if playground is None:
             await websocket.close(code=4004, reason="No playground found")
             return
@@ -434,7 +423,7 @@ async def terminal_websocket(
             return
 
         playground_service = PlaygroundService(db)
-        playground = await playground_service.get_by_user_id(user_id)
+        playground = await playground_service.get_by_user_and_project(user_id, project_id)
         if playground is None:
             await websocket.close(code=4004, reason="No playground found")
             return

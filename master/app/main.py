@@ -27,6 +27,7 @@ from app.llm_models.models import LLMModel
 from app.templates.models import NotebookTemplate
 from app.platform_keys.models import PlatformApiKey
 from app.system_prompts.models import SystemPrompt
+from app.container_types.models import ContainerType
 from app.auth.password_reset_models import PasswordResetToken
 # Note: ChatMessage model removed - chat history is stored in S3/MinIO as JSON
 
@@ -49,6 +50,7 @@ from app.platform_keys.routes import router as platform_keys_router
 from app.llm_models.routes import router as llm_models_router
 from app.users.admin_routes import router as admin_users_router
 from app.system_prompts.routes import router as system_prompts_router, public_router as system_prompts_public_router
+from app.container_types.routes import router as container_types_router
 
 # Import playground service for cleanup
 from app.playgrounds.service import PlaygroundService
@@ -172,6 +174,7 @@ app.include_router(llm_models_router, prefix="/api")  # LLM model registry
 app.include_router(admin_users_router, prefix="/api")  # Admin user management
 app.include_router(system_prompts_router, prefix="/api")  # System prompt management
 app.include_router(system_prompts_public_router, prefix="/api")  # Public AI cell modes endpoint
+app.include_router(container_types_router, prefix="/api")  # Container type management
 
 
 @app.get("/health")

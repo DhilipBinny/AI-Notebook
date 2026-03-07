@@ -130,6 +130,7 @@ class AdminUserService:
                 "is_verified": user.is_verified,
                 "is_admin": user.is_admin,
                 "max_projects": user.max_projects,
+                "max_containers": user.max_containers,
                 "created_at": user.created_at,
                 "last_login_at": user.last_login_at,
                 "credit_balance_cents": row[1],
@@ -180,6 +181,7 @@ class AdminUserService:
             "is_verified": user.is_verified,
             "is_admin": user.is_admin,
             "max_projects": user.max_projects,
+            "max_containers": user.max_containers,
             "created_at": user.created_at,
             "last_login_at": user.last_login_at,
             "credit_balance_cents": credit.balance_cents if credit else 0,
@@ -270,4 +272,20 @@ class AdminUserService:
             "id": user.id,
             "email": user.email,
             "max_projects": user.max_projects,
+        }
+
+    async def update_max_containers(self, user_id: str, max_containers: int) -> dict:
+        """Update user's max containers limit."""
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.max_containers = max_containers
+        await self.db.flush()
+        await self.db.refresh(user)
+        return {
+            "id": user.id,
+            "email": user.email,
+            "max_containers": user.max_containers,
         }

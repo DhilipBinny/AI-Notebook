@@ -3,7 +3,7 @@ Playground Pydantic schemas.
 """
 
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 from .models import PlaygroundStatus
@@ -46,11 +46,18 @@ class PlaygroundStartResponse(BaseModel):
     message: str = "Playground started successfully"
 
 
+class PlaygroundStopRequest(BaseModel):
+    """Request to stop a specific playground."""
+    project_id: str
+
+
 class PlaygroundStopResponse(BaseModel):
     """Response when stopping a playground."""
     message: str = "Playground stopped successfully"
 
 
-class PlaygroundSwitchRequest(BaseModel):
-    """Request to switch active project."""
-    project_id: str
+class PlaygroundListResponse(BaseModel):
+    """Response listing all user playgrounds."""
+    playgrounds: List[PlaygroundResponse]
+    running_count: int
+    max_containers: int

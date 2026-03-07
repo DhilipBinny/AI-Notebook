@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { auth } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import AppHeader from '@/components/AppHeader'
-import { Users, Key, Mail, Bot, FileText, MessageSquare, Wrench, LucideIcon } from 'lucide-react'
+import { Users, Key, Mail, Bot, FileText, MessageSquare, Wrench, Server, LucideIcon } from 'lucide-react'
 
 const TABS = [
   { key: 'platform-keys', label: 'Platform Keys', icon: Key },
@@ -15,6 +15,7 @@ const TABS = [
   { key: 'users', label: 'Users', icon: Users },
   { key: 'invitations', label: 'Invitations', icon: Mail, dividerAfter: true },
   { key: 'templates', label: 'Templates', icon: FileText },
+  { key: 'container-types', label: 'Containers', icon: Server },
 ] as const
 
 export type AdminTabKey = (typeof TABS)[number]['key']

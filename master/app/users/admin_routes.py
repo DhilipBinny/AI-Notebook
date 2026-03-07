@@ -17,6 +17,7 @@ from app.users.admin_schemas import (
     AdminToggleAdminRequest,
     AdminResetPasswordRequest,
     AdminUpdateMaxProjectsRequest,
+    AdminUpdateMaxContainersRequest,
 )
 from app.users.admin_service import AdminUserService
 
@@ -110,3 +111,15 @@ async def update_max_projects(
     """Update user's maximum projects limit."""
     service = AdminUserService(db)
     return await service.update_max_projects(user_id, body.max_projects)
+
+
+@router.patch("/{user_id}/max-containers")
+async def update_max_containers(
+    user_id: str,
+    body: AdminUpdateMaxContainersRequest,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user's maximum containers limit."""
+    service = AdminUserService(db)
+    return await service.update_max_containers(user_id, body.max_containers)

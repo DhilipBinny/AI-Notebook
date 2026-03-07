@@ -1,11 +1,11 @@
 """
 Playground service - manages container lifecycle.
-One container per user model.
+Multiple containers per user (up to max_containers), one per project.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import Optional
+from sqlalchemy import select, func as sql_func
+from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 import asyncio
@@ -17,6 +17,7 @@ from .docker_client import docker_client
 from app.projects.models import Project
 from app.users.models import User
 from app.core.config import settings
+from app.container_types.models import ContainerType
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,70 @@ class PlaygroundService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_by_user_id(self, user_id: str) -> Optional[Playground]:
-        """Get playground for a user."""
+    async def get_by_user_id(self, user_id: str) -> List[Playground]:
+        """Get all playgrounds for a user."""
         result = await self.db.execute(
             select(Playground).where(Playground.user_id == user_id)
         )
+        return list(result.scalars().all())
+
+    async def get_running_by_user_id(self, user_id: str) -> List[Playground]:
+        """Get all running playgrounds for a user."""
+        result = await self.db.execute(
+            select(Playground).where(
+                Playground.user_id == user_id,
+                Playground.status == PlaygroundStatus.RUNNING,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_running_count(self, user_id: str) -> int:
+        """Get count of running/starting playgrounds for a user."""
+        result = await self.db.execute(
+            select(sql_func.count(Playground.id)).where(
+                Playground.user_id == user_id,
+                Playground.status.in_([PlaygroundStatus.RUNNING, PlaygroundStatus.STARTING]),
+            )
+        )
+        return result.scalar() or 0
+
+    async def get_by_user_and_project(self, user_id: str, project_id: str) -> Optional[Playground]:
+        """Get playground for a specific user and project."""
+        result = await self.db.execute(
+            select(Playground).where(
+                Playground.user_id == user_id,
+                Playground.project_id == project_id,
+            )
+        )
         return result.scalar_one_or_none()
 
+    @staticmethod
+    def _parse_memory_mb(mem_str: str) -> int:
+        """Convert memory string like '4g', '512m' to MB."""
+        mem_str = mem_str.strip().lower()
+        if mem_str.endswith('g'):
+            return int(float(mem_str[:-1]) * 1024)
+        if mem_str.endswith('m'):
+            return int(float(mem_str[:-1]))
+        logger.warning(f"Unrecognized memory format '{mem_str}', defaulting to 2048 MB")
+        return 2048
+
+    async def _get_container_config(self) -> Optional[ContainerType]:
+        """
+        Get the playground container type config from DB.
+        Raises RuntimeError if the type exists but is disabled by admin.
+        Returns None if no DB row exists (falls back to env vars).
+        """
+        result = await self.db.execute(
+            select(ContainerType).where(ContainerType.name == "playground")
+        )
+        ct = result.scalar_one_or_none()
+        if ct and not ct.is_active:
+            raise ValueError("Playground containers are currently disabled by admin")
+        return ct
+
     async def get_by_project_id(self, project_id: str) -> Optional[Playground]:
-        """Get playground by active project ID (legacy compatibility)."""
+        """Get playground by project ID."""
         result = await self.db.execute(
             select(Playground).where(Playground.project_id == project_id)
         )
@@ -45,8 +101,9 @@ class PlaygroundService:
         """
         Start a playground for a user with a specific project.
 
-        If a playground already exists for the user, reuses it.
-        If it's running with a different project, switches project.
+        - If a playground already exists and is running for this project, return it.
+        - If user is at their container limit, raise ValueError.
+        - Otherwise, create a new container.
 
         Args:
             user: User requesting the playground
@@ -56,27 +113,38 @@ class PlaygroundService:
             Playground instance
 
         Raises:
+            ValueError: If container limit reached or containers disabled
             RuntimeError: If container creation fails
         """
-        existing = await self.get_by_user_id(user.id)
+        # Check for existing playground for this user+project
+        existing = await self.get_by_user_and_project(user.id, project.id)
 
-        # If running with same project, just return it
-        if existing and existing.status == PlaygroundStatus.RUNNING and existing.project_id == project.id:
-            return existing
-
-        # If running with different project, switch
+        # If running for this project, just return it
         if existing and existing.status == PlaygroundStatus.RUNNING:
-            await self.switch_project(existing, project)
+            existing.last_activity_at = datetime.now(timezone.utc)
+            await self.db.flush()
             return existing
 
-        # Clean up any stopped/error playground
+        # Clean up any stopped/error playground for this project
         if existing:
             await self._cleanup_playground(existing)
             await self.db.commit()
 
-        # Generate container info — named by user, not project
-        short_id = user.id[:8]
-        container_name = f"playground-{short_id}"
+        # Check container limit
+        running_count = await self.get_running_count(user.id)
+        if running_count >= user.max_containers:
+            raise ValueError(
+                f"Container limit reached ({running_count}/{user.max_containers}). "
+                f"Stop an existing container before starting a new one."
+            )
+
+        # Load container type config from DB (falls back to env var settings)
+        ct_config = await self._get_container_config()
+
+        # Generate container info — named by user + project
+        short_user = user.id[:8]
+        short_project = project.id[:8]
+        container_name = f"playground-{short_user}-{short_project}"
         internal_secret = str(uuid4())
 
         # Create database record
@@ -88,8 +156,8 @@ class PlaygroundService:
             internal_url="pending",
             internal_secret=internal_secret,
             status=PlaygroundStatus.STARTING,
-            memory_limit_mb=2048,
-            cpu_limit=settings.playground_cpu_limit,
+            memory_limit_mb=self._parse_memory_mb(ct_config.memory_limit if ct_config else settings.playground_memory_limit),
+            cpu_limit=float(ct_config.cpu_limit) if ct_config else settings.playground_cpu_limit,
         )
 
         self.db.add(playground)
@@ -97,12 +165,14 @@ class PlaygroundService:
 
         try:
             # Create Docker container
-            # NOTE: API keys are NOT passed as env vars (security — users can read os.environ).
-            # Keys are injected per-request via HTTP headers by master (see chat/routes.py).
             container_id, container_ip = docker_client.create_container(
                 container_name=container_name,
                 project_id=project.id,
                 internal_secret=internal_secret,
+                image=ct_config.image if ct_config else None,
+                memory_limit=ct_config.memory_limit if ct_config else None,
+                cpu_limit=float(ct_config.cpu_limit) if ct_config else None,
+                network=ct_config.network if ct_config else None,
             )
 
             playground.container_id = container_id
@@ -140,67 +210,6 @@ class PlaygroundService:
 
         return playground
 
-    async def switch_project(self, playground: Playground, project: Project) -> None:
-        """
-        Switch the active project in a running playground.
-
-        1. Save current workspace to S3
-        2. Restart kernel (clean state)
-        3. Update active project
-        4. Restore new project's workspace from S3
-
-        Args:
-            playground: Running playground
-            project: New project to switch to
-        """
-        if playground.status != PlaygroundStatus.RUNNING:
-            raise ValueError("Playground is not running")
-
-        if playground.project_id == project.id:
-            return  # Already on this project
-
-        logger.info(f"Switching playground {playground.container_name} from project {playground.project_id} to {project.id}")
-
-        # 1. Save current workspace files to S3
-        if playground.project_id:
-            try:
-                old_project = await self.db.get(Project, playground.project_id)
-                if old_project:
-                    await self._save_workspace_files(
-                        playground.container_name,
-                        old_project.storage_month,
-                        old_project.id,
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to save workspace before switch: {e}")
-
-        # 2. Restart kernel via playground API (clean state)
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{playground.internal_url}/kernel/restart",
-                    headers={"X-Internal-Secret": playground.internal_secret},
-                    timeout=30,
-                )
-                if resp.status_code != 200:
-                    logger.warning(f"Kernel restart returned {resp.status_code}")
-        except Exception as e:
-            logger.warning(f"Failed to restart kernel during switch: {e}")
-
-        # 3. Update active project
-        playground.project_id = project.id
-        await self.db.flush()
-
-        # 4. Restore new project's workspace
-        try:
-            await self._restore_workspace_files(
-                playground.container_name,
-                project.storage_month,
-                project.id,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to restore workspace after switch: {e}")
-
     async def stop(self, playground: Playground) -> None:
         """Stop a running playground."""
         if playground.status not in [PlaygroundStatus.RUNNING, PlaygroundStatus.STARTING]:
@@ -231,6 +240,26 @@ class PlaygroundService:
         playground.status = PlaygroundStatus.STOPPED
         playground.stopped_at = datetime.now(timezone.utc)
         await self.db.flush()
+
+    async def stop_by_user_and_project(self, user_id: str, project_id: str) -> bool:
+        """Stop a specific playground by user and project. Returns True if stopped."""
+        playground = await self.get_by_user_and_project(user_id, project_id)
+        if playground is None:
+            return False
+        await self.stop(playground)
+        return True
+
+    async def stop_all_for_user(self, user_id: str) -> int:
+        """Stop all running playgrounds for a user. Returns count stopped."""
+        running = await self.get_running_by_user_id(user_id)
+        count = 0
+        for playground in running:
+            try:
+                await self.stop(playground)
+                count += 1
+            except Exception as e:
+                logger.error(f"Failed to stop playground {playground.id}: {e}")
+        return count
 
     async def update_activity(self, playground: Playground) -> None:
         """Update last activity timestamp."""
@@ -265,7 +294,13 @@ class PlaygroundService:
     async def cleanup_stale_playgrounds(self, idle_timeout: int = None) -> int:
         """Stop playgrounds that have been idle too long."""
         if idle_timeout is None:
-            idle_timeout = settings.playground_idle_timeout
+            try:
+                ct_config = await self._get_container_config()
+                idle_timeout = ct_config.idle_timeout if ct_config else settings.playground_idle_timeout
+            except ValueError:
+                # Type is disabled — still clean up existing containers using fallback
+                logger.info("Playground type is disabled, using fallback idle timeout for cleanup")
+                idle_timeout = settings.playground_idle_timeout
 
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=idle_timeout)
 

@@ -378,8 +378,8 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         const project = await projects.get(projectId)
         setCurrentProject(project)
 
-        // Get existing playground status (user-scoped)
-        const pg = await playgrounds.getStatus()
+        // Get existing playground status for this project
+        const pg = await playgrounds.get(projectId)
         setPlayground(pg)
 
         // If playground not running, still load notebook but show error popup
@@ -635,7 +635,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     }
 
     // Send initial heartbeat
-    playgrounds.updateActivity().catch((err) => {
+    playgrounds.updateActivity(projectId).catch((err) => {
       console.warn('Failed to send activity heartbeat:', err)
     })
 
@@ -643,7 +643,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     const heartbeatInterval = setInterval(() => {
       // Check if tab is visible before sending heartbeat
       if (document.visibilityState === 'visible') {
-        playgrounds.updateActivity().catch((err) => {
+        playgrounds.updateActivity(projectId).catch((err) => {
           console.warn('Failed to send activity heartbeat:', err)
         })
       }
@@ -661,8 +661,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     try {
       const { playground: pg } = await playgrounds.start(projectId)
       setPlayground(pg)
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to start playground:', err)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setErrorPopup(detail || 'Failed to start playground. Please try again.')
     } finally {
       setPlaygroundLoading(false)
     }
@@ -671,7 +673,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const handleStopPlayground = async () => {
     setPlaygroundLoading(true)
     try {
-      await playgrounds.stop()
+      await playgrounds.stop(projectId)
       setPlayground((prev) => prev ? { ...prev, status: 'stopped' } : null)
     } catch (err) {
       console.error('Failed to stop playground:', err)
@@ -1874,7 +1876,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         setPlaygroundLoading(true)
         try {
           // Stop the playground
-          await playgrounds.stop()
+          await playgrounds.stop(projectId)
           // Wait a bit for cleanup
           await new Promise(resolve => setTimeout(resolve, 1000))
           // Start a new playground
@@ -1886,9 +1888,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               updateCell(cell.id, { execution_count: undefined })
             }
           })
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('Failed to restart playground:', err)
-          setErrorPopup('Failed to restart playground. Please try again.')
+          const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          setErrorPopup(detail || 'Failed to restart playground. Please try again.')
         } finally {
           setPlaygroundLoading(false)
         }
@@ -1914,7 +1917,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             await chat.saveHistory(projectId, chatMessages)
           }
           // Stop the playground
-          await playgrounds.stop()
+          await playgrounds.stop(projectId)
         } catch (err) {
           console.error('Failed to close session:', err)
         }
@@ -1946,9 +1949,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           setPlayground(pg)
           // Wait a moment for playground to be ready
           await new Promise(resolve => setTimeout(resolve, 2000))
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('Failed to start playground:', err)
-          setErrorPopup('Failed to start playground. Please try again.')
+          const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          setErrorPopup(detail || 'Failed to start playground. Please try again.')
           setPlaygroundLoading(false)
           return
         } finally {
@@ -2343,7 +2347,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           try {
             if (isDirty) await saveNotebookCore()
             if (chatMessages.length > 0) await chat.saveHistory(projectId, chatMessages)
-            await playgrounds.stop()
+            await playgrounds.stop(projectId)
           } catch {}
         }}
       />

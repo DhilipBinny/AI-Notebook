@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS users (
 
     -- Account settings
     max_projects INT NOT NULL DEFAULT 5,
+    max_containers INT NOT NULL DEFAULT 2,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
@@ -139,21 +140,20 @@ CREATE TABLE IF NOT EXISTS projects (
 -- TABLE: playgrounds
 -- =====================================================
 -- Tracks active container instances
--- One playground per USER (user-scoped container model)
--- project_id = currently active project in the container
+-- Multiple containers per user (up to max_containers), one per project
 -- =====================================================
 CREATE TABLE IF NOT EXISTS playgrounds (
     id CHAR(36) NOT NULL,
 
-    -- User reference (unique - one container per user)
+    -- User reference (multiple containers per user)
     user_id CHAR(36) NOT NULL,
 
-    -- Active project (nullable - container can exist without a project)
+    -- Project reference (one container per project per user)
     project_id CHAR(36) NULL,
 
     -- Container info
     container_id VARCHAR(255) NOT NULL,
-    container_name VARCHAR(255) NOT NULL,     -- playground-{user_id[:8]}
+    container_name VARCHAR(255) NOT NULL,     -- playground-{user_id[:8]}-{project_id[:8]}
     internal_url VARCHAR(500) NOT NULL,
     internal_secret VARCHAR(255) NOT NULL,
 
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS playgrounds (
     stopped_at TIMESTAMP NULL,
 
     PRIMARY KEY (id),
-    UNIQUE KEY uk_playgrounds_user (user_id),
+    UNIQUE KEY uk_playgrounds_user_project (user_id, project_id),
     UNIQUE KEY uk_playgrounds_container (container_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
@@ -565,6 +565,59 @@ CREATE TABLE IF NOT EXISTS ai_cell_tool_catalog (
     INDEX idx_tool_catalog_category (category),
     INDEX idx_tool_catalog_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- =====================================================
+-- TABLE: container_types
+-- =====================================================
+-- Admin-configurable container type definitions.
+-- Each row defines a container type (image, resources, network).
+-- Used by PlaygroundService and future container services.
+-- =====================================================
+CREATE TABLE IF NOT EXISTS container_types (
+    id CHAR(36) NOT NULL,
+
+    -- Unique identifier (e.g., "playground", "doc_analyzer")
+    name VARCHAR(50) NOT NULL,
+
+    -- Display
+    label VARCHAR(100) NOT NULL,
+    description TEXT NULL,
+
+    -- Docker settings
+    image VARCHAR(255) NOT NULL,
+    network VARCHAR(100) NOT NULL DEFAULT 'ainotebook-network',
+
+    -- Resource limits
+    memory_limit VARCHAR(20) NOT NULL DEFAULT '4g',
+    cpu_limit DECIMAL(4,2) NOT NULL DEFAULT 4.00,
+    idle_timeout INT NOT NULL DEFAULT 3600,
+
+    -- State
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    -- Timestamps
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_container_types_name (name),
+    INDEX idx_container_types_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Seed default playground container type
+INSERT INTO container_types (id, name, label, description, image, network, memory_limit, cpu_limit, idle_timeout)
+VALUES (
+    UUID(),
+    'playground',
+    'Notebook Playground',
+    'Per-user Jupyter-like container for notebook execution, AI cell, and chat panel.',
+    'ainotebook-playground:latest',
+    'ainotebook-network',
+    '4g',
+    4.00,
+    3600
+) ON DUPLICATE KEY UPDATE id = id;
 
 
 -- Re-enable FK checks

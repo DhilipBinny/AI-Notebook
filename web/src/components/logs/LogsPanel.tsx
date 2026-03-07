@@ -92,7 +92,7 @@ export default function LogsPanel({ projectId, onOpenInWindow }: LogsPanelProps)
 
       // Fetch initial logs
       try {
-        const { logs: initialLogs } = await playgrounds.getLogs(200)
+        const { logs: initialLogs } = await playgrounds.getLogs(projectId, 200)
         if (initialLogs && !disposed) {
           terminal.writeln('\x1b[32mLoaded initial logs\x1b[0m')
           terminal.writeln('')

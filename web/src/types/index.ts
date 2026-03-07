@@ -4,6 +4,7 @@ export interface User {
   name?: string
   avatar_url?: string
   max_projects: number
+  max_containers: number
   is_active: boolean
   is_verified: boolean
   is_admin: boolean
@@ -182,6 +183,7 @@ export interface AdminUser {
   is_verified: boolean
   is_admin: boolean
   max_projects: number
+  max_containers: number
   created_at: string
   last_login_at?: string
   credit_balance_cents?: number
@@ -237,6 +239,21 @@ export interface SystemPrompt {
 export interface AICellMode {
   mode_name: string
   label: string
+}
+
+export interface ContainerType {
+  id: string
+  name: string
+  label: string
+  description?: string
+  image: string
+  network: string
+  memory_limit: string
+  cpu_limit: number
+  idle_timeout: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 // Image input for AI Cell (pasted or uploaded images)

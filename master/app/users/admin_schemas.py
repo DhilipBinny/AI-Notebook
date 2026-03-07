@@ -19,6 +19,7 @@ class AdminUserResponse(BaseModel):
     is_verified: bool
     is_admin: bool
     max_projects: int
+    max_containers: int
     created_at: datetime
     last_login_at: Optional[datetime] = None
     credit_balance_cents: Optional[int] = None
@@ -64,3 +65,7 @@ class AdminResetPasswordRequest(BaseModel):
 
 class AdminUpdateMaxProjectsRequest(BaseModel):
     max_projects: int = Field(..., ge=1, le=100)
+
+
+class AdminUpdateMaxContainersRequest(BaseModel):
+    max_containers: int = Field(..., ge=1, le=20)

@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     default_context_format: Optional[str] = Field(default=None, alias="DEFAULT_CONTEXT_FORMAT")
     ai_cell_streaming_enabled: Optional[str] = Field(default=None, alias="AI_CELL_STREAMING_ENABLED")
 
-    # Playground settings
+    # Playground settings (fallback defaults — primary source is container_types DB table)
     playground_image: str = Field(default="ainotebook-playground:latest", alias="PLAYGROUND_IMAGE")
     playground_network: str = Field(default="ainotebook-network", alias="PLAYGROUND_NETWORK")
     playground_memory_limit: str = Field(default="4g", alias="PLAYGROUND_MEMORY_LIMIT")

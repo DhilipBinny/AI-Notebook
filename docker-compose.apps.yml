@@ -73,12 +73,6 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:3000,http://localhost:8001}
       # Encryption (for DB-stored API keys)
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
-      # Playground
-      PLAYGROUND_IMAGE: ${PLAYGROUND_IMAGE:-ainotebook-playground:latest}
-      PLAYGROUND_NETWORK: ${PLAYGROUND_NETWORK:-ainotebook-network}
-      PLAYGROUND_MEMORY_LIMIT: ${PLAYGROUND_MEMORY_LIMIT:-2g}
-      PLAYGROUND_CPU_LIMIT: ${PLAYGROUND_CPU_LIMIT:-1.0}
-      PLAYGROUND_IDLE_TIMEOUT: ${PLAYGROUND_IDLE_TIMEOUT:-3600}
       # AI Cell Streaming
       AI_CELL_STREAMING_ENABLED: ${AI_CELL_STREAMING_ENABLED:-true}
       # Invite System

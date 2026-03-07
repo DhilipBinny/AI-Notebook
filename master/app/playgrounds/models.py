@@ -1,9 +1,9 @@
 """
 Playground database model - tracks active container instances.
-One container per user (not per project).
+Multiple containers per user (up to max_containers), one per project.
 """
 
-from sqlalchemy import Column, String, Text, DateTime, Enum as SQLEnum, ForeignKey, Integer, Numeric
+from sqlalchemy import Column, String, Text, DateTime, Enum as SQLEnum, ForeignKey, Integer, Numeric, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 import enum
@@ -22,23 +22,22 @@ class PlaygroundStatus(str, enum.Enum):
 
 
 class Playground(Base):
-    """Active playground container model. One per user."""
+    """Active playground container model. One per project per user."""
 
     __tablename__ = "playgrounds"
 
     # Primary key
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
 
-    # User reference (one playground per user)
+    # User reference (multiple playgrounds per user, up to max_containers)
     user_id = Column(
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True
     )
 
-    # Active project reference (nullable - tracks which project is loaded)
+    # Project reference (one playground per project)
     project_id = Column(
         String(36),
         ForeignKey("projects.id", ondelete="SET NULL"),
@@ -70,8 +69,13 @@ class Playground(Base):
     stopped_at = Column(DateTime, nullable=True)
 
     # Relationships
-    user = relationship("User", back_populates="playground")
+    user = relationship("User", back_populates="playgrounds")
     project = relationship("Project", back_populates="playground")
+
+    # One container per project per user
+    __table_args__ = (
+        UniqueConstraint('user_id', 'project_id', name='uk_playgrounds_user_project'),
+    )
 
     def __repr__(self) -> str:
         return f"<Playground {self.container_name} ({self.status.value})>"

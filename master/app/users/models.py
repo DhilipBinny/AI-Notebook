@@ -42,6 +42,7 @@ class User(Base):
 
     # Account settings
     max_projects = Column(Integer, default=5, nullable=False)
+    max_containers = Column(Integer, default=2, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
@@ -55,7 +56,7 @@ class User(Base):
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
     workspaces = relationship("Workspace", back_populates="owner", cascade="all, delete-orphan")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
-    playground = relationship("Playground", back_populates="user", uselist=False)
+    playgrounds = relationship("Playground", back_populates="user")
     api_keys = relationship("UserApiKey", back_populates="user", cascade="all, delete-orphan")
     credits = relationship("UserCredit", back_populates="user", uselist=False)
 
