@@ -163,7 +163,7 @@ function ResetPasswordForm() {
             <div className="text-center py-4">
               <div
                 className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)' }}
+                style={{ backgroundColor: 'var(--app-alert-error-bg)' }}
               >
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: 'var(--app-accent-error)' }}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
@@ -207,7 +207,7 @@ function ResetPasswordForm() {
             <div className="text-center py-4">
               <div
                 className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)' }}
+                style={{ backgroundColor: 'var(--app-alert-success-bg)' }}
               >
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ color: 'var(--app-accent-success)' }}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -242,8 +242,8 @@ function ResetPasswordForm() {
                 <div
                   className="rounded-xl p-4"
                   style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)'
+                    backgroundColor: 'var(--app-alert-error-bg)',
+                    border: '1px solid var(--app-alert-error-border)'
                   }}
                 >
                   <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{error}</p>
@@ -266,7 +266,7 @@ function ResetPasswordForm() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                     style={{
                       backgroundColor: 'var(--app-bg-input)',
                       border: '1px solid var(--app-border-default)',
@@ -311,7 +311,7 @@ function ResetPasswordForm() {
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                    className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                     style={{
                       backgroundColor: 'var(--app-bg-input)',
                       border: '1px solid var(--app-border-default)',

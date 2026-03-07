@@ -252,13 +252,13 @@ export default function SystemPromptsTab() {
 
       {/* Messages */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)' }}>
           {successMsg}
         </div>
       )}
@@ -319,9 +319,9 @@ export default function SystemPromptsTab() {
                     </label>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => setCreateForm({ ...createForm, tools: [...allToolNames] })}
-                        className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Select All</button>
+                        className="text-xs px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Select All</button>
                       <button type="button" onClick={() => setCreateForm({ ...createForm, tools: [] })}
-                        className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Clear</button>
+                        className="text-xs px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Clear</button>
                     </div>
                   </div>
                   {toolGroups.length === 0 ? (
@@ -332,7 +332,7 @@ export default function SystemPromptsTab() {
                     <div className="grid grid-cols-2 gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)' }}>
                       {toolGroups.map(group => (
                         <div key={group.category}>
-                          <div className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--app-text-muted)' }}>{group.category}</div>
+                          <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--app-text-muted)' }}>{group.category}</div>
                           <div className="space-y-1">
                             {group.tools.map(tool => (
                               <label key={tool.name} className="flex items-center gap-2 cursor-pointer" title={tool.description || tool.name}>
@@ -347,7 +347,7 @@ export default function SystemPromptsTab() {
                                   }}
                                   className="rounded"
                                 />
-                                <span className="text-xs font-mono" style={{ color: tool.is_active ? 'var(--app-text-primary)' : 'var(--app-text-muted)', textDecoration: tool.is_active ? 'none' : 'line-through' }}>{tool.name}</span>
+                                <span className="text-sm font-mono" style={{ color: tool.is_active ? 'var(--app-text-primary)' : 'var(--app-text-muted)', textDecoration: tool.is_active ? 'none' : 'line-through' }}>{tool.name}</span>
                               </label>
                             ))}
                           </div>
@@ -404,7 +404,7 @@ export default function SystemPromptsTab() {
                 {type.label}
               </h2>
               <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                backgroundColor: activePrompt ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                backgroundColor: activePrompt ? 'var(--app-alert-success-bg)' : 'var(--app-alert-warning-bg)',
                 color: activePrompt ? 'var(--app-accent-success)' : 'var(--app-accent-warning)',
               }}>
                 {activePrompt ? `Active: ${activePrompt.label}` : 'Using default'}
@@ -416,7 +416,7 @@ export default function SystemPromptsTab() {
               <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-start gap-2" style={{
                 backgroundColor: 'rgba(251, 191, 36, 0.1)',
                 border: '1px solid rgba(251, 191, 36, 0.25)',
-                color: '#fbbf24',
+                color: 'var(--app-accent-warning)',
               }}>
                 <Sparkles size={14} className="mt-0.5 shrink-0" />
                 <div>
@@ -424,7 +424,7 @@ export default function SystemPromptsTab() {
                   <span style={{ color: 'var(--app-text-secondary)' }}>
                     {unassignedTools.map((t, i) => (
                       <span key={t}>
-                        <code className="font-mono" style={{ color: '#fbbf24' }}>{t}</code>
+                        <code className="font-mono" style={{ color: 'var(--app-accent-warning)' }}>{t}</code>
                         {i < unassignedTools.length - 1 && ', '}
                       </span>
                     ))}
@@ -455,14 +455,14 @@ export default function SystemPromptsTab() {
                         {prompt.mode_name && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
                             backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                            color: '#a78bfa',
+                            color: 'var(--app-accent-indigo)',
                           }}>
                             mode: {prompt.mode_name}
                           </span>
                         )}
                         {prompt.is_active && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
-                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            backgroundColor: 'var(--app-alert-success-bg)',
                             color: 'var(--app-accent-success)',
                           }}>
                             Active
@@ -470,16 +470,16 @@ export default function SystemPromptsTab() {
                         )}
                         {prompt.tools && prompt.tools.length > 0 && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{
-                            backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                            color: '#60a5fa',
+                            backgroundColor: 'var(--app-alert-info-bg)',
+                            color: 'var(--app-accent-info)',
                           }}>
                             {prompt.tools.length} tools
                           </span>
                         )}
                         {getRemovedTools(prompt.tools).length > 0 && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1" style={{
-                            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                            color: '#f87171',
+                            backgroundColor: 'var(--app-alert-error-bg)',
+                            color: 'var(--app-accent-error)',
                           }}>
                             <AlertTriangle size={10} />
                             {getRemovedTools(prompt.tools).length} removed
@@ -577,15 +577,15 @@ export default function SystemPromptsTab() {
                                 </label>
                                 <div className="flex gap-2">
                                   <button type="button" onClick={() => setEditForm({ ...editForm, tools: [...allToolNames] })}
-                                    className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Select All</button>
+                                    className="text-xs px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Select All</button>
                                   <button type="button" onClick={() => setEditForm({ ...editForm, tools: [] })}
-                                    className="text-[11px] px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Clear</button>
+                                    className="text-xs px-2 py-0.5 rounded transition-colors" style={{ color: 'var(--app-text-muted)' }}>Clear</button>
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-3 p-3 rounded-lg" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)' }}>
                                 {toolGroups.map(group => (
                                   <div key={group.category}>
-                                    <div className="text-[11px] font-semibold mb-1.5" style={{ color: 'var(--app-text-muted)' }}>{group.category}</div>
+                                    <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--app-text-muted)' }}>{group.category}</div>
                                     <div className="space-y-1">
                                       {group.tools.map(tool => (
                                         <label key={tool.name} className="flex items-center gap-2 cursor-pointer" title={tool.description || tool.name}>
@@ -600,7 +600,7 @@ export default function SystemPromptsTab() {
                                             }}
                                             className="rounded"
                                           />
-                                          <span className="text-xs font-mono" style={{ color: tool.is_active ? 'var(--app-text-primary)' : 'var(--app-text-muted)', textDecoration: tool.is_active ? 'none' : 'line-through' }}>{tool.name}</span>
+                                          <span className="text-sm font-mono" style={{ color: tool.is_active ? 'var(--app-text-primary)' : 'var(--app-text-muted)', textDecoration: tool.is_active ? 'none' : 'line-through' }}>{tool.name}</span>
                                         </label>
                                       ))}
                                     </div>
@@ -609,7 +609,7 @@ export default function SystemPromptsTab() {
                                 {/* Show removed tools (in prompt but no longer in catalog DB) */}
                                 {editForm.tools.filter(t => !catalogToolSet.has(t)).length > 0 && (
                                   <div>
-                                    <div className="text-[11px] font-semibold mb-1.5 flex items-center gap-1" style={{ color: '#f87171' }}>
+                                    <div className="text-xs font-semibold mb-1.5 flex items-center gap-1" style={{ color: 'var(--app-accent-error)' }}>
                                       <AlertTriangle size={10} /> Not in Catalog
                                     </div>
                                     <div className="space-y-1">
@@ -623,7 +623,7 @@ export default function SystemPromptsTab() {
                                             }}
                                             className="rounded"
                                           />
-                                          <span className="text-xs font-mono line-through" style={{ color: '#f87171' }}>{tool}</span>
+                                          <span className="text-xs font-mono line-through" style={{ color: 'var(--app-accent-error)' }}>{tool}</span>
                                         </label>
                                       ))}
                                     </div>
@@ -665,7 +665,7 @@ export default function SystemPromptsTab() {
                       /* Preview (collapsed) */
                       <div className="px-4 pb-3">
                         <pre
-                          className="text-xs whitespace-pre-wrap overflow-hidden font-mono leading-relaxed"
+                          className="text-sm whitespace-pre-wrap overflow-hidden font-mono leading-relaxed"
                           style={{
                             color: 'var(--app-text-muted)',
                             maxHeight: '4.5em',

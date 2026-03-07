@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { admin } from '@/lib/api'
-import { Pencil, Trash2, Plus, X, Check } from 'lucide-react'
+import { Pencil, Trash2, Plus, X, Check, Search } from 'lucide-react'
 
 interface ToolItem {
   name: string
@@ -27,6 +27,9 @@ export default function ToolCatalogTab() {
   const [addToolForm, setAddToolForm] = useState({ name: '', category: '', description: '' })
   const [isAddingTool, setIsAddingTool] = useState(false)
 
+  // Search
+  const [searchQuery, setSearchQuery] = useState('')
+
   // Edit state
   const [editingToolName, setEditingToolName] = useState<string | null>(null)
   const [editToolForm, setEditToolForm] = useState({ category: '', description: '', is_active: true })
@@ -34,6 +37,17 @@ export default function ToolCatalogTab() {
   const existingCategories = useMemo(() => [...new Set(toolGroups.map(g => g.category))], [toolGroups])
   const totalTools = useMemo(() => toolGroups.reduce((sum, g) => sum + g.tools.length, 0), [toolGroups])
   const activeTools = useMemo(() => toolGroups.reduce((sum, g) => sum + g.tools.filter(t => t.is_active).length, 0), [toolGroups])
+
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery.trim()) return toolGroups
+    const q = searchQuery.toLowerCase()
+    return toolGroups
+      .map(g => ({
+        ...g,
+        tools: g.tools.filter(t => t.name.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q) || g.category.toLowerCase().includes(q))
+      }))
+      .filter(g => g.tools.length > 0)
+  }, [toolGroups, searchQuery])
 
   const fetchToolCatalog = useCallback(async () => {
     try {
@@ -130,14 +144,14 @@ export default function ToolCatalogTab() {
             Master list of AI Cell tools. Add new entries here when tools are implemented in the playground.
           </p>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--app-alert-info-bg)', color: 'var(--app-accent-info)' }}>
               {totalTools} total
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)' }}>
               {activeTools} active
             </span>
             {totalTools !== activeTools && (
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
                 {totalTools - activeTools} disabled
               </span>
             )}
@@ -153,15 +167,28 @@ export default function ToolCatalogTab() {
         </button>
       </div>
 
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--app-text-muted)' }} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search tools by name, description, or category..."
+          className="w-full pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
+          style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+        />
+      </div>
+
       {/* Messages */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)' }}>
           {successMsg}
         </div>
       )}
@@ -238,13 +265,13 @@ export default function ToolCatalogTab() {
       )}
 
       {/* Tool list by category */}
-      {toolGroups.length === 0 ? (
+      {filteredGroups.length === 0 ? (
         <div className="py-6 text-center text-sm rounded-xl" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-muted)' }}>
-          No tools in catalog. Click &quot;Add Tool&quot; to register a playground tool.
+          {searchQuery ? 'No tools match your search.' : 'No tools in catalog. Click "Add Tool" to register a playground tool.'}
         </div>
       ) : (
         <div className="space-y-4">
-          {toolGroups.map(group => (
+          {filteredGroups.map(group => (
             <div key={group.category} className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
               <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--app-border-default)' }}>
                 <span className="text-sm font-semibold" style={{ color: 'var(--app-text-secondary)' }}>{group.category}</span>
@@ -308,27 +335,23 @@ export default function ToolCatalogTab() {
                             <span className="text-[11px]" style={{ color: 'var(--app-text-muted)' }}>{tool.description}</span>
                           )}
                           {!tool.is_active && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>disabled</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>disabled</span>
                           )}
                         </div>
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => startEditingTool(tool)}
-                            className="p-1 rounded-md transition-colors"
+                            className="p-1 rounded-md transition-colors hover-text-primary"
                             style={{ color: 'var(--app-text-muted)' }}
                             title="Edit tool"
-                            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                           >
                             <Pencil size={12} />
                           </button>
                           <button
                             onClick={() => handleDeleteTool(tool.name)}
-                            className="p-1 rounded-md transition-colors"
+                            className="p-1 rounded-md transition-colors hover-text-error"
                             style={{ color: 'var(--app-text-muted)' }}
                             title="Remove from catalog"
-                            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-error)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                           >
                             <Trash2 size={12} />
                           </button>

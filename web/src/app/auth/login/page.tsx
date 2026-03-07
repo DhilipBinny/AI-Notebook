@@ -138,8 +138,8 @@ function LoginForm() {
               <div
                 className="rounded-xl p-4"
                 style={{
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)'
+                  backgroundColor: 'var(--app-alert-error-bg)',
+                  border: '1px solid var(--app-alert-error-border)'
                 }}
               >
                 <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{error}</p>
@@ -162,7 +162,7 @@ function LoginForm() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{
                     backgroundColor: 'var(--app-bg-input)',
                     border: '1px solid var(--app-border-default)',
@@ -186,7 +186,7 @@ function LoginForm() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{
                     backgroundColor: 'var(--app-bg-input)',
                     border: '1px solid var(--app-border-default)',

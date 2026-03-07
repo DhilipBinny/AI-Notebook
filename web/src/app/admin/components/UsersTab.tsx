@@ -306,13 +306,13 @@ export default function UsersTab() {
 
       {/* Messages */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)' }}>
           {successMsg}
         </div>
       )}
@@ -358,7 +358,7 @@ export default function UsersTab() {
                   placeholder="Re-enter password"
                   autoComplete="new-password"
                   className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
-                  style={{ backgroundColor: 'var(--app-bg-input)', border: `1px solid ${confirmPassword && !passwordsMatch ? 'rgba(239, 68, 68, 0.5)' : 'var(--app-border-default)'}`, color: 'var(--app-text-primary)' }}
+                  style={{ backgroundColor: 'var(--app-bg-input)', border: `1px solid ${confirmPassword && !passwordsMatch ? 'var(--app-alert-error-border)' : 'var(--app-border-default)'}`, color: 'var(--app-text-primary)' }}
                 />
                 {confirmPassword && !passwordsMatch && (
                   <p className="text-xs mt-1" style={{ color: 'var(--app-accent-error)' }}>Passwords do not match</p>
@@ -387,7 +387,7 @@ export default function UsersTab() {
                 </div>
               )}
 
-              <div className="p-3 rounded-lg text-xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)', color: 'var(--app-accent-warning)' }}>
+              <div className="p-3 rounded-lg text-xs" style={{ backgroundColor: 'var(--app-alert-warning-bg)', border: '1px solid var(--app-alert-warning-border)', color: 'var(--app-accent-warning)' }}>
                 This will revoke all active sessions. The user will need to log in again.
               </div>
 
@@ -463,7 +463,7 @@ export default function UsersTab() {
                       <span
                         className="px-2 py-0.5 rounded text-xs font-medium"
                         style={{
-                          backgroundColor: drawerUser.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          backgroundColor: drawerUser.is_active ? 'var(--app-alert-success-bg)' : 'var(--app-alert-error-bg)',
                           color: drawerUser.is_active ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                         }}
                       >
@@ -472,7 +472,7 @@ export default function UsersTab() {
                       <span
                         className="px-2 py-0.5 rounded text-xs font-medium"
                         style={{
-                          backgroundColor: drawerUser.is_admin ? 'rgba(99, 102, 241, 0.15)' : 'var(--app-bg-tertiary)',
+                          backgroundColor: drawerUser.is_admin ? 'var(--app-alert-indigo-bg)' : 'var(--app-bg-tertiary)',
                           color: drawerUser.is_admin ? 'var(--app-accent-indigo)' : 'var(--app-text-muted)',
                         }}
                       >
@@ -671,10 +671,8 @@ export default function UsersTab() {
                         setNewPassword('')
                         setConfirmPassword('')
                       }}
-                      className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors"
+                      className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors hover-bg-tertiary"
                       style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-text-secondary)', borderBottom: '1px solid var(--app-border-default)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                     >
                       <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--app-accent-warning)' }}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -685,10 +683,8 @@ export default function UsersTab() {
                   <button
                     onClick={() => handleToggleAdmin(drawerUser)}
                     disabled={actionLoading === drawerUser.id || drawerUser.id === user?.id}
-                    className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50"
+                    className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50 hover-bg-tertiary"
                     style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-text-secondary)', borderBottom: '1px solid var(--app-border-default)' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                   >
                     <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--app-accent-indigo)' }}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -698,10 +694,8 @@ export default function UsersTab() {
                   <button
                     onClick={() => handleToggleActive(drawerUser)}
                     disabled={actionLoading === drawerUser.id || drawerUser.id === user?.id}
-                    className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50"
+                    className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50 hover-bg-tertiary"
                     style={{ backgroundColor: 'var(--app-bg-card)', color: drawerUser.is_active ? 'var(--app-accent-error)' : 'var(--app-accent-success)' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                   >
                     <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       {drawerUser.is_active ? (
@@ -784,11 +778,9 @@ export default function UsersTab() {
                   {users.map((u, idx) => (
                     <tr
                       key={u.id}
-                      className="cursor-pointer transition-colors"
+                      className="cursor-pointer transition-colors hover-bg-tertiary"
                       style={{ borderBottom: '1px solid var(--app-border-default)' }}
                       onClick={() => openDrawer(u)}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
                       <td className="px-4 py-3">
                         <div>
@@ -802,7 +794,7 @@ export default function UsersTab() {
                         <span
                           className="px-2 py-0.5 rounded text-xs font-medium"
                           style={{
-                            backgroundColor: u.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            backgroundColor: u.is_active ? 'var(--app-alert-success-bg)' : 'var(--app-alert-error-bg)',
                             color: u.is_active ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                           }}
                         >
@@ -813,7 +805,7 @@ export default function UsersTab() {
                         <span
                           className="px-2 py-0.5 rounded text-xs font-medium"
                           style={{
-                            backgroundColor: u.is_admin ? 'rgba(99, 102, 241, 0.15)' : 'var(--app-bg-tertiary)',
+                            backgroundColor: u.is_admin ? 'var(--app-alert-indigo-bg)' : 'var(--app-bg-tertiary)',
                             color: u.is_admin ? 'var(--app-accent-indigo)' : 'var(--app-text-muted)',
                           }}
                         >
@@ -869,10 +861,8 @@ export default function UsersTab() {
                                     setConfirmPassword('')
                                     setOpenMenuId(null)
                                   }}
-                                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors"
+                                  className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors hover-bg-tertiary"
                                   style={{ color: 'var(--app-accent-warning)' }}
-                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                 >
                                   <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -883,10 +873,8 @@ export default function UsersTab() {
                               <button
                                 onClick={() => { handleToggleAdmin(u); setOpenMenuId(null) }}
                                 disabled={actionLoading === u.id || u.id === user?.id}
-                                className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50"
+                                className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50 hover-bg-tertiary"
                                 style={{ color: 'var(--app-accent-indigo)' }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >
                                 <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -897,10 +885,8 @@ export default function UsersTab() {
                               <button
                                 onClick={() => { handleToggleActive(u); setOpenMenuId(null) }}
                                 disabled={actionLoading === u.id || u.id === user?.id}
-                                className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50"
+                                className="w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors disabled:opacity-50 hover-bg-tertiary"
                                 style={{ color: u.is_active ? 'var(--app-accent-error)' : 'var(--app-accent-success)' }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >
                                 <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   {u.is_active ? (

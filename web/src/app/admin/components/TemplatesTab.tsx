@@ -3,14 +3,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { admin, templates } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { Pencil, Trash2, FileCode, Plus, X, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
+import { Pencil, Trash2, FileCode, Plus, X, ChevronUp, ChevronDown } from 'lucide-react'
 import type { NotebookTemplate } from '@/types'
 
 const DIFFICULTY_OPTIONS = ['beginner', 'intermediate', 'advanced'] as const
 const DIFFICULTY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  beginner: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
-  intermediate: { bg: 'rgba(245, 158, 11, 0.15)', text: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)' },
-  advanced: { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444', border: 'rgba(239, 68, 68, 0.3)' },
+  beginner: { bg: 'var(--app-alert-success-bg)', text: 'var(--app-accent-success)', border: 'var(--app-alert-success-border)' },
+  intermediate: { bg: 'var(--app-alert-warning-bg)', text: 'var(--app-accent-warning)', border: 'var(--app-alert-warning-border)' },
+  advanced: { bg: 'var(--app-alert-error-bg)', text: 'var(--app-accent-error)', border: 'var(--app-alert-error-border)' },
 }
 
 interface TemplateFormState {
@@ -422,9 +422,9 @@ export default function TemplatesTab() {
 
       {/* Success Message */}
       {successMessage && (
-        <div className="mb-4 p-3 rounded-lg text-sm flex items-center justify-between" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm flex items-center justify-between" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)', border: '1px solid var(--app-alert-success-border)' }}>
           {successMessage}
-          <button onClick={() => setSuccessMessage('')} className="ml-2" style={{ color: '#10b981' }}>
+          <button onClick={() => setSuccessMessage('')} className="ml-2" style={{ color: 'var(--app-accent-success)' }}>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -434,7 +434,7 @@ export default function TemplatesTab() {
 
       {/* Error */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)', border: '1px solid var(--app-alert-error-border)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
@@ -565,8 +565,8 @@ export default function TemplatesTab() {
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => !deleting && setDeleteConfirm(null)}
           />
-          <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-            <h3 className="text-base font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Template</h3>
+          <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-alert-error-border)' }}>
+            <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Template</h3>
             <p className="mb-4" style={{ color: 'var(--app-text-muted)' }}>
               Delete &quot;{deleteConfirm.name}&quot;? This cannot be undone.
             </p>
@@ -605,10 +605,10 @@ export default function TemplatesTab() {
             {/* Header */}
             <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--app-border-default)' }}>
               <div>
-                <h3 className="text-base font-bold" style={{ color: 'var(--app-text-primary)' }}>
+                <h3 className="text-lg font-bold" style={{ color: 'var(--app-text-primary)' }}>
                   Edit Notebook Content
                 </h3>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--app-text-muted)' }}>{contentTemplate.name}</p>
+                <p className="text-sm mt-0.5" style={{ color: 'var(--app-text-muted)' }}>{contentTemplate.name}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -656,7 +656,6 @@ export default function TemplatesTab() {
                     {/* Cell toolbar */}
                     <div className="flex items-center justify-between px-3 py-1.5" style={{ backgroundColor: 'var(--app-bg-tertiary)', borderBottom: '1px solid var(--app-border-default)' }}>
                       <div className="flex items-center gap-2">
-                        <GripVertical size={12} style={{ color: 'var(--app-text-muted)' }} />
                         <select
                           value={cell.cell_type}
                           onChange={(e) => updateCellType(idx, e.target.value as 'code' | 'markdown')}
@@ -812,7 +811,7 @@ export default function TemplatesTab() {
                       <span
                         className="px-2 py-0.5 rounded text-xs font-medium"
                         style={{
-                          backgroundColor: template.is_public ? 'rgba(16, 185, 129, 0.15)' : 'var(--app-bg-tertiary)',
+                          backgroundColor: template.is_public ? 'var(--app-alert-success-bg)' : 'var(--app-bg-tertiary)',
                           color: template.is_public ? '#10b981' : 'var(--app-text-muted)',
                         }}
                       >
@@ -826,31 +825,25 @@ export default function TemplatesTab() {
                       <div className="flex gap-2 justify-end">
                         <button
                           onClick={() => handleEditContent(template)}
-                          className="p-1.5 rounded-md transition-colors"
+                          className="p-1.5 rounded-md transition-colors hover-text-primary"
                           style={{ color: 'var(--app-text-muted)' }}
                           title="Edit notebook content"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-primary)')}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
                           <FileCode size={14} />
                         </button>
                         <button
                           onClick={() => handleEditClick(template)}
-                          className="p-1.5 rounded-md transition-colors"
+                          className="p-1.5 rounded-md transition-colors hover-text-primary"
                           style={{ color: 'var(--app-text-muted)' }}
                           title="Edit metadata"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
                           <Pencil size={14} />
                         </button>
                         <button
                           onClick={() => setDeleteConfirm(template)}
-                          className="p-1.5 rounded-md transition-colors"
+                          className="p-1.5 rounded-md transition-colors hover-text-error"
                           style={{ color: 'var(--app-text-muted)' }}
                           title="Delete template"
-                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-error)')}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
                           <Trash2 size={14} />
                         </button>

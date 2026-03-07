@@ -103,6 +103,18 @@
   --app-gradient-button: linear-gradient(135deg, #7aa2f7 0%, #73daca 100%);
   --app-gradient-success: linear-gradient(135deg, #a6e3a1 0%, #94e2d5 100%);
 
+  /* Alert backgrounds - semantic status colors with transparency */
+  --app-alert-error-bg: rgba(243, 139, 168, 0.15);
+  --app-alert-error-border: rgba(243, 139, 168, 0.3);
+  --app-alert-success-bg: rgba(166, 227, 161, 0.15);
+  --app-alert-success-border: rgba(166, 227, 161, 0.3);
+  --app-alert-warning-bg: rgba(250, 179, 135, 0.15);
+  --app-alert-warning-border: rgba(250, 179, 135, 0.3);
+  --app-alert-info-bg: rgba(137, 180, 250, 0.15);
+  --app-alert-info-border: rgba(137, 180, 250, 0.3);
+  --app-alert-indigo-bg: rgba(180, 190, 254, 0.15);
+  --app-alert-indigo-border: rgba(180, 190, 254, 0.3);
+
   /* Divider text - lighter for visibility */
   --app-text-divider: #9ca3af;
   --app-border-divider: rgba(255, 255, 255, 0.15);
@@ -206,6 +218,18 @@
   --app-gradient-primary: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
   --app-gradient-button: linear-gradient(135deg, #2563eb 0%, #0d9488 100%);
   --app-gradient-success: linear-gradient(135deg, #22c55e 0%, #14b8a6 100%);
+
+  /* Alert backgrounds - semantic status colors with transparency */
+  --app-alert-error-bg: rgba(239, 68, 68, 0.12);
+  --app-alert-error-border: rgba(239, 68, 68, 0.3);
+  --app-alert-success-bg: rgba(34, 197, 94, 0.12);
+  --app-alert-success-border: rgba(34, 197, 94, 0.3);
+  --app-alert-warning-bg: rgba(245, 158, 11, 0.12);
+  --app-alert-warning-border: rgba(245, 158, 11, 0.3);
+  --app-alert-info-bg: rgba(59, 130, 246, 0.12);
+  --app-alert-info-border: rgba(59, 130, 246, 0.3);
+  --app-alert-indigo-bg: rgba(99, 102, 241, 0.12);
+  --app-alert-indigo-border: rgba(99, 102, 241, 0.3);
 
   /* Divider text - visible on light background */
   --app-text-divider: #6b7280;
@@ -1078,4 +1102,44 @@ kbd {
   font-size: calc(var(--size-meta) - 2px);  /* 10px default */
   font-weight: 500;
   line-height: 1;
+}
+
+/* ============================================
+   INTERACTIVE HOVER UTILITIES
+   Replace inline onMouseEnter/Leave handlers
+   ============================================ */
+
+.hover-bg-tertiary {
+  transition: background-color 0.15s ease;
+}
+.hover-bg-tertiary:hover {
+  background-color: var(--app-bg-tertiary);
+}
+
+.hover-bg-card-hover {
+  transition: background-color 0.15s ease;
+}
+.hover-bg-card-hover:hover {
+  background-color: var(--app-bg-card-hover);
+}
+
+.hover-bg-error {
+  transition: background-color 0.15s ease;
+}
+.hover-bg-error:hover {
+  background-color: var(--app-alert-error-bg);
+}
+
+.hover-text-error {
+  transition: color 0.15s ease;
+}
+.hover-text-error:hover {
+  color: var(--app-accent-error);
+}
+
+.hover-text-primary {
+  transition: color 0.15s ease;
+}
+.hover-text-primary:hover {
+  color: var(--app-accent-primary);
 }

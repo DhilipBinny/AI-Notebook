@@ -709,7 +709,7 @@ export default function DashboardPage() {
           <div
             className="w-12 h-12 border-4 rounded-full animate-spin"
             style={{
-              borderColor: 'rgba(59, 130, 246, 0.3)',
+              borderColor: 'var(--app-alert-info-border)',
               borderTopColor: 'var(--app-accent-primary)'
             }}
           />
@@ -729,13 +729,13 @@ export default function DashboardPage() {
           <div
             className="backdrop-blur-xl rounded-xl p-4 flex items-start gap-3 shadow-lg"
             style={{
-              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-              border: '1px solid rgba(16, 185, 129, 0.3)'
+              backgroundColor: 'var(--app-alert-success-bg)',
+              border: '1px solid var(--app-alert-success-border)'
             }}
           >
             <div
               className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(16, 185, 129, 0.3)' }}
+              style={{ backgroundColor: 'var(--app-alert-success-border)' }}
             >
               <Check className="w-5 h-5" style={{ color: 'var(--app-accent-success)' }} />
             </div>
@@ -1032,13 +1032,13 @@ export default function DashboardPage() {
                             disabled={isLoading}
                             className="px-3 py-1.5 text-xs rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
                             style={{
-                              backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                              backgroundColor: 'var(--app-alert-info-bg)',
                               color: 'var(--app-accent-primary)',
-                              border: '1px solid rgba(59, 130, 246, 0.3)'
+                              border: '1px solid var(--app-alert-info-border)'
                             }}
                           >
                             {isLoading ? (
-                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }} />
+                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--app-alert-info-border)', borderTopColor: 'var(--app-accent-primary)' }} />
                             ) : (
                               <Play className="w-3 h-3" />
                             )}
@@ -1052,9 +1052,9 @@ export default function DashboardPage() {
                               disabled={isLoading}
                               className="p-1.5 rounded-lg transition-all disabled:opacity-50"
                               style={{
-                                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                backgroundColor: 'var(--app-alert-error-bg)',
                                 color: 'var(--app-accent-error)',
-                                border: '1px solid rgba(239, 68, 68, 0.3)'
+                                border: '1px solid var(--app-alert-error-border)'
                               }}
                               title="Stop playground"
                             >
@@ -1065,9 +1065,9 @@ export default function DashboardPage() {
                               onClick={() => handleViewLogs(project)}
                               className="p-1.5 rounded-lg transition-all"
                               style={{
-                                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                backgroundColor: 'var(--app-alert-info-bg)',
                                 color: 'var(--app-accent-primary)',
-                                border: '1px solid rgba(59, 130, 246, 0.3)'
+                                border: '1px solid var(--app-alert-info-border)'
                               }}
                               title="View logs"
                             >
@@ -1289,8 +1289,8 @@ export default function DashboardPage() {
                         </p>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{
-                            backgroundColor: tmpl.difficulty_level === 'beginner' ? 'rgba(16, 185, 129, 0.15)' :
-                              tmpl.difficulty_level === 'intermediate' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            backgroundColor: tmpl.difficulty_level === 'beginner' ? 'var(--app-alert-success-bg)' :
+                              tmpl.difficulty_level === 'intermediate' ? 'var(--app-alert-warning-bg)' : 'var(--app-alert-error-bg)',
                             color: tmpl.difficulty_level === 'beginner' ? 'var(--app-accent-success)' :
                               tmpl.difficulty_level === 'intermediate' ? 'var(--app-accent-warning)' : 'var(--app-accent-error)',
                           }}>
@@ -1343,7 +1343,7 @@ export default function DashboardPage() {
                       type="text"
                       value={newProjectName}
                       onChange={(e) => setNewProjectName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl focus:outline-none"
+                      className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                       style={{
                         backgroundColor: 'var(--app-bg-input)',
                         border: '1px solid var(--app-border-default)',
@@ -1359,7 +1359,7 @@ export default function DashboardPage() {
                     <textarea
                       value={newProjectDesc}
                       onChange={(e) => setNewProjectDesc(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl focus:outline-none resize-none"
+                      className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)] resize-none"
                       style={{
                         backgroundColor: 'var(--app-bg-input)',
                         border: '1px solid var(--app-border-default)',
@@ -1375,7 +1375,7 @@ export default function DashboardPage() {
                     </p>
                   )}
                   {createError && (
-                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'var(--app-alert-error-bg)', border: '1px solid var(--app-alert-error-border)' }}>
                       <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{createError}</p>
                     </div>
                   )}
@@ -1442,14 +1442,14 @@ export default function DashboardPage() {
                   type="text"
                   value={importProjectName}
                   onChange={(e) => setImportProjectName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                   placeholder="Notebook name"
                   required
                 />
               </div>
               {importError && (
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <div className="p-3 rounded-xl" style={{ backgroundColor: 'var(--app-alert-error-bg)', border: '1px solid var(--app-alert-error-border)' }}>
                   <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{importError}</p>
                 </div>
               )}
@@ -1474,11 +1474,11 @@ export default function DashboardPage() {
             <form onSubmit={handleUpdateProject} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
-                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} required />
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} required />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Description</label>
-                <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none resize-none" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} rows={2} />
+                <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)] resize-none" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} rows={2} />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1" style={{ color: 'var(--app-text-secondary)' }}>Workspace</label>
@@ -1487,7 +1487,7 @@ export default function DashboardPage() {
                   <select
                     value={editWorkspaceId || ''}
                     onChange={(e) => setEditWorkspaceId(e.target.value || null)}
-                    className="w-full px-4 py-3 rounded-xl focus:outline-none cursor-pointer pr-10"
+                    className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)] cursor-pointer pr-10"
                     style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)', WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
                   >
                     <option value="" style={{ backgroundColor: 'var(--app-bg-secondary)', color: 'var(--app-text-primary)' }}>Uncategorized</option>
@@ -1516,7 +1516,7 @@ export default function DashboardPage() {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setDeleteConfirm(null)} />
-          <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-alert-error-border)' }}>
             <h3 className="text-base font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Notebook</h3>
             <p className="mb-4" style={{ color: 'var(--app-text-muted)' }}>Delete &quot;{deleteConfirm.name}&quot;? This cannot be undone.</p>
             <div className="flex gap-3">
@@ -1539,7 +1539,7 @@ export default function DashboardPage() {
             <form onSubmit={handleCreateWorkspace} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
-                <input type="text" value={newWorkspaceName} onChange={(e) => setNewWorkspaceName(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} placeholder="e.g., Machine Learning" required />
+                <input type="text" value={newWorkspaceName} onChange={(e) => setNewWorkspaceName(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} placeholder="e.g., Machine Learning" required />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Color</label>
@@ -1570,7 +1570,7 @@ export default function DashboardPage() {
             <form onSubmit={handleUpdateWorkspace} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
-                <input type="text" value={editWorkspaceName} onChange={(e) => setEditWorkspaceName(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} placeholder="Workspace name" required />
+                <input type="text" value={editWorkspaceName} onChange={(e) => setEditWorkspaceName(e.target.value)} className="w-full px-4 py-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]" style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }} placeholder="Workspace name" required />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Color</label>
@@ -1583,7 +1583,7 @@ export default function DashboardPage() {
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setEditingWorkspace(null)} className="flex-1 px-4 py-2.5 rounded-xl" style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}>Cancel</button>
                 {!editingWorkspace.is_default && (
-                  <button type="button" onClick={() => setDeleteWorkspaceConfirm(editingWorkspace)} className="px-4 py-2.5 rounded-xl" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--app-accent-error)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Delete</button>
+                  <button type="button" onClick={() => setDeleteWorkspaceConfirm(editingWorkspace)} className="px-4 py-2.5 rounded-xl" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)', border: '1px solid var(--app-alert-error-border)' }}>Delete</button>
                 )}
                 <button type="submit" disabled={updatingWorkspace} className="flex-1 px-4 py-2.5 rounded-xl text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2" style={{ background: 'var(--app-gradient-primary)' }}>
                   {updatingWorkspace && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
@@ -1599,7 +1599,7 @@ export default function DashboardPage() {
       {deleteWorkspaceConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteWorkspaceConfirm(null)} />
-          <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <div className="relative w-full max-w-sm rounded-2xl shadow-2xl p-6" style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-alert-error-border)' }}>
             <h3 className="text-base font-bold mb-2" style={{ color: 'var(--app-text-primary)' }}>Delete Workspace</h3>
             <p className="mb-4" style={{ color: 'var(--app-text-muted)' }}>Delete &quot;{deleteWorkspaceConfirm.name}&quot; and all its notebooks? This cannot be undone.</p>
             <div className="flex gap-3">
@@ -1622,7 +1622,7 @@ export default function DashboardPage() {
           >
             <div className="relative w-16 h-16 mx-auto mb-4">
               {/* Outer spinning ring */}
-              <div className="absolute inset-0 border-4 rounded-full" style={{ borderColor: 'rgba(59, 130, 246, 0.2)' }} />
+              <div className="absolute inset-0 border-4 rounded-full" style={{ borderColor: 'var(--app-alert-info-border)' }} />
               <div className="absolute inset-0 border-4 border-transparent rounded-full animate-spin" style={{ borderTopColor: 'var(--app-accent-primary)' }} />
               {/* Inner pulsing circle */}
               <div className="absolute inset-3 rounded-full animate-pulse" style={{ background: 'linear-gradient(to bottom right, var(--app-accent-primary), var(--app-accent-secondary))' }} />

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { admin } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { Edit3, Trash2 } from 'lucide-react'
+import { Edit3, Trash2, Search } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
 import type { LLMModel, PlatformKey } from '@/types'
 
@@ -50,6 +50,9 @@ export default function CreditsTab() {
     is_active: true,
   })
   const [isSavingModel, setIsSavingModel] = useState(false)
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Pagination
   const [page, setPage] = useState(1)
@@ -221,11 +224,17 @@ export default function CreditsTab() {
     return `${Math.round(ctx / 1000)}K`
   }
 
-  const totalModels = modelRegistry.length
+  const filteredModels = searchQuery.trim()
+    ? modelRegistry.filter(m => {
+        const q = searchQuery.toLowerCase()
+        return m.model_id.toLowerCase().includes(q) || m.display_name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q)
+      })
+    : modelRegistry
+  const totalModels = filteredModels.length
   const totalPages = Math.ceil(totalModels / pageSize)
   const startIdx = (page - 1) * pageSize
   const endIdx = Math.min(startIdx + pageSize, totalModels)
-  const paginatedModels = modelRegistry.slice(startIdx, endIdx)
+  const paginatedModels = filteredModels.slice(startIdx, endIdx)
 
   const inputStyle = {
     backgroundColor: 'var(--app-bg-input)',
@@ -237,7 +246,7 @@ export default function CreditsTab() {
     <div>
       {/* $0 Pricing Warning */}
       {warnings.length > 0 && (
-        <div className="mb-6 p-4 rounded-xl text-sm" style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#f59e0b' }}>
+        <div className="mb-6 p-4 rounded-xl text-sm" style={{ backgroundColor: 'var(--app-alert-warning-bg)', border: '1px solid var(--app-alert-warning-border)', color: 'var(--app-accent-warning)' }}>
           <div className="font-medium mb-1">Models with $0 pricing (users won&apos;t be charged):</div>
           <ul className="list-disc list-inside">
             {warnings.map((w) => (
@@ -269,15 +278,28 @@ export default function CreditsTab() {
           </button>
         </div>
 
+        {/* Search */}
+        <div className="mx-6 mt-4 relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--app-text-muted)' }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
+            placeholder="Search by model ID, display name, or provider..."
+            className="w-full pl-9 pr-3 py-2 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
+            style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
+          />
+        </div>
+
         {/* Messages */}
         {modelsError && (
-          <div className="mx-6 mt-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+          <div className="mx-6 mt-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
             {modelsError}
             <button onClick={() => setModelsError('')} className="ml-2 underline">dismiss</button>
           </div>
         )}
         {modelsSuccess && (
-          <div className="mx-6 mt-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981' }}>
+          <div className="mx-6 mt-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-success-bg)', border: '1px solid var(--app-alert-success-border)', color: 'var(--app-accent-success)' }}>
             {modelsSuccess}
           </div>
         )}
@@ -588,27 +610,27 @@ export default function CreditsTab() {
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-wrap gap-1 justify-center">
                             {row.context_window && (
-                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--app-alert-indigo-bg)', color: 'var(--app-accent-indigo)' }}>
                                 {formatContextWindow(row.context_window)}
                               </span>
                             )}
                             {row.max_output_tokens && (
-                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--app-alert-info-bg)', color: 'var(--app-accent-info)' }}>
                                 out:{formatContextWindow(row.max_output_tokens)}
                               </span>
                             )}
                             {row.supports_vision && (
-                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)' }}>
                                 vision
                               </span>
                             )}
                             {row.supports_function_calling && (
-                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--app-alert-warning-bg)', color: 'var(--app-accent-warning)' }}>
                                 tools
                               </span>
                             )}
                             {row.is_custom && (
-                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
+                              <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: 'var(--app-accent-indigo)' }}>
                                 custom
                               </span>
                             )}
@@ -657,7 +679,7 @@ export default function CreditsTab() {
                               onClick={() => openDeleteModal(row)}
                               className="p-1.5 rounded-lg transition-colors"
                               style={{ color: 'var(--app-text-muted)' }}
-                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--app-accent-error)' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--app-alert-error-bg)'; e.currentTarget.style.color = 'var(--app-accent-error)' }}
                               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--app-text-muted)' }}
                               title="Delete"
                             >
@@ -722,7 +744,7 @@ export default function CreditsTab() {
             style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+              <div className="p-2 rounded-lg" style={{ backgroundColor: 'var(--app-alert-error-bg)' }}>
                 <Trash2 className="w-5 h-5" style={{ color: 'var(--app-accent-error)' }} />
               </div>
               <h3 className="text-lg font-medium" style={{ color: 'var(--app-text-primary)' }}>
@@ -741,7 +763,7 @@ export default function CreditsTab() {
             {affectedKeys.length > 0 && (
               <div
                 className="mb-5 p-3 rounded-lg text-sm"
-                style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)' }}
+                style={{ backgroundColor: 'var(--app-alert-warning-bg)', border: '1px solid var(--app-alert-warning-border)' }}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4" style={{ color: 'var(--app-accent-warning)' }} />
@@ -754,7 +776,7 @@ export default function CreditsTab() {
                     <li key={k.id} className="text-xs" style={{ color: 'var(--app-text-secondary)' }}>
                       <span className="font-medium" style={{ color: 'var(--app-text-primary)' }}>{k.label}</span>
                       {k.is_default && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', color: 'var(--app-accent-indigo)' }}>
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'var(--app-alert-indigo-bg)', color: 'var(--app-accent-indigo)' }}>
                           DEFAULT
                         </span>
                       )}

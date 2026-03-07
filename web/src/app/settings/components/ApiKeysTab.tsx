@@ -157,7 +157,7 @@ export default function ApiKeysTab() {
   return (
     <>
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
@@ -187,7 +187,7 @@ export default function ApiKeysTab() {
                 <select
                   value={addProvider}
                   onChange={(e) => setAddProvider(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                 >
                   {providers.map((p) => (
@@ -201,7 +201,7 @@ export default function ApiKeysTab() {
                   type="text"
                   value={addLabel}
                   onChange={(e) => setAddLabel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                   placeholder="e.g., Work, Personal"
                 />
@@ -214,7 +214,7 @@ export default function ApiKeysTab() {
                   type="password"
                   value={addKeyValue}
                   onChange={(e) => setAddKeyValue(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                   placeholder={addProvider === 'openai_compatible' ? 'Optional for local servers' : 'sk-...'}
                   required={addProvider !== 'openai_compatible'}
@@ -228,7 +228,7 @@ export default function ApiKeysTab() {
                   type="text"
                   value={addBaseUrl}
                   onChange={(e) => setAddBaseUrl(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  className="w-full px-3 py-2 rounded-lg text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                   style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                   placeholder="e.g., http://localhost:11434/v1 or https://openrouter.ai/api/v1"
                   required
@@ -379,21 +379,17 @@ export default function ApiKeysTab() {
                               </button>
                               <button
                                 onClick={() => isEditing ? setEditingId(null) : startEditing(key)}
-                                className="p-1.5 rounded-md transition-colors"
+                                className="p-1.5 rounded-md transition-colors hover-text-primary"
                                 style={{ color: isEditing ? 'var(--app-text-primary)' : 'var(--app-text-muted)' }}
                                 title={isEditing ? 'Cancel editing' : 'Edit key'}
-                                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
-                                onMouseLeave={(e) => (e.currentTarget.style.color = isEditing ? 'var(--app-text-primary)' : 'var(--app-text-muted)')}
                               >
                                 <Pencil size={14} />
                               </button>
                               <button
                                 onClick={() => handleDeleteKey(key.id)}
-                                className="p-1.5 rounded-md transition-colors"
+                                className="p-1.5 rounded-md transition-colors hover-text-error"
                                 style={{ color: 'var(--app-text-muted)' }}
                                 title="Remove key"
-                                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-error)')}
-                                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                               >
                                 <Trash2 size={14} />
                               </button>
@@ -410,7 +406,7 @@ export default function ApiKeysTab() {
                                     type="password"
                                     value={editKeyValue}
                                     onChange={(e) => setEditKeyValue(e.target.value)}
-                                    className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none"
+                                    className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                                     style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                                     placeholder={key.api_key_hint}
                                   />
@@ -422,7 +418,7 @@ export default function ApiKeysTab() {
                                       type="text"
                                       value={editBaseUrl}
                                       onChange={(e) => setEditBaseUrl(e.target.value)}
-                                      className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none"
+                                      className="w-full px-3 py-1.5 rounded-lg text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-border-focus)]"
                                       style={{ backgroundColor: 'var(--app-bg-input)', border: '1px solid var(--app-border-default)', color: 'var(--app-text-primary)' }}
                                       placeholder="http://localhost:11434/v1"
                                     />

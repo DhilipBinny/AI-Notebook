@@ -116,7 +116,7 @@ function OAuthCallbackHandler() {
           <>
             <div
               className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)' }}
+              style={{ backgroundColor: 'var(--app-alert-success-bg)' }}
             >
               <svg
                 className="w-8 h-8"
@@ -149,7 +149,7 @@ function OAuthCallbackHandler() {
           <>
             <div
               className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)' }}
+              style={{ backgroundColor: 'var(--app-alert-error-bg)' }}
             >
               <svg
                 className="w-8 h-8"

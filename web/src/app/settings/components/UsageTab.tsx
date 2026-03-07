@@ -64,7 +64,7 @@ export default function UsageTab() {
   return (
     <>
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
@@ -139,7 +139,7 @@ export default function UsageTab() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       {record.is_own_key ? (
-                        <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ color: 'var(--app-accent-success)', backgroundColor: 'rgba(74, 222, 128, 0.1)' }}>
+                        <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ color: 'var(--app-accent-success)', backgroundColor: 'var(--app-alert-success-bg)' }}>
                           own key
                         </span>
                       ) : (

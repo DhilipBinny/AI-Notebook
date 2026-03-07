@@ -8,9 +8,9 @@ import AppHeader from '@/components/AppHeader'
 import type { NotebookTemplate } from '@/types'
 
 const DIFFICULTY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  beginner: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
-  intermediate: { bg: 'rgba(245, 158, 11, 0.15)', text: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)' },
-  advanced: { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444', border: 'rgba(239, 68, 68, 0.3)' },
+  beginner: { bg: 'var(--app-alert-success-bg)', text: 'var(--app-accent-success)', border: 'var(--app-alert-success-border)' },
+  intermediate: { bg: 'var(--app-alert-warning-bg)', text: 'var(--app-accent-warning)', border: 'var(--app-alert-warning-border)' },
+  advanced: { bg: 'var(--app-alert-error-bg)', text: 'var(--app-accent-error)', border: 'var(--app-alert-error-border)' },
 }
 
 export default function TemplatesPage() {
@@ -98,9 +98,9 @@ export default function TemplatesPage() {
           <div
             className="mb-6 p-3 rounded-lg text-sm"
             style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              backgroundColor: 'var(--app-alert-error-bg)',
               color: 'var(--app-accent-error)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              border: '1px solid var(--app-alert-error-border)',
             }}
           >
             {error}
@@ -116,7 +116,7 @@ export default function TemplatesPage() {
             <div className="flex flex-col items-center gap-4">
               <div
                 className="w-10 h-10 border-4 rounded-full animate-spin"
-                style={{ borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }}
+                style={{ borderColor: 'var(--app-alert-info-border)', borderTopColor: 'var(--app-accent-primary)' }}
               />
               <span className="text-sm" style={{ color: 'var(--app-text-muted)' }}>Loading templates...</span>
             </div>

@@ -340,13 +340,13 @@ export default function PlatformKeysTab() {
 
       {/* Messages */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--app-accent-error)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-error-bg)', color: 'var(--app-accent-error)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
       )}
       {successMsg && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--app-accent-success)' }}>
+        <div className="mb-4 p-3 rounded-lg text-sm" style={{ backgroundColor: 'var(--app-alert-success-bg)', color: 'var(--app-accent-success)' }}>
           {successMsg}
         </div>
       )}
@@ -499,26 +499,26 @@ export default function PlatformKeysTab() {
                     <span
                       className="px-2 py-0.5 rounded text-xs font-medium"
                       style={{
-                        backgroundColor: drawerKey.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        backgroundColor: drawerKey.is_active ? 'var(--app-alert-success-bg)' : 'var(--app-alert-error-bg)',
                         color: drawerKey.is_active ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                       }}
                     >
                       {drawerKey.is_active ? 'Active' : 'Inactive'}
                     </span>
                     {drawerKey.is_default && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', color: 'var(--app-accent-indigo)' }}>
+                      <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'var(--app-alert-indigo-bg)', color: 'var(--app-accent-indigo)' }}>
                         DEFAULT
                       </span>
                     )}
                     {drawerKey.provider === 'anthropic' && drawerKey.auth_type === 'oauth_token' && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: 'var(--app-accent-warning)' }}>
+                      <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'var(--app-alert-warning-bg)', color: 'var(--app-accent-warning)' }}>
                         OAuth
                       </span>
                     )}
                     {validatingId === drawerKey.id && (
                       <span
                         className="px-2 py-0.5 rounded text-xs font-medium inline-flex items-center gap-1.5"
-                        style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--app-accent-primary)' }}
+                        style={{ backgroundColor: 'var(--app-alert-info-bg)', color: 'var(--app-accent-primary)' }}
                       >
                         <span className="inline-block w-3 h-3 rounded-full animate-spin" style={{ borderWidth: '1.5px', borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }} />
                         Testing...
@@ -528,7 +528,7 @@ export default function PlatformKeysTab() {
                       <span
                         className="px-2 py-0.5 rounded text-xs font-medium"
                         style={{
-                          backgroundColor: validationResults[drawerKey.id].valid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          backgroundColor: validationResults[drawerKey.id].valid ? 'var(--app-alert-success-bg)' : 'var(--app-alert-error-bg)',
                           color: validationResults[drawerKey.id].valid ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                         }}
                       >
@@ -546,11 +546,9 @@ export default function PlatformKeysTab() {
                   {!drawerEditing && (
                     <button
                       onClick={startDrawerEditing}
-                      className="p-1.5 rounded-md transition-colors"
+                      className="p-1.5 rounded-md transition-colors hover-text-primary"
                       style={{ color: 'var(--app-text-muted)' }}
                       title="Edit key"
-                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                     >
                       <Pencil size={14} />
                     </button>
@@ -678,10 +676,8 @@ export default function PlatformKeysTab() {
                 <button
                   onClick={() => handleValidate(drawerKey.id)}
                   disabled={validatingId === drawerKey.id}
-                  className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50"
+                  className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50 hover-bg-tertiary"
                   style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-text-secondary)', borderBottom: '1px solid var(--app-border-default)' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                 >
                   {validatingId === drawerKey.id ? (
                     <span className="w-4 h-4 rounded-full animate-spin flex-shrink-0" style={{ borderWidth: '2px', borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }} />
@@ -694,10 +690,8 @@ export default function PlatformKeysTab() {
                   <button
                     onClick={() => handleSetDefault(drawerKey.id)}
                     disabled={actionLoadingId === drawerKey.id}
-                    className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50"
+                    className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50 hover-bg-tertiary"
                     style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-accent-indigo)', borderBottom: '1px solid var(--app-border-default)' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                   >
                     <Star className="w-4 h-4 flex-shrink-0" />
                     Set Default
@@ -706,10 +700,8 @@ export default function PlatformKeysTab() {
                 <button
                   onClick={() => handleDelete(drawerKey.id)}
                   disabled={actionLoadingId === drawerKey.id}
-                  className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50"
+                  className="w-full text-left px-4 py-3 text-sm flex items-center gap-3 transition-colors disabled:opacity-50 hover-bg-tertiary"
                   style={{ backgroundColor: 'var(--app-bg-card)', color: 'var(--app-accent-error)' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card)'}
                 >
                   <Trash2 className="w-4 h-4 flex-shrink-0" />
                   Delete Key
@@ -754,7 +746,7 @@ export default function PlatformKeysTab() {
                               {providerDisplayName(provider)}
                             </span>
                             {providerKeys.some(k => k.is_default) && (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', color: 'var(--app-accent-indigo)' }}>
+                              <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: 'var(--app-alert-indigo-bg)', color: 'var(--app-accent-indigo)' }}>
                                 Default Provider
                               </span>
                             )}
@@ -808,11 +800,9 @@ export default function PlatformKeysTab() {
                       return (
                       <tr
                         key={key.id}
-                        className="cursor-pointer transition-colors"
+                        className="cursor-pointer transition-colors hover-bg-card-hover"
                         style={{ borderBottom: '1px solid var(--app-border-default)' }}
                         onClick={() => openDrawer(key)}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-card-hover)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         {/* Name + Badges (indented under provider) */}
                         <td className="pl-8 pr-4 py-3">
@@ -821,19 +811,19 @@ export default function PlatformKeysTab() {
                               {key.label}
                             </span>
                             {key.is_default && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', color: 'var(--app-accent-indigo)' }}>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'var(--app-alert-indigo-bg)', color: 'var(--app-accent-indigo)' }}>
                                 DEFAULT
                               </span>
                             )}
                             {key.provider === 'anthropic' && key.auth_type === 'oauth_token' && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', color: 'var(--app-accent-warning)' }}>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'var(--app-alert-warning-bg)', color: 'var(--app-accent-warning)' }}>
                                 OAuth
                               </span>
                             )}
                             {validatingId === key.id && (
                               <span
                                 className="px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1"
-                                style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--app-accent-primary)' }}
+                                style={{ backgroundColor: 'var(--app-alert-info-bg)', color: 'var(--app-accent-primary)' }}
                               >
                                 <span className="inline-block w-2.5 h-2.5 rounded-full animate-spin" style={{ borderWidth: '1.5px', borderColor: 'rgba(59, 130, 246, 0.3)', borderTopColor: 'var(--app-accent-primary)' }} />
                                 Testing...
@@ -843,7 +833,7 @@ export default function PlatformKeysTab() {
                               <span
                                 className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                                 style={{
-                                  backgroundColor: validationResults[key.id].valid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                  backgroundColor: validationResults[key.id].valid ? 'var(--app-alert-success-bg)' : 'var(--app-alert-error-bg)',
                                   color: validationResults[key.id].valid ? 'var(--app-accent-success)' : 'var(--app-accent-error)',
                                 }}
                               >
@@ -916,10 +906,8 @@ export default function PlatformKeysTab() {
                                 <button
                                   onClick={() => { setOpenMenuId(null); handleValidate(key.id) }}
                                   disabled={validatingId === key.id}
-                                  className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left disabled:opacity-50"
+                                  className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left disabled:opacity-50 hover-bg-tertiary"
                                   style={{ color: 'var(--app-text-secondary)' }}
-                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                 >
                                   <FlaskConical className="w-4 h-4" />
                                   {validatingId === key.id ? 'Testing...' : 'Test Key'}
@@ -930,10 +918,8 @@ export default function PlatformKeysTab() {
                                   <button
                                     onClick={() => { setOpenMenuId(null); handleSetDefault(key.id) }}
                                     disabled={actionLoadingId === key.id}
-                                    className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left disabled:opacity-50"
+                                    className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left disabled:opacity-50 hover-bg-tertiary"
                                     style={{ color: 'var(--app-accent-indigo)' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--app-bg-tertiary)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                   >
                                     <Star className="w-4 h-4" />
                                     Set Default
@@ -947,10 +933,8 @@ export default function PlatformKeysTab() {
                                 <button
                                   onClick={() => { setOpenMenuId(null); handleDelete(key.id) }}
                                   disabled={actionLoadingId === key.id}
-                                  className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left disabled:opacity-50"
+                                  className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left disabled:opacity-50 hover-bg-error"
                                   style={{ color: 'var(--app-accent-error)' }}
-                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                   Delete
