@@ -1052,6 +1052,15 @@ export const admin = {
     delete: async (id: string): Promise<void> => {
       await api.delete(`/admin/templates/${id}`)
     },
+
+    getNotebook: async (id: string): Promise<{ cells: Array<{ cell_type: string; source: string; metadata?: Record<string, unknown>; outputs?: Record<string, unknown>[]; execution_count?: number | null }> }> => {
+      const { data } = await api.get(`/admin/templates/${id}/notebook`)
+      return data
+    },
+
+    updateNotebook: async (id: string, cells: Array<{ cell_type: string; source: string; metadata?: Record<string, unknown>; outputs?: Record<string, unknown>[]; execution_count?: number | null }>): Promise<void> => {
+      await api.put(`/admin/templates/${id}/notebook`, { cells })
+    },
   },
 
   platformKeys: {

@@ -17,6 +17,7 @@ from .schemas import (
     TemplateForkRequest,
     TemplateForkResponse,
     TemplateFromProjectRequest,
+    TemplateNotebookUpdate,
 )
 
 router = APIRouter(tags=["Templates"])
@@ -153,6 +154,53 @@ async def update_template(
 
     await db.commit()
     return template
+
+
+@router.get("/admin/templates/{template_id}/notebook")
+async def get_template_notebook(
+    template_id: str,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: get template notebook content (cells)."""
+    service = TemplateService(db)
+    notebook = await service.get_notebook_content(template_id)
+    if notebook is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template or notebook not found",
+        )
+    return notebook
+
+
+@router.put("/admin/templates/{template_id}/notebook")
+async def update_template_notebook(
+    template_id: str,
+    request: TemplateNotebookUpdate,
+    current_user: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: update template notebook content (cells)."""
+    service = TemplateService(db)
+    notebook_data = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            }
+        },
+        "cells": [cell.model_dump() for cell in request.cells],
+    }
+    success = await service.update_notebook_content(template_id, notebook_data)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found",
+        )
+    return {"success": True, "message": "Notebook content updated"}
 
 
 @router.delete("/admin/templates/{template_id}")

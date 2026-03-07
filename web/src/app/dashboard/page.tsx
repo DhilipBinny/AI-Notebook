@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { auth, projects, playgrounds, notebooks, workspaces } from '@/lib/api'
+import { auth, projects, playgrounds, notebooks, workspaces, templates } from '@/lib/api'
 import { getRelativeTime, sortByDateDesc } from '@/lib/dateUtils'
 import { useAuthStore, useProjectsStore } from '@/lib/store'
 import AppHeader from '@/components/AppHeader'
-import type { Project, Workspace } from '@/types'
+import type { Project, Workspace, NotebookTemplate } from '@/types'
 import {
   Plus,
   Upload,
@@ -26,6 +26,8 @@ import {
   CloudUpload,
   FileText,
   Terminal,
+  LayoutTemplate,
+  ArrowLeft,
 } from 'lucide-react'
 
 
@@ -66,6 +68,12 @@ export default function DashboardPage() {
   const [deleting, setDeleting] = useState(false)
   const [downloadingProject, setDownloadingProject] = useState<string | null>(null)
   const [playgroundLoadingOverlay, setPlaygroundLoadingOverlay] = useState(false)
+
+  // Template state
+  const [templateList, setTemplateList] = useState<NotebookTemplate[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<NotebookTemplate | null>(null)
+  const [newProjectStep, setNewProjectStep] = useState<'template' | 'details'>('template')
 
   // Workspace state
   const [workspaceList, setWorkspaceList] = useState<Workspace[]>([])
@@ -314,21 +322,64 @@ export default function DashboardPage() {
     }
   }
 
+  const openNewProjectModal = async () => {
+    setShowNewProject(true)
+    setNewProjectStep('template')
+    setSelectedTemplate(null)
+    setNewProjectName('')
+    setNewProjectDesc('')
+    setCreateError(null)
+    if (templateList.length === 0) {
+      setLoadingTemplates(true)
+      try {
+        const list = await templates.list()
+        setTemplateList(list)
+      } catch {
+        // Templates are optional, proceed without them
+      } finally {
+        setLoadingTemplates(false)
+      }
+    }
+  }
+
+  const handleSelectTemplate = (tmpl: NotebookTemplate | null) => {
+    setSelectedTemplate(tmpl)
+    setNewProjectName(tmpl ? tmpl.name : '')
+    setNewProjectDesc(tmpl?.description || '')
+    setNewProjectStep('details')
+  }
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newProjectName.trim()) return
     setCreating(true)
     setCreateError(null)
     try {
-      const project = await projects.create({
-        name: newProjectName.trim(),
-        description: newProjectDesc.trim() || undefined,
-        workspace_id: selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' ? selectedWorkspaceId : undefined,
-      })
-      addProject(project)
+      let projectId: string
+
+      if (selectedTemplate) {
+        // Fork from template
+        const result = await templates.fork(selectedTemplate.id, newProjectName.trim())
+        projectId = result.project_id
+        // Fetch the full project to add to store
+        const { projects: allProjects } = await projects.list()
+        const newProject = allProjects.find((p: Project) => p.id === projectId)
+        if (newProject) addProject(newProject)
+      } else {
+        // Blank notebook
+        const project = await projects.create({
+          name: newProjectName.trim(),
+          description: newProjectDesc.trim() || undefined,
+          workspace_id: selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' ? selectedWorkspaceId : undefined,
+        })
+        addProject(project)
+        projectId = project.id
+      }
+
       setShowNewProject(false)
       setNewProjectName('')
       setNewProjectDesc('')
+      setSelectedTemplate(null)
 
       // Refresh workspace counts
       const { workspaces: updatedWorkspaces } = await workspaces.list()
@@ -336,13 +387,13 @@ export default function DashboardPage() {
 
       setPlaygroundStatuses(prev => ({
         ...prev,
-        [project.id]: { status: 'starting', loading: true }
+        [projectId]: { status: 'starting', loading: true }
       }))
       try {
-        const { playground: pg } = await playgrounds.start(project.id)
+        const { playground: pg } = await playgrounds.start(projectId)
         setPlaygroundStatuses(prev => ({
           ...prev,
-          [project.id]: {
+          [projectId]: {
             status: pg.status,
             loading: false,
             memory_limit_mb: pg.memory_limit_mb,
@@ -352,12 +403,11 @@ export default function DashboardPage() {
       } catch {
         setPlaygroundStatuses(prev => ({
           ...prev,
-          [project.id]: { status: 'stopped', loading: false }
+          [projectId]: { status: 'stopped', loading: false }
         }))
       }
     } catch (err: unknown) {
       console.error('Failed to create project:', err)
-      // Extract error message from API response
       const axiosError = err as { response?: { data?: { detail?: string } } }
       const errorMessage = axiosError.response?.data?.detail || 'Failed to create project'
       setCreateError(errorMessage)
@@ -740,7 +790,7 @@ export default function DashboardPage() {
           <div className="p-4">
             {/* New Notebook Button */}
             <button
-              onClick={() => setShowNewProject(true)}
+              onClick={() => openNewProjectModal()}
               className="w-full px-4 py-2.5 text-white rounded-lg font-medium text-sm shadow-lg transition-all duration-300 flex items-center justify-center gap-2 hover:opacity-90 mb-4"
               style={{
                 background: 'var(--app-gradient-primary)',
@@ -865,7 +915,7 @@ export default function DashboardPage() {
                 <h4 className="text-base font-medium mb-2" style={{ color: 'var(--app-text-primary)' }}>No notebooks here</h4>
                 <p className="mb-4 text-xs" style={{ color: 'var(--app-text-muted)' }}>Create a notebook in this workspace</p>
                 <button
-                  onClick={() => setShowNewProject(true)}
+                  onClick={() => openNewProjectModal()}
                   className="px-5 py-2.5 text-white rounded-xl font-medium text-sm shadow-lg"
                   style={{
                     background: 'var(--app-gradient-primary)',
@@ -1181,73 +1231,174 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowNewProject(false)} />
           <div
-            className="relative w-full max-w-md rounded-2xl shadow-2xl p-6"
+            className="relative w-full rounded-2xl shadow-2xl p-6"
             style={{
               backgroundColor: 'var(--app-bg-secondary)',
-              border: '1px solid var(--app-border-default)'
+              border: '1px solid var(--app-border-default)',
+              maxWidth: newProjectStep === 'template' ? '640px' : '480px',
             }}
           >
-            <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>New Notebook</h3>
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl focus:outline-none"
-                  style={{
-                    backgroundColor: 'var(--app-bg-input)',
-                    border: '1px solid var(--app-border-default)',
-                    color: 'var(--app-text-primary)'
-                  }}
-                  placeholder="My Notebook"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Description (optional)</label>
-                <textarea
-                  value={newProjectDesc}
-                  onChange={(e) => setNewProjectDesc(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl focus:outline-none resize-none"
-                  style={{
-                    backgroundColor: 'var(--app-bg-input)',
-                    border: '1px solid var(--app-border-default)',
-                    color: 'var(--app-text-primary)'
-                  }}
-                  placeholder="What's this notebook about?"
-                  rows={2}
-                />
-              </div>
-              {selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' && (
-                <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
-                  Will be created in: <span style={{ color: 'var(--app-text-primary)' }}>{getSelectedWorkspaceName()}</span>
-                </p>
-              )}
-              {createError && (
-                <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                  <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{createError}</p>
+            {newProjectStep === 'template' ? (
+              <>
+                <h3 className="text-base font-bold mb-4" style={{ color: 'var(--app-text-primary)' }}>New Notebook</h3>
+                <p className="text-sm mb-4" style={{ color: 'var(--app-text-muted)' }}>Choose a template or start from scratch</p>
+
+                {loadingTemplates ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--app-accent-primary)', borderTopColor: 'transparent' }} />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-1">
+                    {/* Blank notebook option */}
+                    <button
+                      onClick={() => handleSelectTemplate(null)}
+                      className="text-left p-4 rounded-xl transition-all hover:scale-[1.02]"
+                      style={{
+                        backgroundColor: 'var(--app-bg-card)',
+                        border: '2px solid var(--app-border-default)',
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <Plus size={18} style={{ color: 'var(--app-accent-primary)' }} />
+                        <span className="text-sm font-semibold" style={{ color: 'var(--app-text-primary)' }}>Blank Notebook</span>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
+                        Start with an empty notebook
+                      </p>
+                    </button>
+
+                    {/* Template cards */}
+                    {templateList
+                      .filter(t => t.name !== 'Blank Notebook')
+                      .map(tmpl => (
+                      <button
+                        key={tmpl.id}
+                        onClick={() => handleSelectTemplate(tmpl)}
+                        className="text-left p-4 rounded-xl transition-all hover:scale-[1.02]"
+                        style={{
+                          backgroundColor: 'var(--app-bg-card)',
+                          border: '2px solid var(--app-border-default)',
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <LayoutTemplate size={18} style={{ color: 'var(--app-accent-primary)' }} />
+                          <span className="text-sm font-semibold truncate" style={{ color: 'var(--app-text-primary)' }}>{tmpl.name}</span>
+                        </div>
+                        <p className="text-xs leading-relaxed line-clamp-2 mb-2" style={{ color: 'var(--app-text-muted)' }}>
+                          {tmpl.description}
+                        </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{
+                            backgroundColor: tmpl.difficulty_level === 'beginner' ? 'rgba(16, 185, 129, 0.15)' :
+                              tmpl.difficulty_level === 'intermediate' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                            color: tmpl.difficulty_level === 'beginner' ? 'var(--app-accent-success)' :
+                              tmpl.difficulty_level === 'intermediate' ? 'var(--app-accent-warning)' : 'var(--app-accent-error)',
+                          }}>
+                            {tmpl.difficulty_level}
+                          </span>
+                          {tmpl.estimated_minutes && (
+                            <span className="text-[10px]" style={{ color: 'var(--app-text-muted)' }}>
+                              ~{tmpl.estimated_minutes} min
+                            </span>
+                          )}
+                          {tmpl.category && (
+                            <span className="text-[10px]" style={{ color: 'var(--app-text-muted)' }}>
+                              {tmpl.category}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowNewProject(false)}
+                    className="px-4 py-2 rounded-xl text-sm"
+                    style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}
+                  >Cancel</button>
                 </div>
-              )}
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => { setShowNewProject(false); setCreateError(null) }}
-                  className="flex-1 px-4 py-2.5 rounded-xl"
-                  style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}
-                >Cancel</button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="flex-1 px-4 py-2.5 rounded-xl text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{ background: 'var(--app-gradient-primary)' }}
-                >
-                  {creating && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-                  Create
-                </button>
-              </div>
-            </form>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setNewProjectStep('template')}
+                    className="p-1 rounded-lg transition-colors hover:opacity-80"
+                    style={{ color: 'var(--app-text-muted)' }}
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                  <h3 className="text-base font-bold" style={{ color: 'var(--app-text-primary)' }}>
+                    {selectedTemplate ? `Create from: ${selectedTemplate.name}` : 'New Blank Notebook'}
+                  </h3>
+                </div>
+                <form onSubmit={handleCreateProject} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Name</label>
+                    <input
+                      type="text"
+                      value={newProjectName}
+                      onChange={(e) => setNewProjectName(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl focus:outline-none"
+                      style={{
+                        backgroundColor: 'var(--app-bg-input)',
+                        border: '1px solid var(--app-border-default)',
+                        color: 'var(--app-text-primary)'
+                      }}
+                      placeholder="My Notebook"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--app-text-secondary)' }}>Description (optional)</label>
+                    <textarea
+                      value={newProjectDesc}
+                      onChange={(e) => setNewProjectDesc(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl focus:outline-none resize-none"
+                      style={{
+                        backgroundColor: 'var(--app-bg-input)',
+                        border: '1px solid var(--app-border-default)',
+                        color: 'var(--app-text-primary)'
+                      }}
+                      placeholder="What's this notebook about?"
+                      rows={2}
+                    />
+                  </div>
+                  {selectedWorkspaceId && selectedWorkspaceId !== 'uncategorized' && (
+                    <p className="text-sm" style={{ color: 'var(--app-text-muted)' }}>
+                      Will be created in: <span style={{ color: 'var(--app-text-primary)' }}>{getSelectedWorkspaceName()}</span>
+                    </p>
+                  )}
+                  {createError && (
+                    <div className="p-3 rounded-xl" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                      <p className="text-sm" style={{ color: 'var(--app-accent-error)' }}>{createError}</p>
+                    </div>
+                  )}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setShowNewProject(false); setCreateError(null) }}
+                      className="flex-1 px-4 py-2.5 rounded-xl"
+                      style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}
+                    >Cancel</button>
+                    <button
+                      type="submit"
+                      disabled={creating}
+                      className="flex-1 px-4 py-2.5 rounded-xl text-white font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                      style={{ background: 'var(--app-gradient-primary)' }}
+                    >
+                      {creating && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                      Create
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}

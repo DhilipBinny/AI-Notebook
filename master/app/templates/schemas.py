@@ -72,3 +72,17 @@ class TemplateFromProjectRequest(BaseModel):
     estimated_minutes: Optional[int] = None
     tags: Optional[List[str]] = None
     is_public: bool = False
+
+
+class TemplateNotebookCell(BaseModel):
+    """A single notebook cell."""
+    cell_type: str = Field(..., pattern=r"^(code|markdown)$")
+    source: str
+    metadata: Optional[dict] = None
+    outputs: Optional[List[dict]] = None
+    execution_count: Optional[int] = None
+
+
+class TemplateNotebookUpdate(BaseModel):
+    """Update notebook content for a template."""
+    cells: List[TemplateNotebookCell]

@@ -206,6 +206,23 @@ class TemplateService:
             "project_name": project.name,
         }
 
+    async def get_notebook_content(self, template_id: str) -> Optional[dict]:
+        """Load notebook data from the template's S3 path."""
+        template = await self.get_by_id(template_id)
+        if not template:
+            return None
+        return await self._load_template_notebook(template_id)
+
+    async def update_notebook_content(
+        self, template_id: str, notebook_data: dict
+    ) -> bool:
+        """Update notebook content for a template."""
+        template = await self.get_by_id(template_id)
+        if not template:
+            return False
+        await self._save_template_notebook(template_id, notebook_data)
+        return True
+
     async def _save_template_notebook(
         self, template_id: str, notebook_data: dict
     ) -> None:

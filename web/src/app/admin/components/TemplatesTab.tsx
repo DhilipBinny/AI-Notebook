@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { admin, templates } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, FileCode, Plus, X, ChevronUp, ChevronDown, GripVertical } from 'lucide-react'
 import type { NotebookTemplate } from '@/types'
 
 const DIFFICULTY_OPTIONS = ['beginner', 'intermediate', 'advanced'] as const
@@ -58,6 +58,19 @@ export default function TemplatesTab() {
   // Delete state
   const [deleteConfirm, setDeleteConfirm] = useState<NotebookTemplate | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Notebook content editor state
+  interface NotebookCell {
+    cell_type: 'code' | 'markdown'
+    source: string
+    metadata?: Record<string, unknown>
+    outputs?: Record<string, unknown>[]
+    execution_count?: number | null
+  }
+  const [contentTemplate, setContentTemplate] = useState<NotebookTemplate | null>(null)
+  const [cells, setCells] = useState<NotebookCell[]>([])
+  const [loadingContent, setLoadingContent] = useState(false)
+  const [savingContent, setSavingContent] = useState(false)
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -194,6 +207,92 @@ export default function TemplatesTab() {
     } finally {
       setDeleting(false)
     }
+  }
+
+  const handleEditContent = async (template: NotebookTemplate) => {
+    setContentTemplate(template)
+    setLoadingContent(true)
+    setError('')
+    try {
+      const notebook = await admin.templates.getNotebook(template.id)
+      setCells(
+        (notebook.cells || []).map((c) => ({
+          cell_type: (c.cell_type === 'markdown' ? 'markdown' : 'code') as 'code' | 'markdown',
+          source: c.source || '',
+          metadata: c.metadata || {},
+          outputs: c.outputs || [],
+          execution_count: c.execution_count ?? null,
+        }))
+      )
+    } catch {
+      setError('Failed to load notebook content')
+      setContentTemplate(null)
+    } finally {
+      setLoadingContent(false)
+    }
+  }
+
+  const handleSaveContent = async () => {
+    if (!contentTemplate) return
+    setSavingContent(true)
+    setError('')
+    try {
+      await admin.templates.updateNotebook(
+        contentTemplate.id,
+        cells.map((c) => ({
+          cell_type: c.cell_type,
+          source: c.source,
+          metadata: c.metadata || {},
+          outputs: c.cell_type === 'code' ? (c.outputs || []) : undefined,
+          execution_count: c.cell_type === 'code' ? (c.execution_count ?? null) : undefined,
+        }))
+      )
+      showSuccess('Notebook content saved')
+      setContentTemplate(null)
+      setCells([])
+    } catch {
+      setError('Failed to save notebook content')
+    } finally {
+      setSavingContent(false)
+    }
+  }
+
+  const addCell = (index: number, type: 'code' | 'markdown') => {
+    const newCell: NotebookCell = {
+      cell_type: type,
+      source: '',
+      metadata: {},
+      outputs: type === 'code' ? [] : undefined,
+      execution_count: null,
+    }
+    const updated = [...cells]
+    updated.splice(index + 1, 0, newCell)
+    setCells(updated)
+  }
+
+  const removeCell = (index: number) => {
+    if (cells.length <= 1) return
+    setCells(cells.filter((_, i) => i !== index))
+  }
+
+  const updateCellSource = (index: number, source: string) => {
+    const updated = [...cells]
+    updated[index] = { ...updated[index], source }
+    setCells(updated)
+  }
+
+  const updateCellType = (index: number, cell_type: 'code' | 'markdown') => {
+    const updated = [...cells]
+    updated[index] = { ...updated[index], cell_type, outputs: cell_type === 'code' ? [] : undefined }
+    setCells(updated)
+  }
+
+  const moveCell = (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1
+    if (newIndex < 0 || newIndex >= cells.length) return
+    const updated = [...cells]
+    ;[updated[index], updated[newIndex]] = [updated[newIndex], updated[index]]
+    setCells(updated)
   }
 
   // Reusable form fields renderer
@@ -495,6 +594,145 @@ export default function TemplatesTab() {
         </div>
       )}
 
+      {/* Notebook Content Editor Modal */}
+      {contentTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !savingContent && setContentTemplate(null)} />
+          <div
+            className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col"
+            style={{ backgroundColor: 'var(--app-bg-secondary)', border: '1px solid var(--app-border-default)' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--app-border-default)' }}>
+              <div>
+                <h3 className="text-base font-bold" style={{ color: 'var(--app-text-primary)' }}>
+                  Edit Notebook Content
+                </h3>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--app-text-muted)' }}>{contentTemplate.name}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => addCell(cells.length - 1, 'code')}
+                  className="px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5"
+                  style={{ backgroundColor: 'var(--app-bg-tertiary)', color: 'var(--app-text-secondary)', border: '1px solid var(--app-border-default)' }}
+                >
+                  <Plus size={12} /> Code
+                </button>
+                <button
+                  onClick={() => addCell(cells.length - 1, 'markdown')}
+                  className="px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5"
+                  style={{ backgroundColor: 'var(--app-bg-tertiary)', color: 'var(--app-text-secondary)', border: '1px solid var(--app-border-default)' }}
+                >
+                  <Plus size={12} /> Markdown
+                </button>
+              </div>
+            </div>
+
+            {/* Cells */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              {loadingContent ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--app-accent-primary)', borderTopColor: 'transparent' }} />
+                </div>
+              ) : cells.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-sm mb-3" style={{ color: 'var(--app-text-muted)' }}>No cells yet</p>
+                  <div className="flex gap-2 justify-center">
+                    <button onClick={() => addCell(-1, 'code')} className="px-3 py-1.5 rounded-lg text-xs" style={{ background: 'var(--app-gradient-primary)', color: 'white' }}>
+                      Add Code Cell
+                    </button>
+                    <button onClick={() => addCell(-1, 'markdown')} className="px-3 py-1.5 rounded-lg text-xs" style={{ backgroundColor: 'var(--app-bg-tertiary)', color: 'var(--app-text-secondary)', border: '1px solid var(--app-border-default)' }}>
+                      Add Markdown Cell
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                cells.map((cell, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-xl overflow-hidden"
+                    style={{ border: '1px solid var(--app-border-default)', backgroundColor: 'var(--app-bg-card)' }}
+                  >
+                    {/* Cell toolbar */}
+                    <div className="flex items-center justify-between px-3 py-1.5" style={{ backgroundColor: 'var(--app-bg-tertiary)', borderBottom: '1px solid var(--app-border-default)' }}>
+                      <div className="flex items-center gap-2">
+                        <GripVertical size={12} style={{ color: 'var(--app-text-muted)' }} />
+                        <select
+                          value={cell.cell_type}
+                          onChange={(e) => updateCellType(idx, e.target.value as 'code' | 'markdown')}
+                          className="text-xs px-2 py-0.5 rounded cursor-pointer focus:outline-none"
+                          style={{ backgroundColor: 'var(--app-bg-input)', color: 'var(--app-text-secondary)', border: '1px solid var(--app-border-default)' }}
+                        >
+                          <option value="code">Code</option>
+                          <option value="markdown">Markdown</option>
+                        </select>
+                        <span className="text-[10px]" style={{ color: 'var(--app-text-muted)' }}>
+                          Cell {idx + 1} of {cells.length}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => moveCell(idx, 'up')} disabled={idx === 0} className="p-1 rounded disabled:opacity-30" style={{ color: 'var(--app-text-muted)' }} title="Move up">
+                          <ChevronUp size={14} />
+                        </button>
+                        <button onClick={() => moveCell(idx, 'down')} disabled={idx === cells.length - 1} className="p-1 rounded disabled:opacity-30" style={{ color: 'var(--app-text-muted)' }} title="Move down">
+                          <ChevronDown size={14} />
+                        </button>
+                        <button onClick={() => addCell(idx, cell.cell_type)} className="p-1 rounded" style={{ color: 'var(--app-text-muted)' }} title="Add cell below">
+                          <Plus size={14} />
+                        </button>
+                        <button onClick={() => removeCell(idx)} disabled={cells.length <= 1} className="p-1 rounded disabled:opacity-30" style={{ color: 'var(--app-text-muted)' }} title="Delete cell">
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Cell content */}
+                    <textarea
+                      value={cell.source}
+                      onChange={(e) => updateCellSource(idx, e.target.value)}
+                      className="w-full px-4 py-3 text-sm focus:outline-none resize-y font-mono"
+                      style={{
+                        backgroundColor: 'var(--app-bg-card)',
+                        color: 'var(--app-text-primary)',
+                        minHeight: '80px',
+                        fontFamily: cell.cell_type === 'code' ? 'monospace' : 'inherit',
+                      }}
+                      placeholder={cell.cell_type === 'code' ? '# Write Python code here...' : '# Write Markdown here...'}
+                      rows={Math.max(3, cell.source.split('\n').length)}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between p-5 border-t" style={{ borderColor: 'var(--app-border-default)' }}>
+              <p className="text-xs" style={{ color: 'var(--app-text-muted)' }}>
+                {cells.length} cell{cells.length !== 1 ? 's' : ''}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setContentTemplate(null); setCells([]) }}
+                  disabled={savingContent}
+                  className="px-4 py-2 rounded-xl text-sm"
+                  style={{ border: '1px solid var(--app-border-default)', color: 'var(--app-text-secondary)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveContent}
+                  disabled={savingContent}
+                  className="px-4 py-2 rounded-xl text-sm text-white font-medium disabled:opacity-50 flex items-center gap-2"
+                  style={{ background: 'var(--app-gradient-primary)' }}
+                >
+                  {savingContent && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  Save Content
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Templates Table */}
       <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--app-bg-card)', border: '1px solid var(--app-border-default)' }}>
         {isLoading ? (
@@ -587,10 +825,20 @@ export default function TemplatesTab() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex gap-2 justify-end">
                         <button
+                          onClick={() => handleEditContent(template)}
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ color: 'var(--app-text-muted)' }}
+                          title="Edit notebook content"
+                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-accent-primary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
+                        >
+                          <FileCode size={14} />
+                        </button>
+                        <button
                           onClick={() => handleEditClick(template)}
                           className="p-1.5 rounded-md transition-colors"
                           style={{ color: 'var(--app-text-muted)' }}
-                          title="Edit template"
+                          title="Edit metadata"
                           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--app-text-primary)')}
                           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--app-text-muted)')}
                         >
