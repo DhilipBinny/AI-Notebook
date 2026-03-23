@@ -547,71 +547,6 @@ class GeminiClient(BaseLLMClient):
             log(f"Gemini simple_completion error: {e}")
             raise
 
-    def ai_cell_simple(
-        self,
-        notebook_context: str,
-        user_prompt: str,
-        images: Optional[List[ImageData]] = None
-    ) -> str:
-        """
-        AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells. Supports image inputs.
-
-        Args:
-            notebook_context: Formatted notebook context (Gemini handles caching automatically)
-            user_prompt: User's question/prompt
-            images: Optional list of images to analyze
-
-        Returns:
-            The response text from the LLM (may include web search results)
-        """
-        try:
-            log("🤖 Gemini AI Cell completion starting...")
-            log(f"   Context: {len(notebook_context)} chars")
-            log(f"   User prompt: {len(user_prompt)} chars")
-            if images:
-                log(f"📷 Including {len(images)} image(s)")
-
-            # Combine context and user prompt
-            full_prompt = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
-
-            # Check if web search might help (only for text, not image analysis)
-            # Pass full_prompt for search query, user_prompt for keyword detection
-            search_context = ""
-            if not images and self._needs_web_search(user_prompt):
-                search_context = self._gemini_do_google_search(user_prompt)
-
-            # Build the final prompt with search context if available
-            if search_context:
-                enhanced_prompt = f"{search_context}\n\n{full_prompt}"
-                log("🤖 AI Cell: Using web search context")
-            else:
-                enhanced_prompt = full_prompt
-
-            # Build content with optional images
-            content = self._build_content_with_images(enhanced_prompt, images)
-
-            # Use simple generate_content (no tools, no chat session)
-            # Gemini handles caching automatically based on content
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=content,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=4096  # Allow longer responses for AI cells
-                )
-            )
-
-            # Log cache usage
-            self._log_cache_usage(response)
-
-            result = response.text or ""
-            log(f"🤖 Gemini AI Cell response: {len(result)} chars")
-            return result
-
-        except Exception as e:
-            log(f"Gemini ai_cell_simple error: {e}")
-            raise
-
     # =========================================================================
     # SECTION 6: AI CELL - Tool Execution Framework
     # =========================================================================
@@ -641,12 +576,6 @@ class GeminiClient(BaseLLMClient):
             allowed_set = set(allowed_tools)
             return {k: v for k, v in tool_map.items() if k in allowed_set}
         return tool_map
-
-    def _get_web_search_tool(self) -> Optional[Any]:
-        """Get Gemini web search tool (Google Search) via adapter."""
-        if not self.enable_web_search:
-            return None
-        return self.adapter.get_web_search_tool()
 
     def _prepare_ai_cell_messages(
         self,

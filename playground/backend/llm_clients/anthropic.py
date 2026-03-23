@@ -58,22 +58,25 @@ class AnthropicClient(BaseLLMClient):
         super().__init__()  # Initialize base class (cancellation support)
 
         if auth_type == "oauth_token":
-            # IMPORTANT: api_key must be "" (empty string), NOT None.
-            # None causes the SDK to fall back to ANTHROPIC_API_KEY env var,
-            # which contains the OAuth token (injected by master as platform key).
-            # That sends the token as both X-Api-Key (invalid) and Authorization: Bearer,
-            # resulting in 401 "invalid x-api-key".
+            # OAuth tokens require:
+            # 1. apiKey=None (NOT empty string — empty string sends X-Api-Key: "" header)
+            # 2. Claude Code identity headers (required by Anthropic for OAuth tokens)
+            # 3. All required beta headers
             self.client = Anthropic(
-                api_key="",
+                api_key=None,
                 auth_token=api_key,
                 default_headers={
-                    "anthropic-beta": "oauth-2025-04-20",
+                    "accept": "application/json",
+                    "anthropic-dangerous-direct-browser-access": "true",
+                    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14",
                     "user-agent": "claude-cli/0.1 (external, cli)",
                     "x-app": "cli",
                 },
             )
+            self._oauth_mode = True
         else:
             self.client = Anthropic(api_key=api_key)
+            self._oauth_mode = False
         self.model_name = model_name or cfg.ANTHROPIC_MODEL
         self.enable_web_search = enable_web_search
 
@@ -101,6 +104,26 @@ class AnthropicClient(BaseLLMClient):
         self._ai_cell_tools_cache: Optional[List[Dict[str, Any]]] = None
         self._ai_cell_tool_map_cache: Optional[Dict[str, Any]] = None
 
+    def _wrap_system_for_oauth(self, system_content):
+        """
+        Wrap system prompt with Claude Code identity for OAuth tokens.
+        Anthropic requires OAuth requests to include this identity string.
+        """
+        if not self._oauth_mode:
+            return system_content
+
+        claude_code_identity = {
+            "type": "text",
+            "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+        }
+
+        if isinstance(system_content, list):
+            return [claude_code_identity] + system_content
+        elif isinstance(system_content, str) and system_content:
+            return [claude_code_identity, {"type": "text", "text": system_content}]
+        else:
+            return [claude_code_identity]
+
     def _get_tools_for_request(self, message: str, user_message: str = None) -> List[Dict[str, Any]]:
         """
         Get tools list for this request, always including web search.
@@ -127,7 +150,7 @@ class AnthropicClient(BaseLLMClient):
         return self.client.messages.create(
             model=self.model_name,
             max_tokens=4096,
-            system=self.adapter.get_system_prompt_config(self.SYSTEM_PROMPT, cache=True),
+            system=self._wrap_system_for_oauth(self.adapter.get_system_prompt_config(self.SYSTEM_PROMPT, cache=True)),
             messages=messages,
             tools=tools
         )
@@ -295,68 +318,17 @@ class AnthropicClient(BaseLLMClient):
             The response text from the LLM
         """
         try:
-            response = self.client.messages.create(
-                model=self.model_name,
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            create_params = {
+                "model": self.model_name,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if self._oauth_mode:
+                create_params["system"] = self._wrap_system_for_oauth("")
+            response = self.client.messages.create(**create_params)
             return response.content[0].text
         except Exception as e:
             log(f"Anthropic simple_completion error: {e}")
-            raise
-
-    def ai_cell_simple(
-        self,
-        notebook_context: str,
-        user_prompt: str,
-        images: Optional[List[ImageData]] = None
-    ) -> str:
-        """
-        AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells. Supports image inputs.
-        Uses prompt caching for notebook context.
-
-        Args:
-            notebook_context: Formatted notebook context (cacheable - Layer 2)
-            user_prompt: User's question/prompt (never cached - Layer 3)
-            images: Optional list of images to analyze
-
-        Returns:
-            The response text from the LLM (may include web search results)
-        """
-        try:
-            log("🤖 Anthropic AI Cell completion starting...")
-            log(f"   Context: {len(notebook_context)} chars (Layer 2 - cached)")
-            log(f"   User prompt: {len(user_prompt)} chars (Layer 3 - not cached)")
-            if images:
-                log(f"📷 Including {len(images)} image(s)")
-
-            # Always include web search — Claude decides when to use it
-            tools = []
-            if self.enable_web_search:
-                tools.append(self.adapter.get_web_search_tool(max_uses=3))
-
-            # Build content with proper caching layers (clean approach - no splitting)
-            content = self._build_cached_message_content(notebook_context, user_prompt, images)
-
-            response = self.client.messages.create(
-                model=self.model_name,
-                max_tokens=4096,
-                messages=[{"role": "user", "content": content}],
-                tools=tools if tools else None,
-            )
-
-            # Log cache usage
-            self._log_cache_usage(response)
-
-            # Use adapter to parse response
-            canonical = self.adapter.from_response(response)
-
-            log(f"🤖 Anthropic AI Cell response: {len(canonical.text)} chars")
-            return canonical.text
-
-        except Exception as e:
-            log(f"Anthropic ai_cell_simple error: {e}")
             raise
 
     # =========================================================================
@@ -389,10 +361,10 @@ class AnthropicClient(BaseLLMClient):
         return tool_map
 
     def _get_web_search_tool(self) -> Optional[Dict[str, Any]]:
-        """Get Anthropic web search tool definition via adapter."""
+        """Get Anthropic web search tool with max_uses limit."""
         if not self.enable_web_search:
             return None
-        return self.adapter.get_web_search_tool(max_uses=3)
+        return self.adapter.get_web_search_tool(max_uses=3)  # Anthropic-specific rate limit
 
     def _prepare_ai_cell_messages(
         self,
@@ -448,7 +420,7 @@ class AnthropicClient(BaseLLMClient):
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=16000,  # Need higher limit for thinking
-                system=self.adapter.get_system_prompt_config(self.AI_CELL_SYSTEM_PROMPT, cache=True),  # Layer 1: Cached AI Cell system prompt
+                system=self._wrap_system_for_oauth(self.adapter.get_system_prompt_config(self.AI_CELL_SYSTEM_PROMPT, cache=True)),
                 messages=messages,
                 tools=tools,
                 thinking={
@@ -461,7 +433,7 @@ class AnthropicClient(BaseLLMClient):
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
-                system=self.adapter.get_system_prompt_config(self.AI_CELL_SYSTEM_PROMPT, cache=True),  # Layer 1: Cached AI Cell system prompt
+                system=self._wrap_system_for_oauth(self.adapter.get_system_prompt_config(self.AI_CELL_SYSTEM_PROMPT, cache=True)),
                 messages=messages,
                 tools=tools,
             )

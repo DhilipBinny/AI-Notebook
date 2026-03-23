@@ -285,57 +285,6 @@ class OpenAIClient(BaseLLMClient):
             log(f"OpenAI simple_completion error: {e}")
             raise
 
-    def ai_cell_simple(
-        self,
-        notebook_context: str,
-        user_prompt: str,
-        images: Optional[List[ImageData]] = None
-    ) -> str:
-        """
-        AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells. Supports image inputs.
-
-        Args:
-            notebook_context: Formatted notebook context
-            user_prompt: User's question/prompt
-            images: Optional list of images to analyze
-
-        Returns:
-            The response text from the LLM
-        """
-        try:
-            log(f"🤖 {self._provider_display_name} AI Cell completion starting...")
-            log(f"   Context: {len(notebook_context)} chars")
-            log(f"   User prompt: {len(user_prompt)} chars")
-            if images:
-                log(f"📷 Including {len(images)} image(s)")
-
-            # Combine context and user prompt
-            full_prompt = f"{notebook_context}\n\n{user_prompt}" if notebook_context else user_prompt
-
-            # Build content with optional images
-            content = self._build_content_with_images(full_prompt, images)
-
-            # OpenAI doesn't have native web search, so just do completion
-            kwargs = {
-                "model": self.model_name,
-                "messages": [{"role": "user", "content": content}],
-            }
-            if self.max_tokens:
-                kwargs["max_tokens"] = self.max_tokens
-            response = self.client.chat.completions.create(**kwargs)
-
-            # Log cache usage
-            self._log_cache_usage(response)
-
-            result = response.choices[0].message.content or ""
-            log(f"🤖 {self._provider_display_name} AI Cell response: {len(result)} chars")
-            return result
-
-        except Exception as e:
-            log(f"OpenAI ai_cell_simple error: {e}")
-            raise
-
     # =========================================================================
     # SECTION 6: AI CELL - Tool Execution Framework
     # =========================================================================
@@ -364,12 +313,6 @@ class OpenAIClient(BaseLLMClient):
             allowed_set = set(allowed_tools)
             return {k: v for k, v in tool_map.items() if k in allowed_set}
         return tool_map
-
-    def _get_web_search_tool(self) -> Optional[Dict[str, Any]]:
-        """Get OpenAI web search tool (Bing Search Preview) via adapter."""
-        if not self.enable_web_search:
-            return None
-        return self.adapter.get_web_search_tool()
 
     def _prepare_ai_cell_messages(
         self,

@@ -15,6 +15,7 @@ from typing import List, Dict, Any, Optional, Union, Callable
 from dataclasses import dataclass, field
 import base64
 import json
+from collections import defaultdict
 from pathlib import Path
 
 from backend.utils.util_func import log
@@ -34,6 +35,11 @@ ImageData = Dict[str, str]
 # =============================================================================
 # Import from config (supports environment variable override)
 from backend.config import MAX_TOOL_ITERATIONS
+
+# Tool loop safety guards
+MAX_TOOL_RESULT_CHARS = 10_000       # Max chars per individual tool result
+MAX_TOTAL_TOOL_RESULTS = 30_000      # Max cumulative tool output per round
+TOOL_LOOP_THRESHOLD = 3              # Skip if same tool+args called this many times
 
 
 # =============================================================================
@@ -440,27 +446,6 @@ class BaseLLMClient(ABC):
         """
         pass
 
-    @abstractmethod
-    def ai_cell_simple(
-        self,
-        notebook_context: str,
-        user_prompt: str,
-        images: Optional[List[ImageData]] = None
-    ) -> str:
-        """
-        AI Cell completion - with web search but no notebook tools.
-        Used for inline Q&A in AI cells.
-
-        Args:
-            notebook_context: Formatted notebook context (cacheable - Layer 2)
-            user_prompt: User's question/prompt (never cached - Layer 3)
-            images: Optional list of images to include in the prompt.
-
-        Returns:
-            The response text from the LLM (may include web search results)
-        """
-        pass
-
     # =========================================================================
     # Abstract methods for unified tool execution (providers implement these)
     # =========================================================================
@@ -550,18 +535,25 @@ class BaseLLMClient(ABC):
 
     def _get_web_search_tool(self) -> Optional[Any]:
         """
-        Get web search tool in provider-specific format.
-        Override in subclasses to provide web search capability.
+        Get web search tool in provider-specific format via adapter.
+
+        Default implementation delegates to self.adapter.get_web_search_tool().
+        Override in subclasses only if special args are needed.
 
         Returns:
-            Web search tool definition, or None if not supported
+            Web search tool definition, or None if not enabled/supported
         """
+        if not getattr(self, 'enable_web_search', False):
+            return None
+        if hasattr(self, 'adapter') and hasattr(self.adapter, 'get_web_search_tool'):
+            return self.adapter.get_web_search_tool()
         return None
 
     # =========================================================================
     # Abstract method for Chat Panel API calls
     # =========================================================================
 
+    @abstractmethod
     def _call_chat_api(self, messages: Any, tools: Any) -> Any:
         """
         Make a Chat Panel API call to the LLM provider.
@@ -576,7 +568,7 @@ class BaseLLMClient(ABC):
         Returns:
             Raw API response object
         """
-        raise NotImplementedError("Subclasses must implement _call_chat_api")
+        pass
 
     def _log_cache_usage(self, response: Any) -> None:
         """
@@ -655,6 +647,9 @@ class BaseLLMClient(ABC):
         # Accumulate usage across iterations
         total_usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
 
+        # Tool loop detection: track calls by tool+args signature
+        tool_call_counts: Dict[str, int] = defaultdict(int)
+
         while iteration < MAX_TOOL_ITERATIONS:
             iteration += 1
             log(f"🔄 {self.provider_name} iteration {iteration}/{MAX_TOOL_ITERATIONS}")
@@ -677,18 +672,42 @@ class BaseLLMClient(ABC):
                 total_usage["cached_tokens"] += response.usage.get("cached_tokens", 0)
 
             if response.tool_calls:
-                # Build tool results
+                # Build tool results with safety guards
                 tool_results = []
+                total_result_chars = 0
+
                 for tc in response.tool_calls:
+                    # Loop detection: skip if same tool+args called too many times
+                    call_key = f"{tc.name}:{json.dumps(tc.arguments, sort_keys=True)}"
+                    tool_call_counts[call_key] += 1
+                    if tool_call_counts[call_key] > TOOL_LOOP_THRESHOLD:
+                        log(f"⚠️ Tool loop detected: {tc.name} called {tool_call_counts[call_key]} times with same args — skipping")
+                        result_str = json.dumps({"error": f"Skipped: {tc.name} already called with these arguments {TOOL_LOOP_THRESHOLD} times. Try a different approach."})
+                        self._emit_progress("tool_result", {"name": tc.name, "result": "Skipped (loop detected)"})
+                        tool_results.append(CanonicalToolResult(
+                            tool_call_id=tc.id, name=tc.name, result=result_str, is_error=True
+                        ))
+                        continue
+
                     log(f"🔧 {self.provider_name} calling tool: {tc.name}")
                     self._emit_progress("tool_call", {"name": tc.name, "args": tc.arguments})
                     result_str = self._execute_tool(tc.name, tc.arguments, tool_map)
+
+                    # Truncate oversized individual results
+                    if result_str and len(result_str) > MAX_TOOL_RESULT_CHARS:
+                        result_str = result_str[:MAX_TOOL_RESULT_CHARS] + f"\n[Truncated — {len(result_str)} total chars]"
+
+                    # Cap cumulative results
+                    total_result_chars += len(result_str) if result_str else 0
+                    if total_result_chars > MAX_TOTAL_TOOL_RESULTS:
+                        result_str = json.dumps({"error": "Result omitted: total tool output limit reached for this round."})
+
                     self._emit_progress("tool_result", {"name": tc.name, "result": result_str[:200] if result_str else ""})
                     tool_results.append(CanonicalToolResult(
                         tool_call_id=tc.id,
                         name=tc.name,
                         result=result_str,
-                        is_error="error" in result_str.lower()
+                        is_error="error" in result_str.lower() if result_str else False
                     ))
 
                 # Add tool results to messages using adapter
@@ -1077,6 +1096,9 @@ class BaseLLMClient(ABC):
             empty_response_count = 0  # Track consecutive empty responses
             MAX_EMPTY_RETRIES = 2  # Allow up to 2 retries on empty response
 
+            # Tool loop detection
+            tool_call_counts: Dict[str, int] = defaultdict(int)
+
             for iteration in range(max_iterations):
                 # ✅ CANCELLATION CHECK - before each iteration
                 self._check_cancelled()
@@ -1141,8 +1163,9 @@ class BaseLLMClient(ABC):
                         "usage": {"provider": self.provider_name.lower(), "model": getattr(self, 'model_name', ''), **total_usage},
                     }
 
-                # Execute tools
+                # Execute tools with safety guards
                 tool_results: List[ToolResult] = []
+                total_result_chars = 0
 
                 for tool_call in response.tool_calls:
                     # ✅ CANCELLATION CHECK - before each tool
@@ -1150,6 +1173,19 @@ class BaseLLMClient(ABC):
 
                     tool_name = tool_call.name
                     tool_args = tool_call.arguments
+
+                    # Loop detection
+                    call_key = f"{tool_name}:{json.dumps(tool_args, sort_keys=True)}"
+                    tool_call_counts[call_key] += 1
+                    if tool_call_counts[call_key] > TOOL_LOOP_THRESHOLD:
+                        log(f"⚠️ Tool loop detected: {tool_name} called {tool_call_counts[call_key]} times — skipping")
+                        result_str = json.dumps({"error": f"Skipped: {tool_name} already called with these arguments {TOOL_LOOP_THRESHOLD} times. Try a different approach."})
+                        is_error = True
+                        steps.append(ToolStep(type="tool_call", name=tool_name, content=json.dumps(tool_args, indent=2)))
+                        steps.append(ToolStep(type="tool_result", name=tool_name, content="Skipped (loop detected)"))
+                        self._emit_progress("tool_result", {"name": tool_name, "result": "Skipped (loop detected)"})
+                        tool_results.append(ToolResult(tool_call_id=tool_call.id, name=tool_name, result=result_str, is_error=True))
+                        continue
 
                     log(f"🔧 AI Cell executing: {tool_name}({json.dumps(tool_args)})")
                     self._emit_progress("tool_call", {"name": tool_name, "args": tool_args})
@@ -1174,6 +1210,15 @@ class BaseLLMClient(ABC):
                     else:
                         result_str = json.dumps({"error": f"Unknown tool: {tool_name}"})
                         is_error = True
+
+                    # Truncate oversized individual results
+                    if len(result_str) > MAX_TOOL_RESULT_CHARS:
+                        result_str = result_str[:MAX_TOOL_RESULT_CHARS] + f"\n[Truncated — {len(result_str)} total chars]"
+
+                    # Cap cumulative results
+                    total_result_chars += len(result_str)
+                    if total_result_chars > MAX_TOTAL_TOOL_RESULTS:
+                        result_str = json.dumps({"error": "Result omitted: total tool output limit reached."})
 
                     # Record tool result step (truncate for display)
                     result_preview = result_str[:1000] + "..." if len(result_str) > 1000 else result_str

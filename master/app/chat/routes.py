@@ -12,6 +12,9 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import httpx
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.db.session import get_db, AsyncSessionLocal
 from app.auth.dependencies import get_current_active_user
@@ -23,7 +26,7 @@ from app.api_keys.service import ApiKeyService
 from app.credits.service import CreditService
 from app.platform_keys.service import PlatformKeyService
 from app.system_prompts.service import SystemPromptService
-from .service import ChatService
+from .service import ChatService, extract_cell_context, convert_images
 from .schemas import (
     ChatMessageCreate,
     ChatResponse,
@@ -352,42 +355,6 @@ async def delete_chat(
 
 
 # =============================================================================
-# DEPRECATED: JSON ENDPOINTS - Replaced by SSE streaming endpoints below
-# =============================================================================
-# These endpoints have been replaced by /stream and /execute-tools/stream
-# which provide real-time progress updates via Server-Sent Events.
-# Kept commented for reference.
-
-# @router.post("", response_model=ChatResponse)
-# async def send_message(
-#     project_id: str,
-#     request: ChatMessageCreate,
-#     tool_mode: str = "manual",
-#     llm_provider: str = "gemini",
-#     context_format: str = "xml",
-#     chat_id: str = "default",
-#     current_user: User = Depends(get_current_active_user),
-#     db: AsyncSession = Depends(get_db),
-# ):
-#     """Send a message to the AI assistant (JSON response)."""
-#     ...  # Original implementation commented out
-
-# @router.post("/execute-tools", response_model=ChatResponse)
-# async def execute_tools(
-#     project_id: str,
-#     request: ExecuteToolsRequest,
-#     tool_mode: str = "manual",
-#     llm_provider: str = "gemini",
-#     context_format: str = "xml",
-#     chat_id: str = "default",
-#     current_user: User = Depends(get_current_active_user),
-#     db: AsyncSession = Depends(get_db),
-# ):
-#     """Execute approved tool calls (JSON response)."""
-#     ...  # Original implementation commented out
-
-
-# =============================================================================
 # SSE STREAMING ENDPOINTS
 # =============================================================================
 
@@ -438,32 +405,8 @@ async def send_message_stream(
     context_list = []
     if request.context_cell_ids:
         notebook_data = await notebook_s3_client.load_notebook(project.storage_month, project_id)
-        if notebook_data and "cells" in notebook_data:
-            cell_id_set = set(request.context_cell_ids)
-            for idx, cell in enumerate(notebook_data["cells"]):
-                cell_id = cell.get("metadata", {}).get("cell_id", "")
-                if cell_id in cell_id_set:
-                    cell_type = cell.get("cell_type", "code")
-                    ai_data = cell.get("ai_data", {})
-
-                    if cell_type == "ai" and ai_data:
-                        content = ai_data.get("user_prompt", "") or cell.get("source", "")
-                        ai_prompt = ai_data.get("user_prompt", "")
-                        ai_response = ai_data.get("llm_response", "")
-                    else:
-                        content = cell.get("source", "")
-                        ai_prompt = None
-                        ai_response = None
-
-                    context_list.append({
-                        "id": cell_id,
-                        "type": cell_type,
-                        "content": content,
-                        "output": None,
-                        "cellNumber": idx + 1,
-                        "ai_prompt": ai_prompt,
-                        "ai_response": ai_response,
-                    })
+        if notebook_data:
+            context_list = extract_cell_context(notebook_data, request.context_cell_ids, include_outputs=False)
 
     # Update playground activity
     await playground_service.update_activity(playground)
@@ -482,15 +425,7 @@ async def send_message_stream(
             return StreamingResponse(no_credits_stream(), media_type="text/event-stream")
 
     # Convert images
-    images_data = None
-    if request.images:
-        images_data = [
-            {"data": img.data, "mime_type": img.mime_type, "url": img.url, "filename": img.filename}
-            for img in request.images
-            if img.data or img.url
-        ]
-        if not images_data:
-            images_data = None
+    images_data = convert_images(request.images)
 
     # Fetch active system prompt for chat panel (fallback to hardcoded if DB fails)
     try:
@@ -526,7 +461,8 @@ async def send_message_stream(
                 ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
-                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_text.decode()}'})}\n\n"
+                        error_str = error_text.decode("utf-8", errors="replace") if isinstance(error_text, bytes) else str(error_text)
+                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_str}'})}\n\n"
                         return
 
                     async for line in response.aiter_lines():
@@ -557,8 +493,8 @@ async def send_message_stream(
                                         # Append balance to the done event
                                         data["credits_remaining_cents"] = credit.balance_cents if credit else 0
                                         line = f"data: {json.dumps(data)}"
-                                except Exception:
-                                    pass  # Don't break SSE stream on usage recording errors
+                                except Exception as e:
+                                    logger.warning(f"Usage recording failed: {e}")
                             yield f"{line}\n"
                         else:
                             yield "\n"
@@ -647,7 +583,8 @@ async def execute_tools_stream(
                 ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
-                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_text.decode()}'})}\n\n"
+                        error_str = error_text.decode("utf-8", errors="replace") if isinstance(error_text, bytes) else str(error_text)
+                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_str}'})}\n\n"
                         return
 
                     async for line in response.aiter_lines():
@@ -676,8 +613,8 @@ async def execute_tools_stream(
                                             await usage_db.commit()
                                         data["credits_remaining_cents"] = credit.balance_cents if credit else 0
                                         line = f"data: {json.dumps(data)}"
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning(f"Usage recording failed: {e}")
                             yield f"{line}\n"
                         else:
                             yield "\n"
@@ -778,75 +715,15 @@ async def run_ai_cell(
             error="Playground is not running. Start the playground to use AI cells.",
         )
 
-    # Load full cell content from S3 for context
+    # Load full cell content from S3 for context (with outputs for AI cells)
     context_list = []
     if request.context_cell_ids:
         notebook_data = await notebook_s3_client.load_notebook(project.storage_month, project_id)
-        if notebook_data and "cells" in notebook_data:
-            cell_id_set = set(request.context_cell_ids)
-            for idx, cell in enumerate(notebook_data["cells"]):
-                cell_id = cell.get("metadata", {}).get("cell_id", "")
-                if cell_id in cell_id_set:
-                    # Get output text if available
-                    output_text = None
-                    outputs = cell.get("outputs", [])
-                    if outputs:
-                        for output in outputs:
-                            if output.get("output_type") == "stream":
-                                text = output.get("text", "")
-                                if isinstance(text, list):
-                                    text = "".join(text)
-                                output_text = text
-                                break
-                            elif output.get("output_type") in ("execute_result", "display_data"):
-                                data = output.get("data", {})
-                                if "text/plain" in data:
-                                    output_text = data["text/plain"]
-                                    if isinstance(output_text, list):
-                                        output_text = "".join(output_text)
-                                    break
-                            elif output.get("output_type") == "error":
-                                output_text = f"Error: {output.get('ename', '')}: {output.get('evalue', '')}"
-                                break
+        if notebook_data:
+            context_list = extract_cell_context(notebook_data, request.context_cell_ids, include_outputs=True)
 
-                    cell_type = cell.get("cell_type", "code")
-                    ai_data = cell.get("ai_data", {})
-
-                    # For AI cells, include ai_data content
-                    if cell_type == "ai" and ai_data:
-                        content = ai_data.get("user_prompt", "") or cell.get("source", "")
-                        ai_prompt = ai_data.get("user_prompt", "")
-                        ai_response = ai_data.get("llm_response", "")
-                    else:
-                        content = cell.get("source", "")
-                        ai_prompt = None
-                        ai_response = None
-
-                    context_list.append({
-                        "id": cell_id,
-                        "type": cell_type,
-                        "content": content,
-                        "output": output_text,
-                        "cellNumber": idx + 1,
-                        "ai_prompt": ai_prompt,
-                        "ai_response": ai_response,
-                    })
-
-    # Prepare images for forwarding (convert Pydantic models to dicts)
-    images_data = None
-    if request.images:
-        images_data = [
-            {
-                "data": img.data,
-                "mime_type": img.mime_type,
-                "url": img.url,
-                "filename": img.filename,
-            }
-            for img in request.images
-            if img.data or img.url  # Only include images with actual content
-        ]
-        if not images_data:
-            images_data = None
+    # Prepare images for forwarding
+    images_data = convert_images(request.images)
 
     # Build proxy headers with API key injection
     ai_proxy_headers, is_own_key_ai = await _build_proxy_headers(db, current_user.id, playground, llm_provider)
@@ -906,7 +783,8 @@ async def run_ai_cell(
                 ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
-                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_text.decode()}'})}\n\n"
+                        error_str = error_text.decode("utf-8", errors="replace") if isinstance(error_text, bytes) else str(error_text)
+                        yield f"event: error\ndata: {json.dumps({'error': f'Playground error: {error_str}'})}\n\n"
                         return
 
                     # Stream SSE events from playground to frontend
@@ -936,8 +814,8 @@ async def run_ai_cell(
                                             await usage_db.commit()
                                         data["credits_remaining_cents"] = credit.balance_cents if credit else 0
                                         line = f"data: {json.dumps(data)}"
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning(f"Usage recording failed: {e}")
                             yield f"{line}\n"
                         else:
                             yield "\n"

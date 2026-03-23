@@ -351,3 +351,103 @@ class ChatService:
                 response="",
                 error=str(e),
             )
+
+
+# =============================================================================
+# Shared Utilities (used by chat and AI cell routes)
+# =============================================================================
+
+
+def extract_cell_context(
+    notebook_data: Dict[str, Any],
+    cell_ids: List[str],
+    include_outputs: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Extract cell context from notebook data for LLM requests.
+
+    Used by both send_message_stream and run_ai_cell endpoints.
+
+    Args:
+        notebook_data: Raw notebook JSON from S3
+        cell_ids: List of cell IDs to include
+        include_outputs: If True, extract cell outputs (for AI cells)
+
+    Returns:
+        List of cell context dicts
+    """
+    context_list = []
+    if not notebook_data or "cells" not in notebook_data:
+        return context_list
+
+    cell_id_set = set(cell_ids)
+    for idx, cell in enumerate(notebook_data["cells"]):
+        cell_id = cell.get("metadata", {}).get("cell_id", "")
+        if cell_id not in cell_id_set:
+            continue
+
+        # Extract output if requested
+        output_text = None
+        if include_outputs:
+            outputs = cell.get("outputs", [])
+            for output in outputs:
+                if output.get("output_type") == "stream":
+                    text = output.get("text", "")
+                    if isinstance(text, list):
+                        text = "".join(text)
+                    output_text = text
+                    break
+                elif output.get("output_type") in ("execute_result", "display_data"):
+                    data = output.get("data", {})
+                    if "text/plain" in data:
+                        output_text = data["text/plain"]
+                        if isinstance(output_text, list):
+                            output_text = "".join(output_text)
+                        break
+                elif output.get("output_type") == "error":
+                    output_text = f"Error: {output.get('ename', '')}: {output.get('evalue', '')}"
+                    break
+
+        cell_type = cell.get("cell_type", "code")
+        ai_data = cell.get("ai_data", {})
+
+        if cell_type == "ai" and ai_data:
+            content = ai_data.get("user_prompt", "") or cell.get("source", "")
+            ai_prompt = ai_data.get("user_prompt", "")
+            ai_response = ai_data.get("llm_response", "")
+        else:
+            content = cell.get("source", "")
+            ai_prompt = None
+            ai_response = None
+
+        context_list.append({
+            "id": cell_id,
+            "type": cell_type,
+            "content": content,
+            "output": output_text,
+            "cellNumber": idx + 1,
+            "ai_prompt": ai_prompt,
+            "ai_response": ai_response,
+        })
+
+    return context_list
+
+
+def convert_images(images) -> Optional[List[Dict[str, Any]]]:
+    """
+    Convert image request objects to dict format for forwarding to playground.
+
+    Args:
+        images: List of image Pydantic models with data, mime_type, url, filename
+
+    Returns:
+        List of image dicts, or None if no valid images
+    """
+    if not images:
+        return None
+    images_data = [
+        {"data": img.data, "mime_type": img.mime_type, "url": img.url, "filename": img.filename}
+        for img in images
+        if img.data or img.url
+    ]
+    return images_data if images_data else None
