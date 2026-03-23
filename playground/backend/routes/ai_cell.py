@@ -14,6 +14,7 @@ import backend.config as cfg
 from backend.llm_clients import get_llm_client
 from backend.llm_clients.base import CancelledException
 from backend.middleware.security import verify_internal_secret, extract_key_overrides
+from backend.security import sanitize_input, detect_prompt_injection, redact_secrets
 from backend.models import (
     AICellRequest,
     AICellCancelRequest,
@@ -72,6 +73,12 @@ async def run_ai_cell(
 
     async def event_generator():
         """Generate SSE events - unified for both streaming and non-streaming modes."""
+        # Sanitize input
+        request.prompt = sanitize_input(request.prompt)
+        injection_detected, matched = detect_prompt_injection(request.prompt)
+        if injection_detected:
+            log(f"⚠️ AI Cell prompt injection detected: '{matched}' — allowing but flagged")
+
         provider = request.llm_provider or cfg.LLM_PROVIDER
         key_override, model_override, base_url_override, auth_type = extract_key_overrides(_ai_raw_request, provider)
         client = get_llm_client(
@@ -186,7 +193,7 @@ async def run_ai_cell(
                 result = await asyncio.to_thread(client.ai_cell_execute, notebook_context, user_prompt, images=llm_images, allowed_tools=allowed_tools)
 
             # Send final 'done' event (both modes)
-            response_text = result.get("response", "")
+            response_text = redact_secrets(result.get("response", ""))
             llm_steps = result.get("steps", [])
             was_cancelled = result.get("cancelled", False)
             thinking_content = result.get("thinking", "")

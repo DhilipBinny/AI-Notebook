@@ -12,6 +12,7 @@ import httpx
 from pathlib import Path
 from typing import Optional
 from backend.utils.util_func import log
+from backend.security.ssrf import is_ssrf_target
 
 
 # Limits
@@ -130,6 +131,15 @@ def web_fetch(url: str, save_as: Optional[str] = None) -> dict:
         return {
             "success": False,
             "error": "URL must start with http:// or https://"
+        }
+
+    # SSRF protection: block private IPs, cloud metadata, internal services
+    blocked, reason = is_ssrf_target(url)
+    if blocked:
+        log(f"SSRF blocked: {url} — {reason}")
+        return {
+            "success": False,
+            "error": f"URL blocked: cannot access private or internal addresses ({reason})"
         }
 
     try:

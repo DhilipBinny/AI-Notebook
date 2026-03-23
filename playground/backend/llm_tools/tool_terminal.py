@@ -34,6 +34,13 @@ _BLOCKED_PREFIXES = (
     'umount ',
 )
 
+# Environment variables safe to expose to LLM-executed commands
+# Excludes API keys, secrets, and internal service URLs
+_SAFE_ENV_KEYS = frozenset({
+    "PATH", "USER", "SHELL", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
+    "TZ", "TMPDIR", "VIRTUAL_ENV", "CONDA_DEFAULT_ENV",
+})
+
 
 def _sanitize_command(command: str) -> str | None:
     """
@@ -122,14 +129,12 @@ def execute_terminal_command(command: str, timeout: int = 30) -> dict:
     # Ensure workspace exists
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Build a clean environment — strip sensitive vars, keep essentials
-    clean_env = {
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HOME": str(WORKSPACE_DIR),
-        "TERM": "xterm",
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "PYTHONPATH": "",
-    }
+    # Build a clean environment — only safe vars, no API keys or secrets
+    clean_env = {k: v for k, v in os.environ.items() if k in _SAFE_ENV_KEYS}
+    clean_env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    clean_env["HOME"] = str(WORKSPACE_DIR)
+    clean_env.setdefault("TERM", "xterm")
+    clean_env.setdefault("LANG", "C.UTF-8")
 
     try:
         result = subprocess.run(
