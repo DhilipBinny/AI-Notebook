@@ -126,6 +126,15 @@ class Session:
         except Exception as e:
             log(f"[Session] Error cleaning up sandbox: {e}")
 
+        # Close pending LLM client if any (prevents connection leak)
+        try:
+            if self.pending_client is not None:
+                if hasattr(self.pending_client, 'close'):
+                    self.pending_client.close()
+                self.pending_client = None
+        except Exception as e:
+            log(f"[Session] Error closing pending client: {e}")
+
         # Always clear state, even if cleanup failed
         with self._lock:
             self.notebook_state = {"cells": [], "updates": []}

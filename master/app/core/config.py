@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=30, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
     jwt_refresh_token_expire_days: int = Field(default=7, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS")
 
+    # Session middleware (separate from JWT for security isolation)
+    session_secret: str = Field(
+        default="dev_session_key_change_in_production_must_be_32c",
+        alias="SESSION_SECRET"
+    )
+
     # Google OAuth
     google_client_id: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_ID")
     google_client_secret: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET")

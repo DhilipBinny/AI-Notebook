@@ -360,7 +360,10 @@ class GeminiClient(BaseLLMClient):
             log(f"Gemini error: {e}")
             import traceback
             log(f"Traceback: {traceback.format_exc()}")
-            return f"Gemini Error: {e}"
+            error_msg = str(e)
+            if "key" in error_msg.lower() or "auth" in error_msg.lower() or "AIza" in error_msg:
+                return "Gemini API error. Please check your API key configuration."
+            return "Gemini Error: An unexpected error occurred. Please try again."
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
         """

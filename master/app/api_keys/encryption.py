@@ -104,7 +104,8 @@ async def test_provider_key(provider: str, api_key: str, auth_type: str = "api_k
 
             elif provider == "gemini":
                 resp = await client.get(
-                    f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    headers={"x-goog-api-key": api_key},
                 )
                 return resp.status_code == 200
 

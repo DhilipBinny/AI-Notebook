@@ -154,11 +154,12 @@ async def admin_adjust_credits(
 @router.post("/internal/usage/report")
 async def report_usage(
     report: UsageReport,
+    current_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Internal endpoint for recording usage after LLM calls.
-    Called by the master SSE proxy after receiving a done event from playground.
+    Requires admin authentication to prevent unauthorized credit manipulation.
     """
     service = CreditService(db)
     record = await service.record_usage_and_deduct(

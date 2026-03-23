@@ -38,6 +38,13 @@ class CreditService:
         )
         return result.scalar_one_or_none()
 
+    async def _get_balance_for_update(self, user_id: str) -> Optional[UserCredit]:
+        """Get user's credit balance with row-level lock for safe concurrent deduction."""
+        result = await self.db.execute(
+            select(UserCredit).where(UserCredit.user_id == user_id).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def check_sufficient_credits(self, user_id: str, estimated_cost_cents: int) -> bool:
         """Check if user has enough credits for a request."""
         credit = await self.get_balance(user_id)
@@ -131,8 +138,9 @@ class CreditService:
         self.db.add(record)
 
         # Deduct from balance (only if not own key)
+        # Uses SELECT ... FOR UPDATE to prevent concurrent deduction race conditions
         if not is_own_key and cost_cents > 0:
-            credit = await self.get_balance(user_id)
+            credit = await self._get_balance_for_update(user_id)
             if credit:
                 credit.balance_cents = max(0, credit.balance_cents - cost_cents)
                 credit.total_consumed_cents += cost_cents

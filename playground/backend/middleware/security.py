@@ -3,8 +3,10 @@ Security Middleware - Authentication and authorization
 """
 
 import os
+import secrets
 import logging
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 from fastapi import HTTPException, Header, Request
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,7 @@ async def verify_internal_secret(x_internal_secret: str = Header(None)):
             detail="Playground not configured: INTERNAL_SECRET not set"
         )
 
-    if x_internal_secret != INTERNAL_SECRET:
+    if not secrets.compare_digest(x_internal_secret or "", INTERNAL_SECRET):
         raise HTTPException(status_code=403, detail="Invalid internal secret")
 
     return True
@@ -95,4 +97,43 @@ def extract_key_overrides(request: Request, provider: str) -> Tuple[Optional[str
         auth_type = request.headers.get("x-platform-anthropic-authtype") or \
                     request.headers.get("X-Platform-Anthropic-AuthType")
 
+    # Validate base_url to prevent SSRF
+    if base_url:
+        if not _is_safe_base_url(base_url):
+            logger.warning(f"Blocked unsafe base_url: {base_url}")
+            base_url = None
+
     return api_key, model, base_url, auth_type
+
+
+def _is_safe_base_url(url: str) -> bool:
+    """Validate base_url to prevent SSRF against internal services."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+
+    # Block known internal/metadata hosts
+    blocked_hosts = {"metadata.google.internal", "metadata.internal", "localhost", "127.0.0.1", "0.0.0.0", "::1"}
+    if hostname.lower() in blocked_hosts:
+        return False
+
+    # Block private IP ranges
+    import ipaddress
+    import socket
+    try:
+        resolved = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(resolved)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            return False
+    except (socket.gaierror, ValueError):
+        pass  # Hostname resolution failed — allow (will fail at connection time)
+
+    return True

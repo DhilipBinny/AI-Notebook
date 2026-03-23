@@ -8,6 +8,7 @@ Handles file operations between:
 
 import os
 import io
+import shlex
 import tarfile
 import tempfile
 import logging
@@ -118,7 +119,7 @@ class FileService:
         # Execute ls command to get file listing
         try:
             exit_code, output = container.exec_run(
-                ["/bin/bash", "-c", f"find {full_path} -maxdepth 1 -printf '%T@ %s %y %P\\n' 2>/dev/null"],
+                ["/bin/bash", "-c", f"find {shlex.quote(full_path)} -maxdepth 1 -printf '%T@ %s %y %P\\n' 2>/dev/null"],
                 demux=True,
             )
 
@@ -205,7 +206,7 @@ class FileService:
             target_path = f"{target_dir}/{filename}"
 
             # Ensure directory exists
-            container.exec_run(f"mkdir -p {target_dir}")
+            container.exec_run(["mkdir", "-p", target_dir])
         else:
             target_path = f"{self.WORKSPACE_PATH}/{filename}"
 
@@ -312,7 +313,7 @@ class FileService:
             full_path = f"{self.WORKSPACE_PATH}/{path}"
 
             try:
-                exit_code, _ = container.exec_run(f"rm -rf {full_path}")
+                exit_code, _ = container.exec_run(["rm", "-rf", full_path])
                 if exit_code == 0:
                     deleted.append(path)
                 else:
@@ -351,7 +352,7 @@ class FileService:
         # Get all files in workspace
         try:
             exit_code, output = container.exec_run(
-                ["/bin/bash", "-c", f"find {self.WORKSPACE_PATH} -type f -printf '%P\\n' 2>/dev/null"],
+                ["/bin/bash", "-c", f"find {shlex.quote(self.WORKSPACE_PATH)} -type f -printf '%P\\n' 2>/dev/null"],
                 demux=True,
             )
             stdout = output[0].decode("utf-8") if output[0] else ""

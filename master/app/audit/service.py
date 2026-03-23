@@ -127,24 +127,33 @@ class AuditService:
             status=status,
         )
 
+    # Docker bridge network IPs that nginx proxy uses to forward requests
+    _TRUSTED_PROXIES = {"172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"}
+
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP address, handling reverse proxies."""
-        # Check X-Forwarded-For header (set by nginx/proxy)
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            # Take the first IP (original client)
-            return forwarded_for.split(",")[0].strip()
+        """Extract client IP address, only trusting proxy headers from known proxies."""
+        client_ip = request.client.host if request.client else "unknown"
 
-        # Check X-Real-IP header (alternative proxy header)
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
-            return real_ip
+        # Only trust forwarded headers if request comes from Docker network (nginx proxy)
+        if client_ip != "unknown":
+            import ipaddress
+            try:
+                addr = ipaddress.ip_address(client_ip)
+                is_trusted = any(
+                    addr in ipaddress.ip_network(net) for net in self._TRUSTED_PROXIES
+                )
+            except ValueError:
+                is_trusted = False
 
-        # Fall back to direct client IP
-        if request.client:
-            return request.client.host
+            if is_trusted:
+                forwarded_for = request.headers.get("x-forwarded-for")
+                if forwarded_for:
+                    return forwarded_for.split(",")[0].strip()
+                real_ip = request.headers.get("x-real-ip")
+                if real_ip:
+                    return real_ip
 
-        return "unknown"
+        return client_ip
 
 
 # Convenience function for simpler usage

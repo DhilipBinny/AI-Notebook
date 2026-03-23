@@ -59,11 +59,12 @@ class AnthropicClient(BaseLLMClient):
 
         if auth_type == "oauth_token":
             # OAuth tokens require:
-            # 1. apiKey=None (NOT empty string — empty string sends X-Api-Key: "" header)
+            # 1. api_key="" (empty string) — NOT None. None causes SDK fallback to
+            #    ANTHROPIC_API_KEY env var, sending both X-Api-Key and Bearer → 401
             # 2. Claude Code identity headers (required by Anthropic for OAuth tokens)
             # 3. All required beta headers
             self.client = Anthropic(
-                api_key=None,
+                api_key="",
                 auth_token=api_key,
                 default_headers={
                     "accept": "application/json",
@@ -249,7 +250,11 @@ class AnthropicClient(BaseLLMClient):
 
         except Exception as e:
             log(f"❌ Anthropic error: {e}")
-            return f"Anthropic Error: {e}"
+            error_msg = str(e)
+            # Sanitize: don't expose API keys or internal details to user
+            if "key" in error_msg.lower() or "auth" in error_msg.lower() or "sk-" in error_msg:
+                return "Anthropic API error. Please check your API key configuration."
+            return f"Anthropic Error: An unexpected error occurred. Please try again."
 
     def execute_approved_tools(self, approved_tool_calls: List[Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
         """
